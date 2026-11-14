@@ -14,8 +14,10 @@
 //     recomputes at load (SHA-256 over the compat form + checksum) — this is
 //     the check LoadDescriptorWalletRecords enforces, so matching it is what
 //     "the wallet loads" means;
-//   - the stored descriptor string is byte-identical to the generator's
-//     input, key material untouched;
+//   - the stored descriptor string is the generator's input in Core's
+//     canonical form — SLIP-132 prefixes re-versioned to xpub/tpub, key
+//     material untouched — plus the checksum Core's loader requires when the
+//     generator omitted one;
 //   - descriptor cache bodies equal an independent BIP32 CKDpub derivation;
 //   - private key records carry a Core-form DER key whose secret, public key,
 //     and key hash all agree;
@@ -47,6 +49,8 @@ import {
   sha256,
   sqliteReadBack,
 } from "./wallet-export-harness.mjs";
+import { canonicalizeWatchDescriptor } from "../src/js/core-importdescriptors.js";
+import { fuzzEnv, mulberry32, replayLine, withReplay } from "./fuzz-kit.mjs";
 
 // --- deterministic randomness ------------------------------------------------
 
@@ -54,16 +58,14 @@ import {
 // be machine-generated. Never reseed from the clock — a red run must be
 // reproducible byte-for-byte.
 const FUZZ_SEED = 0x5eed0001;
-const mulberry32 = (seed) => {
-  let a = seed >>> 0;
-  return () => {
-    a = (a + 0x6d2b79f5) | 0;
-    let t = Math.imul(a ^ (a >>> 15), 1 | a);
-    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
-};
-const rand = mulberry32(FUZZ_SEED);
+const DEFAULT_CORPUS_SIZE = 72;
+const WALLET_EXPORT_ENV = fuzzEnv("WALLET_EXPORT_FUZZ", { defaultSeed: FUZZ_SEED, defaultIterations: DEFAULT_CORPUS_SIZE });
+const ITERATIONS = WALLET_EXPORT_ENV.iterations;
+// Three tests below read corpus[2]; a smaller corpus is a setup error, not a
+// fuzz failure, so it is refused here with a clear message.
+if (ITERATIONS < 3) throw new Error(`WALLET_EXPORT_FUZZ_ITERATIONS must be at least 3 (the corpus tests use its first three wallets), got ${ITERATIONS}`);
+const CORPUS_TEST_NAME = "every fuzzed wallet's records independently verify (Core's load check included)";
+let rand = mulberry32(WALLET_EXPORT_ENV.seed);
 const rint = (n) => Math.floor(rand() * n);
 const pick = (items) => items[rint(items.length)];
 const chance = (p) => rand() < p;
@@ -152,30 +154,74 @@ const memoize = (fn, keyFn) => {
 };
 const fuzzDeps = {
   ...deps,
+  // Round 5: every unit's watch-only descriptor is canonicalized, single-sig
+  // included, so the fuzz deps carry the canonicalizer like the app's
+  // hodlWalletDatDeps does; the expected stored form is computed by the
+  // independent referenceCanonicalDescriptor below.
+  canonicalizeDescriptor: (descriptor) => canonicalizeWatchDescriptor(descriptor, { decode: b58checkDecode, encode: b58checkEncode }),
   deriveBranchBody: memoize(deriveBranchBody, (xpub, branch) => `${xpub}:${branch}`),
   publicKeyForPrivate: memoize(publicKeyForPrivate, (secret) => bytesToHex(secret)),
 };
 
 // --- independent verification ------------------------------------------------
 
-// Compat form, reimplemented as a character scan (the module uses a single
-// regex): inside each [fingerprint/path] origin, rewrite every hardened step
-// marker h to '. Anything else in the body is copied verbatim.
+// Compat form, reimplemented as a character scan (the module uses regexes):
+// inside each [fingerprint/path] origin, lowercase the fingerprint and
+// rewrite every hardened step marker h to '; a hex Taproot internal key
+// (tr(<64 hex>,) is lowercased too. Core's compat form re-renders every
+// parsed element, and HexStr prints lowercase — the reference must apply
+// that rule on its own, or the corpus would verify the module against
+// itself. Anything else in the body is copied verbatim.
 const referenceCompatForm = (body) => {
   let out = "";
   let cursor = 0;
   while (cursor < body.length) {
     const open = body.indexOf("[", cursor);
+    const trAt = body.indexOf("tr(", cursor);
+    if (trAt >= 0 && (open < 0 || trAt < open)) {
+      const nums = body.slice(trAt + 3, trAt + 67);
+      if (nums.length === 64 && /^[0-9a-fA-F]{64}$/.test(nums) && body[trAt + 67] === ",") {
+        out += body.slice(cursor, trAt + 3) + nums.toLowerCase();
+        cursor = trAt + 67;
+        continue;
+      }
+    }
     if (open < 0) return out + body.slice(cursor);
     const close = body.indexOf("]", open);
     if (close < 0) return out + body.slice(cursor);
     const [fingerprint, ...steps] = body.slice(open + 1, close).split("/");
-    out += body.slice(cursor, open) + "[" + fingerprint;
+    out += body.slice(cursor, open) + "[" + fingerprint.toLowerCase();
     for (const step of steps) out += "/" + (step.endsWith("h") ? step.slice(0, -1) + "'" : step);
     out += "]";
     cursor = close + 1;
   }
   return out;
+};
+
+// Core's canonical stored form, reimplemented independently of the module
+// (and of core-importdescriptors.js): Bitcoin Core's descriptor parser
+// accepts only xpub/tpub, so every SLIP-132 prefix is re-versioned — the
+// testnet families (upub/vpub) to tpub, everything else to xpub — and the
+// checksum recomputed over the rewritten body. A descriptor that already
+// carries only xpub/tpub and a checksum is returned unchanged, so the
+// byte-identical xpub exports stay pinned; a checksum-less input gains the
+// checksum Core's loader requires (round 4, item 2).
+const SLIP_PUB_REFERENCE = /((?:ypub|upub|zpub|vpub|Ypub|Zpub|Upub|Vpub)[1-9A-HJ-NP-Za-km-z]{90,})/g;
+const referenceCanonicalDescriptor = (descriptor) => {
+  const hash = descriptor.lastIndexOf("#");
+  const body = hash >= 0 ? descriptor.slice(0, hash) : descriptor;
+  let changed = false;
+  const rewritten = body.replace(SLIP_PUB_REFERENCE, (key) => {
+    const raw = b58checkDecode(key).slice();
+    const version = /^[uvUV]/.test(key) ? 0x043587cf : 0x0488b21e;
+    raw[0] = (version >>> 24) & 255;
+    raw[1] = (version >>> 16) & 255;
+    raw[2] = (version >>> 8) & 255;
+    raw[3] = version & 255;
+    changed = true;
+    return b58checkEncode(raw);
+  });
+  return changed || hash < 0 ? `${rewritten}#${descriptorChecksum(rewritten)}` : descriptor;
 };
 
 const utf8 = (text) => new TextEncoder().encode(text);
@@ -338,15 +384,29 @@ const verifyWalletRecords = (label, wallet, includePrivate, creationTime) => {
   // Descriptor records.
   for (const unit of units) {
     const at = `${label} ${unit.descriptor.slice(0, 24)}…/${unit.internal ? 1 : 0}`;
+    // Round 5: every unit's watch-only descriptor is stored in Core's
+    // canonical xpub/tpub form — a SLIP-132 prefix on a single-sig
+    // descriptor is re-versioned too (Core's parser accepts only xpub/tpub),
+    // and a checksum-less input gains the checksum Core's loader requires
+    // (round 4, item 2). The expected form comes from the independent
+    // reference canonicalizer above, never from the module.
+    const expectedStored = referenceCanonicalDescriptor(unit.descriptor);
     // The exact check Bitcoin Core runs at load: the record key must be the
     // DescriptorID of the compat form of the stored descriptor.
-    const id = referenceDescriptorId(unit.descriptor);
+    const id = referenceDescriptorId(expectedStored);
     const descriptorRecord = singles.get(`walletdescriptor:${id}`);
     assert.ok(descriptorRecord, `${at}: walletdescriptor keyed by Core's DescriptorID`);
     const [textLength, textOffset] = readCompactSize(descriptorRecord.value, 0);
     const stored = new TextDecoder().decode(descriptorRecord.value.slice(textOffset, textOffset + textLength));
-    assert.equal(stored, unit.descriptor, `${at}: stored descriptor is byte-identical to the input`);
-    assert.ok(stored.includes(unit.xpub), `${at}: stored descriptor keeps the xpub verbatim`);
+    assert.equal(stored, expectedStored, `${at}: stored descriptor is the canonical xpub/tpub form with the checksum Core requires`);
+    // Re-versioning touches only the 4 SLIP-132 version bytes: the key
+    // material the cache records derive from is kept verbatim.
+    const canonicalKey = expectedStored.match(XPUB_PATTERN)?.[1];
+    assert.ok(
+      unit.xpub && canonicalKey &&
+        bytesToHex(b58checkDecode(unit.xpub).slice(4)) === bytesToHex(b58checkDecode(canonicalKey).slice(4)),
+      `${at}: re-versioning keeps the key material verbatim`,
+    );
     assert.ok(!stored.includes("'"), `${at}: no apostrophe leaked into the stored descriptor`);
     let cursor = textOffset + textLength;
     assert.equal(u64leAt(descriptorRecord.value, cursor), creationTime, `${at}: creation time`);
@@ -362,8 +422,8 @@ const verifyWalletRecords = (label, wallet, includePrivate, creationTime) => {
     assert.equal(bodyLength, 74, `${at}: cache body length`);
     assert.equal(
       bytesToHex(cache.value.slice(bodyOffset, bodyOffset + 74)),
-      bytesToHex(referenceCacheBody(unit.descriptor, unit.xpub)),
-      `${at}: cache body is the independently derived parent of the descriptor's wildcard`,
+      bytesToHex(referenceCacheBody(expectedStored, canonicalKey)),
+      `${at}: cache body is the independently derived parent of the stored descriptor's wildcard`,
     );
     assert.equal(cache.value.length, bodyOffset + 74, `${at}: cache value length`);
 
@@ -425,47 +485,48 @@ const randomOrigin = (type, coin, account) => {
   return [`[${fingerprint}/${purpose}h/${coin}h/${account}h]`, style];
 };
 
-const corpus = [];
-const CORPUS_SIZE = 72;
 const CREATION_TIMES = [0, 1, 1700000000, 0xffffffff];
+const forcedAccounts = (xpubs) => ({
+  def: { id: "bip84" },
+  receiveDescriptor: `wpkh([00000000/84h/0h/0h]${xpubs[0]}/0/*)#${descriptorChecksum(`wpkh([00000000/84h/0h/0h]${xpubs[0]}/0/*)`)}`,
+  changeDescriptor: `wpkh([00000000/84h/0h/0h]${xpubs[1]}/0/*)#${descriptorChecksum(`wpkh([00000000/84h/0h/0h]${xpubs[1]}/0/*)`)}`,
+});
+// Random address rows for a branch, with edge indexes (BIP32 maximum,
+// clamp boundary) and occasional invalid entries the exporter must skip.
+const randomRows = () => {
+  const count = rint(4);
+  if (count === 0) return chance(0.5) ? [] : null;
+  const rows = [];
+  for (let j = 0; j < count; j++) {
+    const style = pick(["small", "small", "large", "max", "invalid"]);
+    if (style === "invalid") {
+      rows.push({ index: pick([-1, 0x80000000, 1.5, "7", null, undefined]) });
+      note("rows:invalid-filtered");
+    } else if (style === "max") {
+      rows.push({ index: 0x7fffffff });
+      note("rows:clamp");
+    } else if (style === "large") {
+      const index = 0x7fffff00 - rint(2000);
+      rows.push({ index });
+      if (index + RANGE_GAP > MAX_ADDRESS_INDEX) note("rows:clamp");
+    } else {
+      rows.push({ index: rint(10000) });
+    }
+  }
+  return rows;
+};
+const corpus = [];
 {
   // Iteration 0 and 1 force the <digit>h corruption class into the corpus.
-  const forcedAccounts = (xpubs) => ({
-    def: { id: "bip84" },
-    receiveDescriptor: `wpkh([00000000/84h/0h/0h]${xpubs[0]}/0/*)#${descriptorChecksum(`wpkh([00000000/84h/0h/0h]${xpubs[0]}/0/*)`)}`,
-    changeDescriptor: `wpkh([00000000/84h/0h/0h]${xpubs[1]}/0/*)#${descriptorChecksum(`wpkh([00000000/84h/0h/0h]${xpubs[1]}/0/*)`)}`,
-  });
-  corpus.push(
-    { wallet: { kind: "hd", network: "mainnet", accounts: [forcedAccounts([XPUB_TAIL_4H, XPUB_TAIL_2H])] }, includePrivate: false, creationTime: 0, label: "iteration 0 (known digit-h vectors)" },
-    { wallet: { kind: "hd", network: "mainnet", accounts: [forcedAccounts([SCANNED_TAIL_KEY, XPUB_TAIL_4H])] }, includePrivate: false, creationTime: 0, label: "iteration 1 (scanned digit-h key)" },
-  );
-  note("digit-h-tail");
-  note("digit-h-tail");
-  // Random address rows for a branch, with edge indexes (BIP32 maximum,
-  // clamp boundary) and occasional invalid entries the exporter must skip.
-  const randomRows = () => {
-    const count = rint(4);
-    if (count === 0) return chance(0.5) ? [] : null;
-    const rows = [];
-    for (let j = 0; j < count; j++) {
-      const style = pick(["small", "small", "large", "max", "invalid"]);
-      if (style === "invalid") {
-        rows.push({ index: pick([-1, 0x80000000, 1.5, "7", null, undefined]) });
-        note("rows:invalid-filtered");
-      } else if (style === "max") {
-        rows.push({ index: 0x7fffffff });
-        note("rows:clamp");
-      } else if (style === "large") {
-        const index = 0x7fffff00 - rint(2000);
-        rows.push({ index });
-        if (index + RANGE_GAP > MAX_ADDRESS_INDEX) note("rows:clamp");
-      } else {
-        rows.push({ index: rint(10000) });
-      }
-    }
-    return rows;
-  };
-  for (let i = 2; i < CORPUS_SIZE; i++) {
+  if (ITERATIONS > 0) {
+    note("digit-h-tail");
+    corpus.push({ wallet: { kind: "hd", network: "mainnet", accounts: [forcedAccounts([XPUB_TAIL_4H, XPUB_TAIL_2H])] }, includePrivate: false, creationTime: 0, label: "iteration 0 (known digit-h vectors)" });
+  }
+  if (ITERATIONS > 1) {
+    note("digit-h-tail");
+    corpus.push({ wallet: { kind: "hd", network: "mainnet", accounts: [forcedAccounts([SCANNED_TAIL_KEY, XPUB_TAIL_4H])] }, includePrivate: false, creationTime: 0, label: "iteration 1 (scanned digit-h key)" });
+  }
+  for (let i = 2; i < ITERATIONS; i++) {
     const label = `iteration ${i}`;
     const network = pick(["mainnet", "testnet", "signet", "regtest"]);
     note(`network:${network}`);
@@ -568,9 +629,30 @@ const CREATION_TIMES = [0, 1, 1700000000, 0xffffffff];
 
 // --- tests --------------------------------------------------------------------
 
-test("every fuzzed wallet's records independently verify (Core's load check included)", () => {
-  for (const { wallet, includePrivate, creationTime, label } of corpus) {
-    verifyWalletRecords(label, wallet, includePrivate, creationTime);
+test("the reference compat form re-renders like Core, independently of the module", () => {
+  // Core's Descriptor::ToString(true) re-renders every parsed element: the
+  // origin fingerprint and a hex Taproot internal key print via HexStr
+  // (lowercase), and every hardened step prints with '. Base58 key text is
+  // re-encoded untouched, so its case must survive verbatim.
+  const nums = "50929B74C1A04954B78B4B6035E97A5E078A5A0F28EC96D547BFEE9ACE803AC0";
+  assert.equal(
+    referenceCompatForm("wpkh([ABCDEF01/84h/0h/0h]xpub/0/*)"),
+    "wpkh([abcdef01/84'/0'/0']xpub/0/*)",
+  );
+  assert.equal(
+    referenceCompatForm(`tr(${nums},sortedmulti_a(2,[AbCdEf01/86h/0h/0h]xpub/0/*))`),
+    `tr(${nums.toLowerCase()},sortedmulti_a(2,[abcdef01/86'/0'/0']xpub/0/*))`,
+  );
+  assert.equal(referenceCompatForm("wpkh([AbCdEf01/0h]xPubZz/0/*)"), "wpkh([abcdef01/0']xPubZz/0/*)");
+});
+
+test(CORPUS_TEST_NAME, () => {
+  try {
+    for (const { wallet, includePrivate, creationTime, label } of corpus) {
+      verifyWalletRecords(label, wallet, includePrivate, creationTime);
+    }
+  } catch (error) {
+    throw withReplay(error, replayLine("WALLET_EXPORT_FUZZ", WALLET_EXPORT_ENV.seed, ITERATIONS, CORPUS_TEST_NAME, "test/wallet-export-fuzz.test.mjs"));
   }
 });
 
@@ -630,11 +712,11 @@ test("defensive guards reject corrupted crypto dependencies", () => {
   );
   assert.throws(
     () => module_.buildWalletRecords(privateWallet.wallet, true, { ...fuzzDeps, base58Decode: () => new Uint8Array(77) }, 0),
-    /unexpected extended private key payload/,
+    /unexpected extended private key payload|descriptor key is not a valid extended key/,
   );
   assert.throws(
     () => module_.buildWalletRecords(privateWallet.wallet, true, { ...fuzzDeps, base58Decode: () => Uint8Array.from([1, ...new Array(44).fill(0), 1, ...new Array(32).fill(0)]) }, 0),
-    /unexpected extended private key payload/,
+    /unexpected extended private key payload|descriptor key is not a valid extended key/,
   );
   assert.throws(
     () => module_.buildWalletRecords(privateWallet.wallet, true, { ...fuzzDeps, publicKeyForPrivate: () => new Uint8Array(32) }, 0),
@@ -654,14 +736,14 @@ test("malformed wallet inputs fail loudly instead of writing a bad file", () => 
     network: "mainnet",
     accounts: [{ def: { id: "bip84" }, receiveDescriptor: "wpkh([00000000/84h/0h/0h]/0/*)", changeDescriptor: "wpkh([00000000/84h/0h/0h]/1/*)" }],
   };
-  assert.throws(() => module_.buildWalletRecords(noKey, false, fuzzDeps, 0), /no extended key found in watch-only descriptor/);
+  assert.throws(() => module_.buildWalletRecords(noKey, false, fuzzDeps, 0), /no extended key found in watch-only descriptor|unsupported descriptor shape/);
   assert.throws(
     () => module_.buildWalletRecords({ ...wallet, accounts: [{ ...wallet.accounts[0], receiveDescriptorPriv: "wpkh(none)/0/*", changeDescriptorPriv: "wpkh(none)/1/*" }] }, true, fuzzDeps, 0),
-    /no extended key found in spending descriptor/,
+    /no extended key found in spending descriptor|unsupported descriptor shape/,
   );
 });
 
-test("buildWalletDat defaults the birthday to the export time", { skip: !PYTHON_SQLITE }, () => {
+test("buildWalletDat defaults the birthday to the export time", { skip: !PYTHON_SQLITE || corpus.length === 0 }, () => {
   const module_ = loadModule();
   const before = Math.floor(Date.now() / 1000) - 1;
   const bytes = module_.buildWalletDat(corpus[2].wallet, false, fuzzDeps);

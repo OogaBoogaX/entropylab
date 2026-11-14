@@ -60,6 +60,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { psbtEditorBuildDoc, dropSigningPairs } from "../src/js/psbt-editor.js";
 import { psbtBuildBytes, psbtInspectDoc } from "../src/js/psbt-wasm.js";
+import { fuzzEnv, mulberry32, replayLine, withReplay } from "./fuzz-kit.mjs";
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
 
@@ -78,17 +79,11 @@ const HEALTHY = FIXTURES.find((fixture) => fixture.name === "p2wpkh-1in-2out.b64
 
 // --- deterministic randomness (same fixed-seed policy as wallet-export-fuzz) --
 const FUZZ_SEED = 0x5eed0240;
-const ITERATIONS = 240;
-const mulberry32 = (seed) => {
-  let a = seed >>> 0;
-  return () => {
-    a = (a + 0x6d2b79f5) | 0;
-    let t = Math.imul(a ^ (a >>> 15), 1 | a);
-    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
-};
-const rand = mulberry32(FUZZ_SEED);
+const DEFAULT_ITERATIONS = 240;
+const EDITOR_ENV = fuzzEnv("PSBT_EDITOR_FUZZ", { defaultSeed: FUZZ_SEED, defaultIterations: DEFAULT_ITERATIONS });
+const ITERATIONS = EDITOR_ENV.iterations;
+const TEST_NAME = "seeded random walks: adding/removing inputs and outputs stays safe and correct";
+let rand = mulberry32(EDITOR_ENV.seed);
 const rint = (n) => Math.floor(rand() * n);
 const pick = (items) => items[rint(items.length)];
 const chance = (p) => rand() < p;
@@ -770,35 +765,39 @@ const OPS = [
 ];
 const OP_BAG = OPS.flatMap(([weight, fn]) => Array.from({ length: weight }, () => fn));
 
-test("seeded random walks: adding/removing inputs and outputs stays safe and correct", () => {
-  for (let i = 0; i < ITERATIONS; i++) {
-    const fixture = FIXTURES[i % FIXTURES.length];
-    note(`fixture:${fixture.name}`);
-    // The editor anchors the signing pairs to the loaded transaction; the
-    // first edit that moves the transaction drops them.
-    const state = { doc: structuredClone(fixture.doc), poisoned: null, anchor: JSON.stringify(fixture.doc.tx) };
-    const opCount = 3 + rint(10);
-    for (let j = 0; j < opCount; j++) {
-      const label = `iteration ${i} (${fixture.name}) op ${j}`;
-      // A field edit that left the document unbuildable is usually followed
-      // by the repair keystroke — or by the user trying a structural edit
-      // anyway, which must bounce off. Both are forced here so the walk
-      // exercises them instead of wandering off.
-      if (state.poisoned && chance(0.6)) {
-        repairOp(state, label);
-        continue;
+test(TEST_NAME, () => {
+  try {
+    for (let i = 0; i < ITERATIONS; i++) {
+      const fixture = FIXTURES[i % FIXTURES.length];
+      note(`fixture:${fixture.name}`);
+      // The editor anchors the signing pairs to the loaded transaction; the
+      // first edit that moves the transaction drops them.
+      const state = { doc: structuredClone(fixture.doc), poisoned: null, anchor: JSON.stringify(fixture.doc.tx) };
+      const opCount = 3 + rint(10);
+      for (let j = 0; j < opCount; j++) {
+        const label = `iteration ${i} (${fixture.name}) op ${j}`;
+        // A field edit that left the document unbuildable is usually followed
+        // by the repair keystroke — or by the user trying a structural edit
+        // anyway, which must bounce off. Both are forced here so the walk
+        // exercises them instead of wandering off.
+        if (state.poisoned && chance(0.6)) {
+          repairOp(state, label);
+          continue;
+        }
+        if (state.poisoned && chance(0.43)) {
+          pick([(s, l) => addElementOp(s, l, pick(["input", "output"])), (s, l) => deleteElementOp(s, l, pick(["input", "output"])), addPairOp, deletePairOp])(state, label);
+          continue;
+        }
+        pick(OP_BAG)(state, label);
       }
-      if (state.poisoned && chance(0.43)) {
-        pick([(s, l) => addElementOp(s, l, pick(["input", "output"])), (s, l) => deleteElementOp(s, l, pick(["input", "output"])), addPairOp, deletePairOp])(state, label);
-        continue;
-      }
-      pick(OP_BAG)(state, label);
+      // Every walk ends on a building document: repair any poisoned field and
+      // rebuild once more.
+      if (state.poisoned) repairOp(state, `iteration ${i} (${fixture.name}) final repair`);
+      mustBuild(structuredClone(state.doc), `iteration ${i} (${fixture.name}) final rebuild`);
+      note("walk-complete");
     }
-    // Every walk ends on a building document: repair any poisoned field and
-    // rebuild once more.
-    if (state.poisoned) repairOp(state, `iteration ${i} (${fixture.name}) final repair`);
-    mustBuild(structuredClone(state.doc), `iteration ${i} (${fixture.name}) final rebuild`);
-    note("walk-complete");
+  } catch (error) {
+    throw withReplay(error, replayLine("PSBT_EDITOR_FUZZ", EDITOR_ENV.seed, ITERATIONS, TEST_NAME, "test/psbt-editor-fuzz.test.mjs"));
   }
 });
 

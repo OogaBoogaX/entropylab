@@ -64,7 +64,13 @@ export function taggedHash(tag, ...chunks) {
     bytes.set(chunk, offset);
     offset += chunk.length;
   }
-  return sha256(bytes);
+  try {
+    return sha256(bytes);
+  } finally {
+    // The chunks can include a Silent Payments scan private key or a shared
+    // secret; sha256 has copied what it needs before this returns.
+    bytes.fill(0);
+  }
 }
 
 export function serUint32(value) {
@@ -132,9 +138,9 @@ const readCompactSize = (bytes, offset) => {
   }
   if (first === 0xfe) {
     if (offset + 5 > bytes.length) throw new Error("Witness ended inside a compact size.");
-    const value = bytes[offset + 1] | (bytes[offset + 2] << 8) | (bytes[offset + 3] << 16) | (bytes[offset + 4] << 24);
+    const value = (bytes[offset + 1] | (bytes[offset + 2] << 8) | (bytes[offset + 3] << 16) | (bytes[offset + 4] << 24)) >>> 0;
     if (value < 0x10000) throw new Error("Non-minimal compact size.");
-    return [value >>> 0, offset + 5];
+    return [value, offset + 5];
   }
   throw new Error("Witness compact size is too large.");
 };
@@ -153,6 +159,7 @@ export function parseWitnessHex(hex) {
     stack.push(bytes.slice(offset, offset + length));
     offset += length;
   }
+  if (offset !== bytes.length) throw new Error("Witness has trailing bytes.");
   return stack;
 }
 
@@ -184,10 +191,67 @@ const compressedPointOrNull = (bytes) => {
   }
 };
 
+// The key a P2WPKH spend (native or P2SH-wrapped) reveals: the last witness
+// item, which consensus requires to hash to the 20-byte key hash. Pasted data
+// that breaks that is refused rather than skipped, since the send flow would
+// drop a skipped input from its key sum while the chain counts it. A
+// consistent uncompressed key is ineligible under BIP-352 (null), as before.
+const p2wpkhWitnessKey = (keyhash, witness) => {
+  const key = witness[witness.length - 1];
+  if (!witness.length || !(key instanceof Uint8Array) || !equalBytes(hash160(key), keyhash)) {
+    throw new Error("A P2WPKH input's witness key does not hash to the key hash it spends. Check the pasted witness.");
+  }
+  return compressedPointOrNull(key);
+};
+
+// The pushes a scriptSig makes, in order, or null when the script is not
+// push-only or a push overruns it. OP_0 pushes empty, OP_1NEGATE pushes
+// [0x81] and OP_n pushes [n]; a P2SH scriptSig must be push-only (BIP 16).
+const scriptSigPushes = (scriptSig) => {
+  const pushes = [];
+  let offset = 0;
+  while (offset < scriptSig.length) {
+    const opcode = scriptSig[offset];
+    offset += 1;
+    if (opcode === 0x4f) {
+      pushes.push(Uint8Array.of(0x81));
+      continue;
+    }
+    if (opcode >= 0x51 && opcode <= 0x60) {
+      pushes.push(Uint8Array.of(opcode - 0x50));
+      continue;
+    }
+    let length;
+    if (opcode === 0x00) length = 0;
+    else if (opcode <= 0x4b) length = opcode;
+    else if (opcode === 0x4c || opcode === 0x4d || opcode === 0x4e) {
+      const width = opcode === 0x4c ? 1 : opcode === 0x4d ? 2 : 4;
+      if (offset + width > scriptSig.length) return null;
+      // Push lengths are little-endian in Bitcoin Script.
+      length = 0;
+      for (let i = width - 1; i >= 0; i--) length = length * 256 + scriptSig[offset + i];
+      offset += width;
+    } else {
+      return null;
+    }
+    if (offset + length > scriptSig.length) return null;
+    pushes.push(scriptSig.slice(offset, offset + length));
+    offset += length;
+  }
+  return pushes;
+};
+
+// BIP 141: a witness program is a version byte (OP_0 or OP_1..OP_16)
+// followed by one direct push of 2..40 bytes that ends the script.
+const isWitnessProgram = (script) => script.length >= 4 && script.length <= 42
+  && (script[0] === 0x00 || (script[0] >= 0x51 && script[0] <= 0x60))
+  && script[1] >= 2 && script[1] <= 40 && script[1] === script.length - 2;
+
 export function extractInputPubKey(vin) {
   const prevout = vinPrevoutScript(vin);
   const scriptSig = vin.scriptSig instanceof Uint8Array ? vin.scriptSig : hexToBytes(vin.scriptSig || "");
-  const witness = Array.isArray(vin.witness) ? vin.witness : parseWitnessHex(vin.txinwitness || "");
+  // A non-empty witness array wins; an empty one does not hide txinwitness.
+  const witness = Array.isArray(vin.witness) && vin.witness.length ? vin.witness : parseWitnessHex(vin.txinwitness || "");
   if (isP2pkh(prevout)) {
     const spkHash = prevout.slice(3, 23);
     for (let i = scriptSig.length; i >= 33; i--) {
@@ -196,19 +260,52 @@ export function extractInputPubKey(vin) {
       const point = compressedPointOrNull(candidate);
       if (point) return { point, isTaproot: false };
     }
+    // A consistent uncompressed or hybrid key is ineligible under BIP-352,
+    // as before. A scriptSig with no 33- or 65-byte window hashing to the
+    // key hash is mangled paste: a valid P2PKH spend must reveal the key,
+    // and skipping the input would silently drop it from the key sum.
+    for (let i = scriptSig.length; i >= 65; i--) {
+      if (equalBytes(hash160(scriptSig.slice(i - 65, i)), spkHash)) return null;
+    }
+    throw new Error("A P2PKH input's scriptSig does not contain the key its prevout pays to. Check the pasted prevout and scriptSig.");
   }
   if (isP2sh(prevout)) {
-    const redeem = scriptSig.slice(1);
-    if (isP2wpkh(redeem) && witness.length) {
-      const point = compressedPointOrNull(witness[witness.length - 1]);
-      if (point) return { point, isTaproot: false };
+    // A valid P2SH spend's scriptSig is push-only and its last push is the
+    // redeem script the prevout hash commits to (BIP 16), with or without a
+    // witness. Pasted data that breaks that is refused, not skipped: the
+    // send flow treats a skipped input as ineligible and leaves it out of
+    // the key sum, while the chain would count a P2SH-P2WPKH input, so the
+    // output would be one the recipient never finds.
+    const pushes = scriptSigPushes(scriptSig);
+    const redeem = pushes && pushes.length ? pushes[pushes.length - 1] : null;
+    const committed = !!redeem && equalBytes(hash160(redeem), prevout.slice(2, 22));
+    const program = committed && isWitnessProgram(redeem);
+    // A redeem that is a witness program must be the scriptSig's single
+    // direct push (consensus WITNESS_MALLEATED_P2SH), and a legacy redeem
+    // must carry no witness (consensus WITNESS_UNEXPECTED).
+    const shapeOk = program
+      ? scriptSig.length === redeem.length + 1 && scriptSig[0] === redeem.length
+      : !witness.length;
+    if (!committed || !shapeOk) {
+      throw new Error("A P2SH input's scriptSig does not push the redeem script its prevout commits to. Check the pasted prevout and scriptSig.");
     }
+    if (program && isP2wpkh(redeem)) {
+      const point = p2wpkhWitnessKey(redeem.slice(2, 22), witness);
+      return point ? { point, isTaproot: false } : null;
+    }
+    // P2SH-P2WSH, future witness versions and consistent legacy P2SH redeems
+    // (e.g. multisig) are ineligible and skipped as before.
+    return null;
   }
-  if (isP2wpkh(prevout) && witness.length) {
-    const point = compressedPointOrNull(witness[witness.length - 1]);
+  if (isP2wpkh(prevout)) {
+    const point = p2wpkhWitnessKey(prevout.slice(2, 22), witness);
     if (point) return { point, isTaproot: false };
   }
-  if (isP2tr(prevout) && witness.length) {
+  if (isP2tr(prevout)) {
+    // Every P2TR spend carries a witness (consensus). Without one the pasted
+    // vin cannot show whether it is an ineligible NUMS script-path spend, and
+    // skipping it would drop a key-path input from the key sum.
+    if (!witness.length) throw new Error("A P2TR input has no witness. Check the pasted witness.");
     const stack = witness.slice();
     if (stack.length > 1 && stack[stack.length - 1][0] === 0x50) stack.pop();
     if (stack.length > 1) {
@@ -223,6 +320,76 @@ export function extractInputPubKey(vin) {
   }
   return null;
 }
+
+// A vin carries spend data when its scriptSig holds bytes or its witness
+// holds items; a sender pastes its inputs before signing, so both are empty.
+// The shapes are the ones extractInputPubKey accepts (raw bytes or hex
+// string, witness array or serialized hex).
+export const vinHasSpendData = (vin) => {
+  const scriptSig = vin.scriptSig instanceof Uint8Array ? vin.scriptSig : hexToBytes(vin.scriptSig || "");
+  // Either witness field counts: a vin carrying an empty array and hex
+  // witness data is not treated as unsigned.
+  return scriptSig.length > 0 || (Array.isArray(vin.witness) && vin.witness.length > 0) || parseWitnessHex(vin.txinwitness || "").length > 0;
+};
+
+// The eligible key of an input that has no spend data, resolved from its
+// private key: a sender has no signatures at output-building time, so the
+// key cannot be read out of a scriptSig or witness the way
+// extractInputPubKey does. The scalar must produce the prevout script — the
+// same key the later signed spend will reveal — or the input is refused;
+// any other prevout type stays ineligible (null), as with spend data.
+const unsignedInputKey = (vin, index) => {
+  const prevout = vinPrevoutScript(vin);
+  const scalar = scalarFromBytes(typeof vin.private_key === "string" ? hexToBytes(vin.private_key) : vin.private_key);
+  const pub = publicKeyForScalar(scalar);
+  const mismatch = new Error(`Input ${index} private key does not match its eligible input public key.`);
+  const point = Point.fromBytes(pub);
+  // A key hash that matches the scalar's uncompressed (0x04) or hybrid
+  // (0x06/0x07, SEC1) key encoding is consistent but ineligible under
+  // BIP-352, exactly as its signed form is skipped.
+  const uncompressed = point.toBytes(false);
+  const hybrid = Uint8Array.from(uncompressed);
+  hybrid[0] = pointHasEvenY(point) ? 0x06 : 0x07;
+  const keyHashInput = (keyhash) => {
+    if (equalBytes(hash160(pub), keyhash)) return { point, isTaproot: false };
+    if (equalBytes(hash160(uncompressed), keyhash)) return null;
+    if (equalBytes(hash160(hybrid), keyhash)) return null;
+    throw mismatch;
+  };
+  if (isP2pkh(prevout)) return keyHashInput(prevout.slice(3, 23));
+  if (isP2wpkh(prevout)) return keyHashInput(prevout.slice(2, 22));
+  if (isP2sh(prevout)) {
+    // The scalar's P2SH-P2WPKH script: a914 || hash160(0014 || hash160(key)) || 87.
+    // Matching only the uncompressed or hybrid key is consistent but
+    // ineligible, like the signed form. Any other P2SH (multisig,
+    // P2SH-P2WSH) cannot be told from a wrong key without its redeem
+    // script, so it is refused: paste the scriptSig (the redeem push needs
+    // no signature) and it is skipped.
+    const p2shP2wpkh = (key) => {
+      const redeem = new Uint8Array(22);
+      redeem[1] = 0x14;
+      redeem.set(hash160(key), 2);
+      const script = new Uint8Array(23);
+      script[0] = 0xa9;
+      script[1] = 0x14;
+      script.set(hash160(redeem), 2);
+      script[22] = 0x87;
+      return script;
+    };
+    if (equalBytes(p2shP2wpkh(pub), prevout)) return { point, isTaproot: false };
+    if (equalBytes(p2shP2wpkh(uncompressed), prevout)) return null;
+    if (equalBytes(p2shP2wpkh(hybrid), prevout)) return null;
+    throw mismatch;
+  }
+  if (isP2tr(prevout)) {
+    // The private key of a taproot input is already the BIP-341-tweaked key
+    // of the output key, so the eligible point is the prevout program
+    // itself, exactly as extractInputPubKey returns for a key-path spend.
+    if (!equalBytes(pointToXOnly(Point.fromBytes(pub)), prevout.slice(2, 34))) throw mismatch;
+    return { point: pointFromXOnly(prevout.slice(2, 34)), isTaproot: true };
+  }
+  return null;
+};
 
 export function inputHash(outpoints, sumPoint) {
   if (!outpoints.length) throw new Error("Silent payment input hash needs at least one outpoint.");
@@ -278,7 +445,12 @@ export function decodeSilentPaymentAddress(address, expectedHrp) {
 
 export function generateLabel(scanPriv, m) {
   const scalar = scanPriv instanceof Uint8Array ? scalarFromBytes(scanPriv) : scanPriv;
-  return scalarFromBytes(taggedHash("BIP0352/Label", bigToBytes32(scalar), serUint32(m)));
+  const scalarBytes = bigToBytes32(scalar);
+  try {
+    return scalarFromBytes(taggedHash("BIP0352/Label", scalarBytes, serUint32(m)));
+  } finally {
+    scalarBytes.fill(0); // embeds the scan private key
+  }
 }
 
 export function labeledSpendPoint(scanPriv, spendPoint, m) {
@@ -333,8 +505,17 @@ export function deriveSilentPaymentKeys(masterSeed, { coinType = 0, account = 0 
 }
 
 const encodeKeyExpression = (hrp, payload) => {
-  const words = [0, ...toWords(payload)];
-  return bech32mEncode(hrp, words);
+  // Prepend the version in place. A spread would abandon the array toWords
+  // returned, which carries the scan (and, for spspend, spend) private-key
+  // bits (RT-JSBOUNDARY-1).
+  const words = toWords(payload);
+  words.unshift(0);
+  try {
+    return bech32mEncode(hrp, words);
+  } finally {
+    // The words carry the scan (and, for spspend, spend) private key bits.
+    words.fill(0);
+  }
 };
 
 export function encodeSpscan(scanPriv, spendPub, network = "mainnet") {
@@ -377,14 +558,30 @@ export function p2trAddressFromXonly(xonly, network = "mainnet") {
 // string, or the published-vector { scriptPubKey: { hex } } form).
 export const vinPrevoutScript = (vin) => (vin.prevout instanceof Uint8Array ? vin.prevout : hexToBytes(typeof vin.prevout === "string" ? vin.prevout : vin.prevout.scriptPubKey.hex));
 
-const normalizeVin = (vin) => ({
-  txid: vin.txid,
-  vout: vin.vout,
-  scriptSig: vin.scriptSig || "",
-  txinwitness: vin.txinwitness || "",
-  prevout: vinPrevoutScript(vin),
-  private_key: vin.private_key,
-});
+// A vin whose witness array is read as bytes: hex-string items (JSON) become
+// bytes, byte arrays are kept, and any other item throws in hexToBytes, so a
+// witness that cannot be read is never ignored. The app's send flow applies
+// this to each pasted vin before anything reads its witness.
+export const normalizeVinWitness = (vin) => (
+  vin && typeof vin === "object" && Array.isArray(vin.witness) && vin.witness.length
+    ? { ...vin, witness: vin.witness.map((item) => (item instanceof Uint8Array ? item : hexToBytes(item))) }
+    : vin
+);
+
+const normalizeVin = (raw) => {
+  const vin = normalizeVinWitness(raw);
+  return {
+    txid: vin.txid,
+    vout: vin.vout,
+    scriptSig: vin.scriptSig || "",
+    txinwitness: vin.txinwitness || "",
+    // The witness-array form extractInputPubKey accepts; anything else is
+    // left out, as before, and txinwitness is used.
+    witness: Array.isArray(vin.witness) && vin.witness.length ? vin.witness : undefined,
+    prevout: vinPrevoutScript(vin),
+    private_key: vin.private_key,
+  };
+};
 
 // BIP-352 spends a taproot input with "the private key corresponding to the
 // taproot output key (i.e. the tweaked private key)": the BIP-341 key-path
@@ -410,7 +607,12 @@ export function eligibleInputKeys(vins) {
   const privkeys = [];
   for (const [index, raw] of vins.entries()) {
     const vin = normalizeVin(raw);
-    const extracted = extractInputPubKey(vin);
+    // A sender has no signatures yet: an input that carries its private key
+    // but has no spend data is resolved from that key and its prevout script
+    // type instead of the scriptSig or witness it does not have.
+    const extracted = vin.private_key && !vinHasSpendData(vin)
+      ? unsignedInputKey(vin, index)
+      : extractInputPubKey(vin);
     if (!extracted) continue;
     pubkeys.push(extracted);
     if (vin.private_key) {

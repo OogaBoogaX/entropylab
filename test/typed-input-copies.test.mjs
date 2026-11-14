@@ -147,8 +147,16 @@ test("the revealed passphrase is exactly what the wallet was derived with", asyn
   // [typed, the passphrase the seed hashes]
   const cases = [
     ["\uFEFFTREZOR", "\uFEFFTREZOR"], ["\uFEFF", "\uFEFF"], ["\uFEFF\uFEFFTREZOR", "\uFEFF\uFEFFTREZOR"], ["TREZOR\uFEFF", "TREZOR\uFEFF"],
-    ["\uD800TREZOR", "\uFFFDTREZOR"],
+    // A wallet once derived from a lone surrogate (hashed as U+FFFD) is
+    // still recovered by typing the U+FFFD the page used to reveal.
+    ["\uFFFDTREZOR", "\uFFFDTREZOR"],
   ];
+  // The old page hashed the salt as TextEncoder bytes, which are identical for
+  // "\uD800TREZOR" and "\uFFFDTREZOR", so the U+FFFD case above is that old wallet.
+  assert.deepEqual(new TextEncoder().encode("mnemonic\uD800TREZOR"), new TextEncoder().encode("mnemonic\uFFFDTREZOR"));
+  // A lone surrogate itself is refused: it has no UTF-8 encoding, and
+  // substituting U+FFFD derived a wallet the user never typed.
+  await assert.rejects(() => seedWallet("\uD800TREZOR"), /Invalid passphrase/);
   const rootOf = (pass) => ScureHDKey.fromMasterSeed(mnemonicToSeedSync(WORDS, pass)).privateExtendedKey;
   const wrong = [];
   for (const [typed, hashed] of cases) {

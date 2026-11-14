@@ -3,17 +3,69 @@
 Release notes for EntropyLab. Each release is a single self-contained
 `entropylab.html`; verify it against the signed `SHA256SUMS.txt` before use.
 
+## Unreleased
+
+- **Secure entry, Scan SeedQR and Scan QR (private key) ship in Key
+  Station**: they were preview-only until now.
+  - **Secure entry** is an optional switch, off on every load. It limits
+    copies of secrets during entry: seed words go through a one-at-a-time
+    word picker, a private key into a masked field, and hashed dice rolls
+    onto a pad, never as page text.
+  - **The scans** read a SeedQR, CompactSeedQR, BIP39 words or a WIF from the
+    camera or a photo straight into Secure entry, after a confirmation that
+    names the format.
+  - Built in #1313, #1364, #1372, #1395 and #1405; fixed before shipping in
+    #1439, #1441 and #1442.
+- **Development builds say so**: `rock` (and so the live site) now carries
+  version `1.1.0-dev`, so its footer reads `v1.1.0-dev · commit …` instead of
+  the signed release's `v1.0.0` (#1406). A published release whose page
+  still says `-dev` fails the release-assets check.
+- **Release signing: MrHodlX's key `64434EE4…237C` is revoked** (it was on a
+  computer later found compromised). Don't trust signatures from it,
+  including its v1.0.0 block; v1.0.0 stays verifiable with the other three
+  signatures. See [SECURITY.md → Release signing keys](SECURITY.md#release-signing-keys).
+- **PSBT camera lifecycle**: keep one camera stream and one deadline across
+  animated parts. Preserve a pending permission prompt through visible blur,
+  but reject a grant while the page is hidden or unfocused. Stop capture on
+  cancellation or panel supersession, mark teardown stopped, and ignore late
+  grants and frames. The shared scanner remains one-shot by default.
+- **Scan PSBT QR**: the PSBT Inspector, Nonce Inspector and PSBT Editor
+  fields, the fee-bump check's original, the PSBT sent to the signer and the
+  Editor's comparison PSBT gain a camera control that reads a PSBT from one static QR code or
+  an animated `ur:crypto-psbt` sequence. Only a payload that starts with the
+  PSBT magic is written to the field, after the whole code has arrived.
+  Clearing a tool, leaving the Transactions workspace, a language switch and
+  End Session close an open scanner and stop its camera.
+- **PSBT QR transports**: add PSBT-only BBQr (`H`, `2`, `Z`) to the existing
+  reader and accept complete pasted UR/BBQr transfers in the Editor and
+  PSBT Inspector. Bound compressed and decoded data, reject mixed transfers
+  and all pasted parts after completion, and retain independent SeedSigner
+  and Coinkite interoperability vectors. Camera lifecycle changes are separate.
+- **Passphrases starting with U+FEFF derive a different wallet than in
+  v1.0.0** (audit C2-E): the BIP39 salt now hashes the leading U+FEFF the way
+  the BIP39 reference does, and key-file export/import round-trips it
+  byte-faithfully. A passphrase that begins with U+FEFF (pasted, never typed)
+  opened the BOM-less wallet in v1.0.0; to reach that old wallet, enter the
+  passphrase without the leading U+FEFF.
+
 ## v1.0.0 — 2026-10-11
 
 First stable release. Source commit
 `c1037ba3a20d0c6db1b3265a7385b2944ce827e6`, the same commit as v1.0.0rc3:
-`entropylab.html` is byte-identical to rc3 (SHA-256
+the `entropylab.html` release asset is byte-identical to rc3 (SHA-256
 `bdf048ebbf9286a3b18998f28e1cccef1f9f9a0284a880c1864875f903adeb8d`), so
-`SHA256SUMS.txt` and the four rc3 signatures in `SHA256SUMS.asc` carry over
-unchanged.
+the release `SHA256SUMS.txt` and four rc3 signatures in `SHA256SUMS.asc`
+carry over unchanged.
 
-No changes since rc3. The release-candidate notes below describe what 1.0.0
-ships.
+The copies committed inside the v1.0.0 tag are from an earlier build, not
+those release assets. Their page has SHA-256
+`3804d57898224b8cfccfcacc8aa7c32cd93d514896de7e045e14ed35c22cf2f7`, and
+their stale signature file does not verify against their stale manifest.
+Use the release downloads; see
+[Verify your download → known issue](docs/Verify_Your_Download.md#known-issue-v100).
+
+No source changes since rc3. The release-candidate notes below describe what
+1.0.0 ships.
 
 ## v1.0.0rc3 — 2026-10-10
 

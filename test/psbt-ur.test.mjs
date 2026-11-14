@@ -7,6 +7,7 @@ import {
   hodlBytewordsDecode,
   hodlCborBstr,
   hodlUrPartCbor,
+  hodlUrEncodeMessage,
   hodlUrEncodePsbt,
   hodlUrDecodePsbt,
 } from "../src/js/psbt-ur.js";
@@ -194,4 +195,63 @@ test("legacy pre-MUR fragments still decode", () => {
   assert.equal(hexEncode(decoded.psbt), hexEncode(psbt));
   assert.equal(decoded.parts, chunks.length);
   assert.deepEqual(hodlUrDecodePsbt([parts[1], parts[0], ...parts.slice(1)]).psbt, psbt);
+});
+
+// Blockchain Commons bc-ur (C++ reference implementation) test.cpp
+// "test_ur_encoder": the published ur:bytes serialization of the same
+// 256-byte Xoshiro256("Wolf") message as above, as a CBOR byte string split
+// at the reference encoder's nominal 29-byte fragment length (its 30-byte
+// maximum reduced by find_nominal_fragment_length: ceil(259/9) = 29). This is
+// the encode path watchOnlyQrPlan uses (hodlCborBstr + hodlUrEncodeMessage).
+const BC_UR_REFERENCE_PARTS = [
+  "ur:bytes/1-9/lpadascfadaxcywenbpljkhdcahkadaemejtswhhylkepmykhhtsytsnoyoyaxaedsuttydmmhhpktpmsrjtdkgslpgh",
+  "ur:bytes/2-9/lpaoascfadaxcywenbpljkhdcagwdpfnsboxgwlbaawzuefywkdplrsrjynbvygabwjldapfcsgmghhkhstlrdcxaefz",
+  "ur:bytes/3-9/lpaxascfadaxcywenbpljkhdcahelbknlkuejnbadmssfhfrdpsbiegecpasvssovlgeykssjykklronvsjksopdzmol",
+  "ur:bytes/4-9/lpaaascfadaxcywenbpljkhdcasotkhemthydawydtaxneurlkosgwcekonertkbrlwmplssjtammdplolsbrdzcrtas",
+  "ur:bytes/5-9/lpahascfadaxcywenbpljkhdcatbbdfmssrkzmcwnezelennjpfzbgmuktrhtejscktelgfpdlrkfyfwdajldejokbwf",
+  "ur:bytes/6-9/lpamascfadaxcywenbpljkhdcackjlhkhybssklbwefectpfnbbectrljectpavyrolkzczcpkmwidmwoxkilghdsowp",
+  "ur:bytes/7-9/lpatascfadaxcywenbpljkhdcavszmwnjkwtclrtvaynhpahrtoxmwvwatmedibkaegdosftvandiodagdhthtrlnnhy",
+  "ur:bytes/8-9/lpayascfadaxcywenbpljkhdcadmsponkkbbhgsoltjntegepmttmoonftnbuoiyrehfrtsabzsttorodklubbuyaetk",
+  "ur:bytes/9-9/lpasascfadaxcywenbpljkhdcajskecpmdckihdyhphfotjojtfmlnwmadspaxrkytbztpbauotbgtgtaeaevtgavtny",
+];
+
+test("ur:bytes encode matches the published bc-ur reference strings", () => {
+  const message = concat(...MUR_FRAGMENTS.map(hex)).slice(0, MUR_MESSAGE_LEN);
+  assert.deepEqual(hodlUrEncodeMessage("bytes", hodlCborBstr(message), { maxBytes: 29 }), BC_UR_REFERENCE_PARTS);
+});
+
+test("legacy multi-part reassembly discloses that the whole message is unverified (audit L2)", () => {
+  // The legacy sequencing format (BCR-2020-005, pre-MUR) ties its fragments
+  // together only through per-fragment Bytewords checksums — there is no
+  // whole-message checksum to compare against, so fragments spliced from two
+  // same-length payloads reassemble without anything to fail. The decoder
+  // cannot refuse that splice; the contract instead separates what was
+  // checksum-verified as a whole (single-part, MUR) from what was not
+  // (legacy multi-part), so a consumer never presents a spliced payload with
+  // verified confidence.
+  const legacyParts = (psbt) => {
+    const message = concat(hex("d90136"), hodlCborBstr(psbt));
+    const chunks = [];
+    for (let offset = 0; offset < message.length; offset += 40) chunks.push(message.slice(offset, offset + 40));
+    return { message, parts: chunks.map((chunk, i) => "ur:crypto-psbt/" + (i + 1) + "-" + chunks.length + "/" + hodlBytewordsEncode(chunk, "minimal")) };
+  };
+  const a = legacyParts(hex("70736274ff" + "aa".repeat(80)));
+  const b = legacyParts(hex("70736274ff" + "bb".repeat(80)));
+  // The audit's probe: fragment 2 of B substituted into A's sequence — every
+  // fragment passes its own checksum, and reassembly succeeds. The three
+  // 40-byte chunks cover the PSBT bytes at offsets 35/75 (the 5-byte tagged
+  // CBOR header sits in chunk 1).
+  const spliced = hodlUrDecodePsbt([a.parts[0], b.parts[1], ...a.parts.slice(2)]);
+  const psbtA = hex("70736274ff" + "aa".repeat(80)), psbtB = hex("70736274ff" + "bb".repeat(80));
+  const expectedPsbt = concat(psbtA.slice(0, 35), psbtB.slice(35, 75), psbtA.slice(75));
+  assert.equal(hexEncode(spliced.psbt), hexEncode(expectedPsbt), "the splice reassembles (the format cannot refuse it)");
+  assert.equal(spliced.wholeMessageVerified, false, "a legacy reassembly must not claim whole-message verification");
+  // An honest legacy reassembly discloses the same gap.
+  const honest = hodlUrDecodePsbt(a.parts);
+  assert.equal(honest.wholeMessageVerified, false);
+  // Single-part and MUR reassemblies are whole-message verified.
+  const single = hodlUrDecodePsbt(hodlUrEncodePsbt(hex("70736274ff010000000000")));
+  assert.equal(single.wholeMessageVerified, true);
+  const mur = hodlUrDecodePsbt(hodlUrEncodePsbt(hex("70736274ff" + "11".repeat(80)), { maxBytes: 40 }));
+  assert.equal(mur.wholeMessageVerified, true);
 });

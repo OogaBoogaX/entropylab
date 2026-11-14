@@ -8,10 +8,17 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { createHash } from "node:crypto";
 import { HDKey as ScureHDKey } from "@scure/bip32";
 import { mnemonicToSeedSync as scureMnemonicToSeed } from "@scure/bip39";
-import { deriveLndNode, deriveLdkNode, isKnownInternalVersion } from "../src/js/lightning.js";
+import { deriveLndNode, deriveLdkNode, isKnownInternalVersion, hodlInitLn, hodlLnWipeMem, hodlLnSetWorkerFactory } from "../src/js/lightning.js";
+import { createLnKeyHandler } from "../src/js/lightning-derive.js";
 import { aezeedDecode } from "../src/js/aezeed.js";
+import { hashesReady } from "../src/js/hashes.js";
+import { secp256k1Ready } from "../src/js/secp256k1.js";
+import { MiniDocument } from "./mini-dom.mjs";
+
+await Promise.all([secp256k1Ready, hashesReady]);
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
 const read = (path) => readFileSync(join(root, path), "utf8");
@@ -61,7 +68,7 @@ test("only known aezeed internal versions derive a node key", () => {
   assert.ok(isKnownInternalVersion(0), "LND's version");
   assert.ok(isKnownInternalVersion(1), "the toolkit's version");
   for (const unknown of [2, 3, 255]) assert.ok(!isKnownInternalVersion(unknown), `version ${unknown} is refused`);
-  const lnSource = read("src/js/lightning.js");
+  const lnSource = read("src/js/lightning-derive.js");
   assert.match(lnSource, /if \(!isKnownInternalVersion\(decoded\.internalVersion\)\)/, "the tool gates on it before deriving");
   assert.match(lnSource, /code: "internal-version"/, "the refusal is a named error");
 });
@@ -108,30 +115,1020 @@ const shell = read("src/shell.html");
 const appSource = read("src/js/app.js");
 
 test("the Lightning card ships in the shell with its controls", () => {
-  assert.match(shell, /<div class="card no-print tool-card" id="ln-card" role="tabpanel" hidden>/);
-  for (const id of ["ln-format", "ln-network", "ln-seed", "ln-pass", "ln-go", "ln-wipe", "ln-session", "ln-error", "ln-out"]) {
+  assert.match(shell, /<div[^>]*id="ln-card"[^>]*role="tabpanel"[^>]*hidden>/);
+  for (const id of ["ln-format", "ln-network-field", "ln-network-value", "ln-network-note", "ln-seed", "ln-pass", "ln-go", "ln-wipe", "ln-session", "ln-error", "ln-out"]) {
     assert.ok(shell.includes(`id="${id}"`), `${id} is missing from the shell`);
   }
   assert.match(shell, /id="ln-tool-intro"/);
 });
 
+test("the shell has no second network select", () => {
+  // The node key follows the page network: a second Network dropdown could
+  // disagree with the footer and derive a key for the wrong chain.
+  assert.ok(!shell.includes('id="ln-network"'), "the shell still carries the Lightning network select");
+  assert.ok(shell.includes('id="ln-network-value"'), "the shell is missing the read-only network value");
+  assert.ok(shell.includes('id="ln-network-note"'), "the shell is missing the network note");
+});
+
 test("the workspace switcher retains the held-back Lightning implementation", () => {
-  for (const entry of [/\["psbt", "PSBT", "PSBT"\]/, /\["journal", "Journal", "Journal"\]/]) {
+  for (const entry of [/\["psbt", "Transactions", "Txns"\]/, /\["journal", "Journal", "Journal"\]/]) {
     assert.match(appSource, entry);
   }
   assert.match(appSource, /getElementById\("ln-card"\)\.hidden = id !== "ln"/);
-  assert.match(appSource, /\["bip85", "sp", "msig", "calc", "vanity", "ln"\]\.forEach/);
+  assert.match(appSource, /\["bip85", "sp", "msig", "calc", "vanity", "ln", "core"\]\.forEach/);
   assert.match(appSource, /import \{ hodlInitLn, hodlLnWipeMem \} from "\.\/lightning\.js"/);
-  assert.match(appSource, /hodlInitLn\(\{ journalLog: hodlJournalLog, copyIcon: hodlClipboardIconMarkup \}\)/);
+  assert.match(appSource, /hodlInitLn\(\{ journalLog: hodlJournalLog, copyIcon: hodlClipboardIconMarkup, qrSvg: hodlQrSvg, pageNetwork: \(\) => hodlInspectorNetwork\(\) \}\)/);
 });
 
-test("a format or network change wipes the derived result", () => {
-  // A stale mainnet pubkey next to a flipped "Testnet" select is how a
-  // correct seed looks wrong: the change handler wipes and re-renders.
+test("a format or page network change wipes the derived result but not the invoice", () => {
+  // A stale mainnet pubkey next to a flipped setting is how a correct seed
+  // looks wrong: the shared change handler wipes and re-renders. The invoice
+  // card is not key material and must survive, so the handler calls the
+  // key-side wipe, never the full one.
   const lnSource = read("src/js/lightning.js");
-  const listener = lnSource.match(/for \(const id of \["ln-format", "ln-network"\]\) \{\s*document\.getElementById\(id\)\?\.addEventListener\("change", \(\) => \{([\s\S]*?)\}\);\s*\}/);
-  assert.ok(listener, "the change listener exists");
-  assert.match(listener[1], /hodlLnWipeMem\(\)/, "the change wipes the derived result");
-  assert.match(listener[1], /hodlLnRender\(\)/, "the change re-renders the empty state");
-  assert.match(listener[1], /hodlLnSyncFormat\(\)/, "the change still syncs the network field");
+  const handler = lnSource.match(/function hodlLnSettingsChanged\(\) \{([\s\S]*?)\n\}/);
+  assert.ok(handler, "the shared change handler exists");
+  assert.match(handler[1], /hodlLnKeyWipeMem\(\)/, "the change wipes the derived key result");
+  assert.doesNotMatch(handler[1], /hodlLnWipeMem\(\)/, "the change must not wipe the invoice card");
+  assert.match(handler[1], /hodlLnRender\(\)/, "the change re-renders the empty state");
+  assert.match(handler[1], /hodlLnSyncFormat\(\)/, "the change still syncs the network field");
+  assert.match(handler[1], /hodlLnInvRender\(\)/, "the change re-renders the invoice card");
+  // And the behaviour: a page network change wipes a derived result exactly
+  // as the old dropdown's change did; the same network announced again (at
+  // startup, or by a Journal key load) does not (red team, round 1).
+  let network = "mainnet";
+  const page = lnPage(() => network);
+  try {
+    const idle = page.getElementById("ln-session").textContent;
+    page.getElementById("ln-seed").value = AEZEED_VECTOR_WORDS;
+    lnDerive(page);
+    assert.ok(page.getElementById("ln-out").innerHTML.includes('id="ln-node-pubkey"'), "setup: the derive rendered a result");
+    page.dispatchEvent(new Event("hodl:network-default"));
+    assert.ok(page.getElementById("ln-out").innerHTML.includes('id="ln-node-pubkey"'), "the same network announced again wiped the derived key");
+    network = "testnet";
+    page.dispatchEvent(new Event("hodl:network-default"));
+    assert.equal(page.getElementById("ln-out").innerHTML, "", "the page network change left the derived result on screen");
+    // The status line goes back to exactly what it said at startup (Kimi K3,
+    // round 1), not merely to something else.
+    assert.equal(page.getElementById("ln-session").textContent, idle, "the status line did not return to its startup text after the wipe");
+  } finally {
+    hodlLnWipeMem();
+    delete globalThis.document;
+  }
+});
+
+// ── Tool behaviour through the real wiring (mini DOM) ───────────────────────
+
+// The published aezeed characterization mnemonic (see the end-to-end test
+// above): it deciphers to entropy 000102030405060708090a0b0c0d0e0f.
+const AEZEED_VECTOR_WORDS =
+  "ability result leisure oven shiver wedding toe broccoli exclude " +
+  "mosquito kind van action waste merit bundle robust source able " +
+  "advice core humor kitchen siren";
+const BIP39_VECTOR_WORDS = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about";
+
+// The tool wired over a mini DOM: the fixture carries the ids hodlInitLn
+// touches, and the derive runs through the real Derive button handler.
+function lnPage(network = "mainnet") {
+  const page = new MiniDocument();
+  globalThis.document = page;
+  // The selects carry the shell's options (shell.html #ln-card): a <select>
+  // only holds a set value that matches one of its options, so without them
+  // the fixture cannot switch the tool off aezeed and the BIP-39/LDK path
+  // never runs. The network is the page's (the footer menu), injected the
+  // way app.js injects it; the tool has no network select of its own.
+  page.body.innerHTML = '<select id="ln-format"><option value="aezeed" selected>aezeed · LND cipher seed</option><option value="bip39">BIP-39 · LDK (ldk-node)</option><option value="cln-hsm">Core Lightning hsm_secret</option></select>'
+    + '<label id="ln-network-field">Network<output id="ln-network-value"></output><span id="ln-network-note"></span></label>'
+    + '<button class="btn secondary" id="ln-hsm-upload" type="button">Choose hsm_secret</button><input type="file" id="ln-hsm-file" hidden>'
+    + '<textarea id="ln-seed"></textarea><input id="ln-pass" type="password">'
+    + '<button id="ln-go" type="button"></button><button id="ln-wipe" type="button"></button>'
+    + '<p id="ln-session"></p><p id="ln-error"></p><div id="ln-out"></div>'
+    + '<span id="ln-seed-help"></span>';
+  hodlInitLn({ journalLog() {}, copyIcon: () => "", pageNetwork: typeof network === "function" ? network : () => network });
+  return page;
+}
+
+// hodlInitLn assigns the Derive button's onclick; call it (the mini DOM
+// keeps it as a property), falling back to a dispatched click event.
+const lnDerive = (page) => {
+  const go = page.getElementById("ln-go");
+  if (typeof go.onclick === "function") go.onclick();
+  else go.dispatchEvent(new Event("click", { bubbles: true }));
+};
+
+// Worker factories over the real in-process protocol handler (the default
+// stand-in's twin), for the tests that must control the wire. A test that
+// installs one must restore the plain stand-in afterwards, and must wipe
+// first: the module keeps its worker across tests, so without a wipe the
+// derive would reuse a previous test's worker and never run the factory.
+const standInFactory = () => {
+  const worker = { onmessage: null, onerror: null, terminated: false };
+  const handle = createLnKeyHandler((message) => worker.onmessage?.({ data: message }));
+  worker.postMessage = (data) => {
+    if (!worker.terminated) handle(data);
+  };
+  worker.terminate = () => {
+    worker.terminated = true;
+  };
+  return { worker, url: null };
+};
+
+// A stand-in whose postMessage detaches the transferred buffers, as a real
+// Worker does: the page's view of the hsm_secret bytes is gone once posted.
+const detachingFactory = () => {
+  const worker = { onmessage: null, onerror: null, terminated: false };
+  const handle = createLnKeyHandler((message) => worker.onmessage?.({ data: message }));
+  worker.postMessage = (data, transfer) => {
+    if (!worker.terminated) handle(transfer ? structuredClone(data, { transfer }) : data);
+  };
+  worker.terminate = () => {
+    worker.terminated = true;
+  };
+  return { worker, url: null };
+};
+
+// The same handler, but its replies wait for flush(): the test decides when
+// an in-flight answer lands.
+// The same handler, but every message the page posts is kept: the derive's
+// coin type and network name are what the page sends, not what it renders.
+const recordedWorkers = [];
+const recordingFactory = () => {
+  const worker = { onmessage: null, onerror: null, terminated: false, posted: [] };
+  const handle = createLnKeyHandler((message) => worker.onmessage?.({ data: message }));
+  worker.postMessage = (data) => {
+    worker.posted.push(data);
+    if (!worker.terminated) handle(data);
+  };
+  worker.terminate = () => {
+    worker.terminated = true;
+  };
+  recordedWorkers.push(worker);
+  return { worker, url: null };
+};
+
+const queuedWorkers = [];
+const queuedFactory = () => {
+  const worker = { onmessage: null, onerror: null, terminated: false, queue: [] };
+  const handle = createLnKeyHandler((message) => worker.queue.push(message));
+  worker.postMessage = (data) => {
+    if (!worker.terminated) handle(data);
+  };
+  worker.terminate = () => {
+    worker.terminated = true;
+  };
+  worker.flush = () => {
+    for (const message of worker.queue.splice(0)) worker.onmessage?.({ data: message });
+  };
+  queuedWorkers.push(worker);
+  return { worker, url: null };
+};
+
+test("the shell carries the Core Lightning hsm_secret controls", () => {
+  assert.match(shell, /<option value="cln-hsm">/);
+  const upload = shell.match(/<button[^>]*\bid="ln-hsm-upload"[^>]*>/)?.[0];
+  assert.ok(upload, "#ln-hsm-upload is missing from the shell");
+  assert.match(upload, /\btype="button"/);
+  const file = shell.match(/<input[^>]*\bid="ln-hsm-file"[^>]*>/)?.[0];
+  assert.ok(file, "#ln-hsm-file is missing from the shell");
+  assert.match(file, /\btype="file"/);
+  assert.match(file, /\bhidden\b/);
+});
+
+test("the aezeed path renders its reveal switch on a page without the CLN controls", () => {
+  // The shell owns the CLN controls. A page that predates them (the LND/LDK
+  // fixtures, and any shell without the markup) must still derive aezeed and
+  // render #ln-reveal: the tool must not invent a format option, which would
+  // flip an empty select to cln-hsm and send the aezeed words down the CLN
+  // path (the round-1 regression).
+  const page = new MiniDocument();
+  globalThis.document = page;
+  page.body.innerHTML = '<select id="ln-format"></select>'
+    + '<label id="ln-network-field">Network<output id="ln-network-value"></output><span id="ln-network-note"></span></label>'
+    + '<textarea id="ln-seed"></textarea><input id="ln-pass" type="password">'
+    + '<button id="ln-go" type="button"></button><button id="ln-wipe" type="button"></button>'
+    + '<p id="ln-session"></p><p id="ln-error"></p><div id="ln-out"></div>'
+    + '<span id="ln-seed-help"></span>';
+  try {
+    hodlInitLn({ journalLog() {}, copyIcon: () => "" });
+    assert.equal(page.getElementById("ln-format").options.length, 0, "the tool invented a format option");
+    page.getElementById("ln-seed").value = AEZEED_VECTOR_WORDS;
+    lnDerive(page);
+    assert.equal(page.getElementById("ln-error").textContent, "", "the aezeed derive reported an error");
+    assert.ok(page.getElementById("ln-reveal"), "the aezeed derive rendered no reveal switch");
+  } finally {
+    delete globalThis.document;
+  }
+});
+
+test("the tool derives the published aezeed vector through its real wiring", () => {
+  const page = lnPage();
+  try {
+    page.getElementById("ln-seed").value = AEZEED_VECTOR_WORDS;
+    lnDerive(page);
+    assert.equal(page.getElementById("ln-error").textContent, "", "the derive reported an error");
+    const expected = ScureHDKey.fromMasterSeed(hexToBytes("000102030405060708090a0b0c0d0e0f")).derive("m/1017'/0'/6'/0/0");
+    assert.ok(page.getElementById("ln-out").innerHTML.includes(bytesToHex(expected.publicKey)), "the derived node pubkey is not on screen");
+  } finally {
+    delete globalThis.document;
+  }
+});
+
+test("the tool derives the LDK node key through its real wiring", () => {
+  const page = lnPage();
+  try {
+    page.getElementById("ln-format").value = "bip39";
+    page.getElementById("ln-seed").value = BIP39_VECTOR_WORDS;
+    lnDerive(page);
+    assert.equal(page.getElementById("ln-error").textContent, "", "the derive reported an error");
+    assert.ok(page.getElementById("ln-out").innerHTML.includes(ldkExpected(BIP39_VECTOR_WORDS, "").nodePubKey), "the derived node pubkey is not on screen");
+  } finally {
+    delete globalThis.document;
+  }
+});
+
+test("the aezeed derive follows the page network's coin type and CLN network name", () => {
+  // LND's identity path is m/1017'/coinType'/6'/0/0 (lnd/keychain/
+  // derivation.go): 0' on mainnet, 1' on every test network. CLN has only
+  // mainnet and testnet parameters, so signet and regtest take testnet's.
+  hodlLnSetWorkerFactory(recordingFactory);
+  try {
+    for (const [network, coinType, name] of [
+      ["mainnet", 0, "bitcoin"],
+      ["testnet", 1, "testnet"],
+      ["signet", 1, "testnet"],
+      ["regtest", 1, "testnet"],
+    ]) {
+      const page = lnPage(network);
+      try {
+        // The module keeps its worker across tests: wipe first so the derive
+        // spawns through the recording factory instead of reusing one.
+        hodlLnWipeMem();
+        page.getElementById("ln-seed").value = AEZEED_VECTOR_WORDS;
+        lnDerive(page);
+        const worker = recordedWorkers.at(-1);
+        assert.ok(worker, `${network}: the derive spawned no worker`);
+        const derive = worker.posted.find((message) => message.type === "derive");
+        assert.ok(derive, `${network}: no derive was posted`);
+        assert.equal(derive.coinType, coinType, `${network}: the LND coin type`);
+        assert.equal(derive.network, name, `${network}: the CLN network name`);
+      } finally {
+        hodlLnWipeMem();
+        delete globalThis.document;
+      }
+    }
+  } finally {
+    hodlLnSetWorkerFactory(standInFactory);
+  }
+});
+
+test("the network value names the page network and follows it", () => {
+  let network = "mainnet";
+  const page = lnPage(() => network);
+  try {
+    const value = page.getElementById("ln-network-value");
+    const note = page.getElementById("ln-network-note");
+    assert.ok(value, "#ln-network-value is missing");
+    assert.ok(note, "#ln-network-note is missing");
+    const initial = value.textContent;
+    assert.ok(initial.length > 0, "the network value is empty after init");
+    assert.ok(note.textContent.length > 0, "the network note is empty after init");
+    network = "testnet";
+    page.dispatchEvent(new Event("hodl:network-default"));
+    assert.ok(value.textContent.length > 0, "the network value is empty after a page network change");
+    assert.notEqual(value.textContent, initial, "the network value did not follow the page network");
+    assert.ok(note.textContent.length > 0, "the network note is empty after a page network change");
+  } finally {
+    delete globalThis.document;
+  }
+});
+
+test("an oversized seed paste is refused before any normalizing or deriving", () => {
+  // The 24-word vector plus 6 kB of punctuation noise: the normalizer would
+  // strip the noise and derive, so the length refusal must come first.
+  const page = lnPage();
+  try {
+    page.getElementById("ln-seed").value = `${AEZEED_VECTOR_WORDS} ${"1!".repeat(3000)}`;
+    lnDerive(page);
+    // The refusal is the keyed "seed-too-long" error; its wording is
+    // translatable copy, so assert the outcome, not the text: an error is
+    // shown and nothing was derived (the normalizer would have stripped the
+    // noise and derived had the length check come after it).
+    assert.ok(page.getElementById("ln-error").textContent.length > 0, "the oversized paste was not refused");
+    assert.equal(page.getElementById("ln-out").innerHTML, "", "an oversized paste derived a node key");
+  } finally {
+    delete globalThis.document;
+  }
+});
+
+test("the LDK tool path refuses a lone-surrogate passphrase and derives nothing", () => {
+  const page = lnPage();
+  try {
+    page.getElementById("ln-format").value = "bip39";
+    page.getElementById("ln-seed").value = BIP39_VECTOR_WORDS;
+    page.getElementById("ln-pass").value = "word\uD800";
+    lnDerive(page);
+    // The refusal is the keyed "passphrase-utf8" error; assert the outcome,
+    // not the translatable wording.
+    assert.ok(page.getElementById("ln-error").textContent.length > 0, "the passphrase was not refused");
+    assert.equal(page.getElementById("ln-out").innerHTML, "", "a refused passphrase derived a node key");
+  } finally {
+    delete globalThis.document;
+  }
+});
+
+test("deriveLdkNode refuses a passphrase that is not well-formed Unicode", () => {
+  // A BIP39 passphrase is UTF-8 text; a lone surrogate would silently encode
+  // as U+FFFD and derive a wallet the user never typed (the station's BIP39
+  // path refuses the same, #1015). Both halves of the rule: a high surrogate
+  // not followed by a low one, and a low surrogate without a high one.
+  for (const bad of ["\uD800", "\uDC00", "word\uD800", "word\uDC00word", "\uD800\uD800", "word\uD800A"]) {
+    // The wrong side here was the test, not the derivation: the guard throws
+    // the keyed refusal, but assert.throws does not hand the caught error
+    // back, so the .code/.key assertions read undefined. Capture it
+    // explicitly and assert on the error object itself.
+    let error = null;
+    try {
+      deriveLdkNode(BIP39_VECTOR_WORDS, bad);
+    } catch (thrown) {
+      error = thrown;
+    }
+    assert.ok(error, `passphrase ${JSON.stringify(bad)} derived`);
+    // The error's code is the stable marker; the key is translatable copy,
+    // asserted only for presence (AGENTS.md).
+    assert.equal(error.code, "passphrase-utf8");
+    assert.ok(typeof error.key === "string" && error.key.length > 0, "the refusal carries a translation key");
+  }
+  // Control: a real astral character (a high+low pair) is honest UTF-8 and
+  // derives exactly what the independent @scure implementation derives.
+  const paired = "pass\uD83D\uDE00";
+  assert.equal(deriveLdkNode(BIP39_VECTOR_WORDS, paired).nodePubKey, ldkExpected(BIP39_VECTOR_WORDS, paired).nodePubKey);
+});
+
+// ── Core Lightning hsm_secret (type 2) ──────────────────────────────────────
+
+// CLN v26.06.9, tests/test_wallet.py: the mnemonic hsm_secret that
+// `lightning-hsmtool generatehsm` writes with no passphrase.
+const CLN_ABANDON = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about";
+const CLN_NODE_ID = "03653e90c1ce4660fd8505dd6d643356e93cfe202af109d382787639dd5890e87d";
+const CLN_DESCRIPTORS = [
+  "wpkh(xpub6BgBgsespWvERF3LHQu6CnqdvfEvtMcQjYrcRzx53QJjSxarj2afYWcLteoGVky7D3UKDP9QyrLprQ3VCECoY49yfdDEHGCtMMj92pReUsQ/0/*)#hjszq0wk",
+  "sh(wpkh(xpub6BgBgsespWvERF3LHQu6CnqdvfEvtMcQjYrcRzx53QJjSxarj2afYWcLteoGVky7D3UKDP9QyrLprQ3VCECoY49yfdDEHGCtMMj92pReUsQ/0/*))#u0t3u3xz",
+  "tr(xpub6BgBgsespWvERF3LHQu6CnqdvfEvtMcQjYrcRzx53QJjSxarj2afYWcLteoGVky7D3UKDP9QyrLprQ3VCECoY49yfdDEHGCtMMj92pReUsQ/0/*)#8e7pq23w",
+];
+
+// A type-2 hsm_secret: 32 zero bytes (the "no passphrase" marker) followed by
+// the mnemonic text, exactly as `lightning-hsmtool generatehsm` writes it.
+const clnType2File = (mnemonic) => {
+  const words = new TextEncoder().encode(mnemonic);
+  const file = new Uint8Array(32 + words.length);
+  file.set(words, 32);
+  return file;
+};
+
+// The test's own bech32 encoder, validated against the BIP173 example below,
+// so the expected addresses do not come from the code under test.
+const BECH32_CHARSET = "qpzry9x8gf2tvdw0s3jn54khce6mua7l";
+const bech32Polymod = (values) => {
+  const generator = [0x3b6a57b2, 0x26508e6d, 0x1ea119fa, 0x3d4233dd, 0x2a1462b3];
+  let checksum = 1;
+  for (const value of values) {
+    const top = checksum >>> 25;
+    checksum = ((checksum & 0x1ffffff) << 5) ^ value;
+    for (let i = 0; i < 5; i++) if ((top >>> i) & 1) checksum ^= generator[i];
+  }
+  return checksum;
+};
+const bech32Encode = (hrp, data) => {
+  const expanded = [];
+  for (const char of hrp) expanded.push(char.charCodeAt(0) >> 5);
+  expanded.push(0);
+  for (const char of hrp) expanded.push(char.charCodeAt(0) & 31);
+  const mod = bech32Polymod([...expanded, ...data, 0, 0, 0, 0, 0, 0]) ^ 1;
+  const checksum = [];
+  for (let i = 0; i < 6; i++) checksum.push((mod >>> (5 * (5 - i))) & 31);
+  return `${hrp}1${[...data, ...checksum].map((value) => BECH32_CHARSET[value]).join("")}`;
+};
+const convertBits = (bytes, from, to, pad) => {
+  let accumulator = 0;
+  let bits = 0;
+  const out = [];
+  const maxValue = (1 << to) - 1;
+  for (const byte of bytes) {
+    accumulator = (accumulator << from) | byte;
+    bits += from;
+    while (bits >= to) {
+      bits -= to;
+      out.push((accumulator >> bits) & maxValue);
+    }
+  }
+  if (pad && bits > 0) out.push((accumulator << (to - bits)) & maxValue);
+  return out;
+};
+const hash160 = (bytes) => {
+  const sha = createHash("sha256").update(bytes).digest();
+  return new Uint8Array(createHash("ripemd160").update(sha).digest());
+};
+const p2wpkh = (publicKey, hrp) => bech32Encode(hrp, [0, ...convertBits(hash160(publicKey), 8, 5, true)]);
+
+const clnExpectedAddresses = (mnemonic, network) => {
+  const master = ScureHDKey.fromMasterSeed(scureMnemonicToSeed(mnemonic, ""));
+  const chain = master.derive("m/86'/0'/0'").deriveChild(0);
+  const hrp = network === "testnet" ? "tb" : "bc";
+  return Array.from({ length: 10 }, (_, index) => p2wpkh(chain.deriveChild(index).publicKey, hrp));
+};
+
+test("the test's bech32 encoder matches the BIP173 example", () => {
+  const publicKey = hexToBytes("0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798");
+  assert.equal(p2wpkh(publicKey, "bc"), "bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4");
+});
+
+test("the CLN words path renders the published node id, descriptors and 10 addresses", () => {
+  const page = lnPage();
+  try {
+    page.getElementById("ln-format").value = "cln-hsm";
+    page.getElementById("ln-seed").value = CLN_ABANDON;
+    lnDerive(page);
+    assert.equal(page.getElementById("ln-error").textContent, "", "the derive reported an error");
+    const html = page.getElementById("ln-out").innerHTML;
+    assert.ok(html.includes(CLN_NODE_ID), "the CLN node id is not on screen");
+    for (const descriptor of CLN_DESCRIPTORS) assert.ok(html.includes(descriptor), `descriptor ${descriptor} is not on screen`);
+    for (const address of clnExpectedAddresses(CLN_ABANDON, "bitcoin")) assert.ok(html.includes(address), `address ${address} is not on screen`);
+    const expectedXprv = ScureHDKey.fromMasterSeed(scureMnemonicToSeed(CLN_ABANDON, "")).derive("m/86'/0'/0'").privateExtendedKey;
+    assert.ok(!html.includes(expectedXprv), "the xprv must stay hidden until revealed");
+    const reveal = page.getElementById("ln-reveal");
+    reveal.checked = true;
+    reveal.dispatchEvent(new Event("change"));
+    assert.ok(page.getElementById("ln-out").innerHTML.includes(expectedXprv), "the xprv is not shown after reveal");
+  } finally {
+    delete globalThis.document;
+  }
+});
+
+test("a type-2 hsm_secret file derives the same node id and zeroes the bytes", async () => {
+  const page = lnPage();
+  try {
+    page.getElementById("ln-format").value = "cln-hsm";
+    const fileInput = page.getElementById("ln-hsm-file");
+    const bytes = clnType2File(CLN_ABANDON);
+    const snapshot = Uint8Array.from(bytes);
+    fileInput.files = [{ arrayBuffer: async () => bytes.buffer }];
+    await fileInput.onchange();
+    assert.deepEqual([...bytes], [...new Uint8Array(snapshot.length)], "the file bytes were not zeroed");
+    assert.equal(fileInput.value, "", "the file input was not reset");
+    lnDerive(page);
+    assert.equal(page.getElementById("ln-error").textContent, "", "the derive reported an error");
+    assert.ok(page.getElementById("ln-out").innerHTML.includes(CLN_NODE_ID), "the file path did not derive the node id");
+  } finally {
+    delete globalThis.document;
+  }
+});
+
+test("a chosen hsm_secret file wins over words typed before it", async () => {
+  const page = lnPage();
+  try {
+    page.getElementById("ln-format").value = "cln-hsm";
+    // A valid 12-word mnemonic that is not the file's: if the typed words
+    // still won, the node id would be this one's, not CLN_NODE_ID.
+    page.getElementById("ln-seed").value = "legal winner thank year wave sausage worth useful legal winner thank yellow";
+    const fileInput = page.getElementById("ln-hsm-file");
+    fileInput.files = [{ arrayBuffer: async () => clnType2File(CLN_ABANDON).buffer }];
+    await fileInput.onchange();
+    assert.equal(page.getElementById("ln-seed").value, "", "the file load left the typed words in #ln-seed");
+    lnDerive(page);
+    assert.equal(page.getElementById("ln-error").textContent, "", "the derive reported an error");
+    assert.ok(page.getElementById("ln-out").innerHTML.includes(CLN_NODE_ID), "Derive used the typed words, not the chosen file");
+  } finally {
+    delete globalThis.document;
+  }
+});
+
+test("words typed after a chosen hsm_secret file win, and the file mnemonic is dropped", async () => {
+  const page = lnPage();
+  try {
+    page.getElementById("ln-format").value = "cln-hsm";
+    const fileInput = page.getElementById("ln-hsm-file");
+    fileInput.files = [{ arrayBuffer: async () => clnType2File(CLN_ABANDON).buffer }];
+    await fileInput.onchange();
+    assert.ok(page.getElementById("ln-session").textContent.length > 0, "the file load did not report its status");
+    const seed = page.getElementById("ln-seed");
+    seed.value = "legal winner thank year wave sausage worth useful legal winner thank yellow";
+    seed.dispatchEvent(new Event("input"));
+    assert.equal(page.getElementById("ln-session").textContent, "", "typing left the hsm_secret read status on screen");
+    lnDerive(page);
+    assert.equal(page.getElementById("ln-error").textContent, "", "the derive reported an error");
+    const html = page.getElementById("ln-out").innerHTML;
+    assert.ok(!html.includes(CLN_NODE_ID), "Derive used the file mnemonic, not the typed words");
+    assert.ok(html.includes('id="ln-node-pubkey"'), "the typed words rendered no node key");
+    // The held file mnemonic is gone: with the words cleared, Derive has
+    // nothing to use and refuses.
+    seed.value = "";
+    lnDerive(page);
+    assert.equal(page.getElementById("ln-error").dataset.code, "hsm-secret-missing", "the file mnemonic was still held after typing");
+  } finally {
+    delete globalThis.document;
+  }
+});
+
+test("the CLN file path refuses type 3, encrypted, plain and invalid files with keyed errors", async () => {
+  const withPassphrase = clnType2File(CLN_ABANDON);
+  withPassphrase[0] = 0x42;
+  const cases = [
+    ["hsm-secret-passphrase", withPassphrase],
+    ["hsm-secret-encrypted", new Uint8Array(73).fill(7)],
+    ["hsm-secret-plain", new Uint8Array(32).fill(7)],
+    ["hsm-secret-truncated", new Uint8Array(16)],
+  ];
+  for (const [code, bytes] of cases) {
+    const page = lnPage();
+    try {
+      page.getElementById("ln-format").value = "cln-hsm";
+      const fileInput = page.getElementById("ln-hsm-file");
+      fileInput.files = [{ arrayBuffer: async () => bytes.buffer }];
+      await fileInput.onchange();
+      assert.equal(page.getElementById("ln-error").dataset.code, code, `expected ${code}`);
+      assert.ok(page.getElementById("ln-error").textContent.length > 0, "the refusal is not on screen");
+      assert.equal(page.getElementById("ln-out").innerHTML, "", "a refused file rendered a result");
+    } finally {
+      delete globalThis.document;
+    }
+  }
+});
+
+test("a passphrase with cln-hsm is refused", () => {
+  const page = lnPage();
+  try {
+    page.getElementById("ln-format").value = "cln-hsm";
+    page.getElementById("ln-seed").value = CLN_ABANDON;
+    page.getElementById("ln-pass").value = "secret";
+    lnDerive(page);
+    assert.equal(page.getElementById("ln-error").dataset.code, "hsm-secret-passphrase-not-needed");
+    assert.equal(page.getElementById("ln-out").innerHTML, "", "a refused passphrase derived a node key");
+  } finally {
+    delete globalThis.document;
+  }
+});
+
+test("a transferred hsm_secret buffer is detached: the load still resolves and resets the input", async () => {
+  // A real Worker detaches a transferred ArrayBuffer; fill() on the page's
+  // view of it throws a TypeError, rejecting the handler before the input
+  // reset. The detaching stand-in reproduces that wire behaviour.
+  hodlLnSetWorkerFactory(detachingFactory);
+  const page = lnPage();
+  try {
+    hodlLnWipeMem();
+    page.getElementById("ln-format").value = "cln-hsm";
+    const fileInput = page.getElementById("ln-hsm-file");
+    const bytes = clnType2File(CLN_ABANDON);
+    fileInput.files = [{ arrayBuffer: async () => bytes.buffer }];
+    await fileInput.onchange();
+    assert.equal(bytes.byteLength, 0, "the test double did not detach the transferred buffer");
+    assert.equal(fileInput.value, "", "the file input was not reset");
+    assert.equal(page.getElementById("ln-error").textContent, "", "the load reported an error");
+    lnDerive(page);
+    assert.ok(page.getElementById("ln-out").innerHTML.includes(CLN_NODE_ID), "the file path did not derive the node id");
+  } finally {
+    hodlLnWipeMem();
+    hodlLnSetWorkerFactory(standInFactory);
+    delete globalThis.document;
+  }
+});
+
+test("a refused derive supersedes the previous run's answer still in flight", () => {
+  hodlLnSetWorkerFactory(queuedFactory);
+  const page = lnPage();
+  try {
+    hodlLnWipeMem();
+    page.getElementById("ln-seed").value = AEZEED_VECTOR_WORDS;
+    lnDerive(page);
+    const worker = queuedWorkers.at(-1);
+    // The refusal (an oversized paste) happens before anything is posted,
+    // but it must still supersede the earlier run: its answer is now stale.
+    page.getElementById("ln-seed").value = `${AEZEED_VECTOR_WORDS} ${"1!".repeat(3000)}`;
+    lnDerive(page);
+    assert.equal(page.getElementById("ln-error").dataset.code, "seed-too-long");
+    worker.flush();
+    assert.equal(page.getElementById("ln-out").innerHTML, "", "a stale derive answer rendered beside the refusal");
+    assert.equal(page.getElementById("ln-error").dataset.code, "seed-too-long", "the stale answer cleared the refusal");
+  } finally {
+    hodlLnWipeMem();
+    hodlLnSetWorkerFactory(standInFactory);
+    delete globalThis.document;
+  }
+});
+
+test("a new Derive clears the previous result and any revealed secret at once", () => {
+  hodlLnSetWorkerFactory(queuedFactory);
+  const page = lnPage();
+  try {
+    hodlLnWipeMem();
+    page.getElementById("ln-seed").value = AEZEED_VECTOR_WORDS;
+    lnDerive(page);
+    const worker = queuedWorkers.at(-1);
+    worker.flush(); // the derived answer lands
+    const xprv = ScureHDKey.fromMasterSeed(hexToBytes("000102030405060708090a0b0c0d0e0f")).privateExtendedKey;
+    const reveal = page.getElementById("ln-reveal");
+    reveal.checked = true;
+    reveal.dispatchEvent(new Event("change"));
+    worker.flush(); // the revealed answer lands
+    assert.ok(page.getElementById("ln-out").innerHTML.includes(xprv), "the revealed xprv is not on screen");
+    // The click itself clears the screen, before the worker answers.
+    lnDerive(page);
+    assert.ok(!page.getElementById("ln-out").innerHTML.includes(xprv), "the old secret stayed on screen into the new derive");
+    assert.equal(page.getElementById("ln-root-xprv"), null, "the old secret element survived the click");
+    worker.flush();
+    assert.ok(page.getElementById("ln-out").innerHTML.includes('id="ln-node-pubkey"'), "the new derive rendered no result");
+  } finally {
+    hodlLnWipeMem();
+    hodlLnSetWorkerFactory(standInFactory);
+    delete globalThis.document;
+  }
+});
+
+test("a Derive clicked while an hsm_secret loads derives from the file, not the box", async () => {
+  hodlLnSetWorkerFactory(queuedFactory);
+  const page = lnPage();
+  try {
+    hodlLnWipeMem();
+    page.getElementById("ln-format").value = "cln-hsm";
+    // Words typed before the pick lose to the file from the moment it is
+    // picked: the box is cleared before the read even starts.
+    page.getElementById("ln-seed").value = "legal winner thank year wave sausage worth useful legal winner thank yellow";
+    const fileInput = page.getElementById("ln-hsm-file");
+    fileInput.files = [{ arrayBuffer: async () => clnType2File(CLN_ABANDON).buffer }];
+    await fileInput.onchange(); // the load is posted; its reply is still in flight
+    assert.equal(page.getElementById("ln-seed").value, "", "the file pick left the typed words in #ln-seed");
+    // The derive must use the file the worker is loading, not the box: the
+    // worker processes messages in order, so the load arrives first.
+    lnDerive(page);
+    const worker = queuedWorkers.at(-1);
+    worker.flush(); // hsm-loaded, then the derive's answer, in wire order
+    assert.ok(page.getElementById("ln-session").textContent.length > 0, "the derive dropped the hsm-loaded reply");
+    assert.equal(page.getElementById("ln-error").textContent, "", "the derive reported an error");
+    assert.ok(page.getElementById("ln-out").innerHTML.includes(CLN_NODE_ID), "Derive did not use the loading file's words");
+  } finally {
+    hodlLnWipeMem();
+    hodlLnSetWorkerFactory(standInFactory);
+    delete globalThis.document;
+  }
+});
+
+test("a Derive clicked while the hsm_secret file is still being read derives from the file once it loads", async () => {
+  const page = lnPage();
+  try {
+    hodlLnWipeMem();
+    page.getElementById("ln-format").value = "cln-hsm";
+    const bytes = clnType2File(CLN_ABANDON);
+    let openRead;
+    const gate = new Promise((resolve) => {
+      openRead = resolve;
+    });
+    const fileInput = page.getElementById("ln-hsm-file");
+    fileInput.files = [{ arrayBuffer: () => gate.then(() => bytes.buffer) }];
+    const reading = fileInput.onchange(); // the read is pending on the gate
+    // Derive while the read is still in flight: the click is remembered.
+    lnDerive(page);
+    assert.equal(page.getElementById("ln-error").dataset.code, "", "the derive was refused before the read finished");
+    openRead();
+    await reading;
+    assert.equal(page.getElementById("ln-error").textContent, "", "the derive reported an error");
+    assert.ok(page.getElementById("ln-out").innerHTML.includes(CLN_NODE_ID), "the deferred derive did not use the file's words");
+  } finally {
+    hodlLnWipeMem();
+    delete globalThis.document;
+  }
+});
+
+test("a superseded hsm_secret read that fails does not wipe the newer file's words", async () => {
+  const page = lnPage();
+  try {
+    hodlLnWipeMem();
+    page.getElementById("ln-format").value = "cln-hsm";
+    // Read A: a file whose read will fail, gated so it is still in flight.
+    let failRead;
+    const gate = new Promise((_, reject) => {
+      failRead = reject;
+    });
+    const input = page.getElementById("ln-hsm-file");
+    input.files = [{ arrayBuffer: () => gate }];
+    const readingA = input.onchange();
+    // Read B: a good file, picked while A is still reading.
+    input.files = [{ arrayBuffer: async () => clnType2File(CLN_ABANDON).buffer }];
+    await input.onchange();
+    assert.ok(page.getElementById("ln-session").textContent.length > 0, "the newer file did not load");
+    // A's read now fails: it must not drop B's words.
+    failRead(new Error("read failed"));
+    await readingA;
+    assert.equal(page.getElementById("ln-error").textContent, "", "the superseded read's failure was shown");
+    lnDerive(page);
+    assert.equal(page.getElementById("ln-error").textContent, "", "the derive reported an error");
+    assert.ok(page.getElementById("ln-out").innerHTML.includes(CLN_NODE_ID), "the superseded read wiped the newer file's words");
+  } finally {
+    hodlLnWipeMem();
+    delete globalThis.document;
+  }
+});
+
+test("a failing load's keyed refusal is not overwritten by a racing derive", async () => {
+  hodlLnSetWorkerFactory(queuedFactory);
+  const page = lnPage();
+  try {
+    hodlLnWipeMem();
+    page.getElementById("ln-format").value = "cln-hsm";
+    // A type-3 hsm_secret: the worker refuses it with hsm-secret-passphrase.
+    const withPassphrase = clnType2File(CLN_ABANDON);
+    withPassphrase[0] = 0x42;
+    const fileInput = page.getElementById("ln-hsm-file");
+    fileInput.files = [{ arrayBuffer: async () => withPassphrase.buffer }];
+    await fileInput.onchange(); // the load is posted; its refusal is queued
+    // Derive while the load's refusal is in flight: the worker has no words.
+    lnDerive(page);
+    const worker = queuedWorkers.at(-1);
+    worker.flush(); // the load's refusal, then the derive's refusal
+    assert.equal(page.getElementById("ln-error").dataset.code, "hsm-secret-passphrase", "the load's keyed refusal was overwritten");
+  } finally {
+    hodlLnWipeMem();
+    hodlLnSetWorkerFactory(standInFactory);
+    delete globalThis.document;
+  }
+});
+
+test("the hsm_secret read status is cleared by every path that drops the file", async () => {
+  let network = "mainnet";
+  const page = lnPage(() => network);
+  try {
+    const idle = page.getElementById("ln-session").textContent;
+    hodlLnWipeMem();
+    page.getElementById("ln-format").value = "cln-hsm";
+    const fileInput = page.getElementById("ln-hsm-file");
+    fileInput.files = [{ arrayBuffer: async () => clnType2File(CLN_ABANDON).buffer }];
+    await fileInput.onchange();
+    const loadedStatus = page.getElementById("ln-session").textContent;
+    assert.ok(loadedStatus.length > 0, "the file load did not report its status");
+    // A format change drops the file and its status.
+    page.getElementById("ln-format").value = "bip39";
+    page.getElementById("ln-format").dispatchEvent(new Event("change"));
+    // The line goes back to exactly its startup text: the file's status is
+    // gone, and nothing else is left behind (red team, round 1).
+    assert.equal(page.getElementById("ln-session").textContent, idle, "the format change left the hsm_secret status on screen");
+    // Load again, then a network change.
+    page.getElementById("ln-format").value = "cln-hsm";
+    page.getElementById("ln-format").dispatchEvent(new Event("change"));
+    fileInput.files = [{ arrayBuffer: async () => clnType2File(CLN_ABANDON).buffer }];
+    await fileInput.onchange();
+    assert.ok(page.getElementById("ln-session").textContent.length > 0, "the file load did not report its status");
+    network = "testnet";
+    page.dispatchEvent(new Event("hodl:network-default"));
+    assert.equal(page.getElementById("ln-session").textContent, idle, "the page network change left the hsm_secret status on screen");
+    // Load again, then Clear.
+    page.getElementById("ln-format").value = "cln-hsm";
+    page.getElementById("ln-format").dispatchEvent(new Event("change"));
+    fileInput.files = [{ arrayBuffer: async () => clnType2File(CLN_ABANDON).buffer }];
+    await fileInput.onchange();
+    assert.ok(page.getElementById("ln-session").textContent.length > 0, "the file load did not report its status");
+    page.getElementById("ln-wipe").onclick();
+    assert.notEqual(page.getElementById("ln-session").textContent, loadedStatus, "Clear left the hsm_secret status on screen");
+  } finally {
+    hodlLnWipeMem();
+    delete globalThis.document;
+  }
+});
+
+test("a derive on a page without #ln-session does not throw", () => {
+  const page = new MiniDocument();
+  globalThis.document = page;
+  page.body.innerHTML = '<select id="ln-format"><option value="aezeed" selected>aezeed</option></select>'
+    + '<label id="ln-network-field">Network<output id="ln-network-value"></output><span id="ln-network-note"></span></label>'
+    + '<textarea id="ln-seed"></textarea><input id="ln-pass" type="password">'
+    + '<button id="ln-go" type="button"></button><button id="ln-wipe" type="button"></button>'
+    + '<p id="ln-error"></p><div id="ln-out"></div>'
+    + '<span id="ln-seed-help"></span>';
+  try {
+    hodlInitLn({ journalLog() {}, copyIcon: () => "" });
+    page.getElementById("ln-seed").value = AEZEED_VECTOR_WORDS;
+    lnDerive(page);
+    assert.equal(page.getElementById("ln-error").textContent, "", "the derive reported an error");
+    assert.ok(page.getElementById("ln-out").innerHTML.includes('id="ln-node-pubkey"'), "the derive rendered no result");
+  } finally {
+    delete globalThis.document;
+  }
+});
+
+test("a successful derive reports the isolated-worker status", () => {
+  const page = lnPage();
+  try {
+    // Hooked on the status element, not its English copy: it must move off
+    // the idle line once the key is derived.
+    const idle = page.getElementById("ln-session").textContent;
+    page.getElementById("ln-seed").value = AEZEED_VECTOR_WORDS;
+    lnDerive(page);
+    assert.equal(page.getElementById("ln-error").textContent, "", "the derive reported an error");
+    const status = page.getElementById("ln-session").textContent;
+    assert.ok(status.length > 0 && status !== idle, "the derive left the status on the idle line");
+    // A page-side refusal then drops the result, and the status goes back to
+    // the idle line instead of still claiming a derived key.
+    page.getElementById("ln-seed").value = `${AEZEED_VECTOR_WORDS} ${"1!".repeat(3000)}`;
+    lnDerive(page);
+    assert.ok(page.getElementById("ln-error").textContent.length > 0, "the oversized paste was not refused");
+    assert.equal(page.getElementById("ln-session").textContent, idle, "a refused derive left the derived-key status");
+  } finally {
+    delete globalThis.document;
+  }
+});
+
+test("words typed while the hsm_secret file is still being read win, and the read's bytes are wiped", async () => {
+  const page = lnPage();
+  try {
+    hodlLnWipeMem();
+    page.getElementById("ln-format").value = "cln-hsm";
+    const bytes = clnType2File(CLN_ABANDON);
+    const length = bytes.length;
+    let openRead;
+    const gate = new Promise((resolve) => {
+      openRead = resolve;
+    });
+    const fileInput = page.getElementById("ln-hsm-file");
+    fileInput.files = [{ arrayBuffer: () => gate.then(() => bytes.buffer) }];
+    page.getElementById("ln-seed").value = "legal winner thank year wave sausage worth useful legal winner thank yellow";
+    const reading = fileInput.onchange(); // the read is pending on the gate
+    // The file is the latest entry from the pick: the box is cleared at once.
+    assert.equal(page.getElementById("ln-seed").value, "", "the file pick left the typed words in #ln-seed");
+    // Typing during the read supersedes the file.
+    const seed = page.getElementById("ln-seed");
+    seed.value = "legal winner thank year wave sausage worth useful legal winner thank yellow";
+    seed.dispatchEvent(new Event("input"));
+    openRead();
+    await reading;
+    assert.deepEqual([...bytes], [...new Uint8Array(length)], "the superseded read's bytes were not wiped");
+    assert.equal(seed.value, "legal winner thank year wave sausage worth useful legal winner thank yellow", "the superseded read cleared the typed words");
+    // The load was never posted: with the box cleared, Derive has nothing.
+    seed.value = "";
+    lnDerive(page);
+    assert.equal(page.getElementById("ln-error").dataset.code, "hsm-secret-missing", "the superseded file was still loaded");
+  } finally {
+    hodlLnWipeMem();
+    delete globalThis.document;
+  }
+});
+
+test("words typed while an hsm_secret is still loading win over the file", async () => {
+  hodlLnSetWorkerFactory(queuedFactory);
+  const page = lnPage();
+  try {
+    hodlLnWipeMem();
+    page.getElementById("ln-format").value = "cln-hsm";
+    const fileInput = page.getElementById("ln-hsm-file");
+    fileInput.files = [{ arrayBuffer: async () => clnType2File(CLN_ABANDON).buffer }];
+    await fileInput.onchange(); // the load is posted; its reply is still in flight
+    const seed = page.getElementById("ln-seed");
+    seed.value = "legal winner thank year wave sausage worth useful legal winner thank yellow";
+    seed.dispatchEvent(new Event("input"));
+    queuedWorkers.at(-1).flush(); // the stale hsm-loaded reply lands and is ignored
+    assert.equal(seed.value, "legal winner thank year wave sausage worth useful legal winner thank yellow", "the stale reply cleared the typed words");
+    lnDerive(page);
+    queuedWorkers.at(-1).flush();
+    assert.equal(page.getElementById("ln-error").textContent, "", "the derive reported an error");
+    const html = page.getElementById("ln-out").innerHTML;
+    assert.ok(!html.includes(CLN_NODE_ID), "Derive used the file's words, not the typed ones");
+    assert.ok(html.includes('id="ln-node-pubkey"'), "the typed words rendered no node key");
+  } finally {
+    hodlLnWipeMem();
+    hodlLnSetWorkerFactory(standInFactory);
+    delete globalThis.document;
+  }
+});
+
+test("a worker error supersedes the answers the crashed worker still has in flight", () => {
+  hodlLnSetWorkerFactory(queuedFactory);
+  const page = lnPage();
+  try {
+    hodlLnWipeMem();
+    page.getElementById("ln-seed").value = AEZEED_VECTOR_WORDS;
+    lnDerive(page);
+    const worker = queuedWorkers.at(-1);
+    worker.onerror({ message: "boom" });
+    assert.equal(worker.terminated, true, "the crashed worker was not terminated at once");
+    worker.flush();
+    assert.equal(page.getElementById("ln-out").innerHTML, "", "a crashed worker's queued answer rendered");
+    assert.equal(page.getElementById("ln-error").textContent, "boom");
+  } finally {
+    hodlLnWipeMem();
+    hodlLnSetWorkerFactory(standInFactory);
+    delete globalThis.document;
+  }
+});
+
+test("the worker crash fallback message goes through t()", () => {
+  const lnSource = read("src/js/lightning.js");
+  assert.match(lnSource, /error\.textContent = event && typeof event\.message === "string" && event\.message !== "" \? event\.message : t\(/, "the crash message bypasses t()");
+});
+
+test("typed CLN words pass the same length refusal as the other formats", () => {
+  const page = lnPage();
+  try {
+    page.getElementById("ln-format").value = "cln-hsm";
+    page.getElementById("ln-seed").value = `${CLN_ABANDON} ${"1!".repeat(3000)}`;
+    lnDerive(page);
+    assert.equal(page.getElementById("ln-error").dataset.code, "seed-too-long");
+    assert.equal(page.getElementById("ln-out").innerHTML, "", "an oversized CLN paste derived a node key");
+  } finally {
+    delete globalThis.document;
+  }
+});
+
+test("the network field shows for aezeed and cln-hsm, not bip39", () => {
+  const page = lnPage();
+  try {
+    const field = page.getElementById("ln-network-field");
+    page.getElementById("ln-format").value = "aezeed";
+    page.getElementById("ln-format").dispatchEvent(new Event("change"));
+    assert.equal(field.hidden, false, "aezeed hides the network field");
+    page.getElementById("ln-format").value = "bip39";
+    page.getElementById("ln-format").dispatchEvent(new Event("change"));
+    assert.equal(field.hidden, true, "bip39 shows the network field");
+    page.getElementById("ln-format").value = "cln-hsm";
+    page.getElementById("ln-format").dispatchEvent(new Event("change"));
+    assert.equal(field.hidden, false, "cln-hsm hides the network field");
+  } finally {
+    delete globalThis.document;
+  }
+});
+
+test("the CLN network field selects the test-network address prefix and key version", () => {
+  let network = "mainnet";
+  const page = lnPage(() => network);
+  try {
+    page.getElementById("ln-format").value = "cln-hsm";
+    network = "testnet";
+    page.dispatchEvent(new Event("hodl:network-default"));
+    page.getElementById("ln-seed").value = CLN_ABANDON;
+    lnDerive(page);
+    assert.equal(page.getElementById("ln-error").textContent, "", "the derive reported an error");
+    let html = page.getElementById("ln-out").innerHTML;
+    assert.ok(html.includes("tpub"), "the testnet descriptors do not use tpub");
+    for (const address of clnExpectedAddresses(CLN_ABANDON, "testnet")) assert.ok(html.includes(address), `address ${address} is not on screen`);
+    // The account xprv is hidden until revealed; its version byte must be
+    // testnet's (tprv), not mainnet's (xprv).
+    const reveal = page.getElementById("ln-reveal");
+    reveal.checked = true;
+    reveal.dispatchEvent(new Event("change"));
+    assert.match(page.getElementById("ln-out").innerHTML, /id="ln-root-xprv"[^>]*>tprv/, "the testnet account xprv does not use tprv");
+    // Mainnet: the same seed, the other version bytes.
+    network = "mainnet";
+    page.dispatchEvent(new Event("hodl:network-default"));
+    page.getElementById("ln-seed").value = CLN_ABANDON;
+    lnDerive(page);
+    html = page.getElementById("ln-out").innerHTML;
+    assert.match(html, /wpkh\(xpub/, "the mainnet descriptors do not use xpub");
+    const mainReveal = page.getElementById("ln-reveal");
+    mainReveal.checked = true;
+    mainReveal.dispatchEvent(new Event("change"));
+    assert.match(page.getElementById("ln-out").innerHTML, /id="ln-root-xprv"[^>]*>xprv/, "the mainnet account xprv does not use xprv");
+  } finally {
+    delete globalThis.document;
+  }
+});
+
+test("Clear removes the CLN result and secrets", () => {
+  const page = lnPage();
+  try {
+    page.getElementById("ln-format").value = "cln-hsm";
+    page.getElementById("ln-seed").value = CLN_ABANDON;
+    lnDerive(page);
+    assert.ok(page.getElementById("ln-out").innerHTML.includes(CLN_NODE_ID));
+    page.getElementById("ln-wipe").onclick();
+    assert.equal(page.getElementById("ln-out").innerHTML, "", "Clear left the result on screen");
+    assert.equal(page.getElementById("ln-seed").value, "", "Clear left the seed on screen");
+    assert.equal(page.getElementById("ln-pass").value, "", "Clear left the passphrase on screen");
+  } finally {
+    delete globalThis.document;
+  }
+});
+
+test("hodlLnWipeMem drops the CLN result so a re-render shows nothing", () => {
+  const page = lnPage();
+  try {
+    page.getElementById("ln-format").value = "cln-hsm";
+    page.getElementById("ln-seed").value = CLN_ABANDON;
+    lnDerive(page);
+    assert.ok(page.getElementById("ln-out").innerHTML.includes(CLN_NODE_ID));
+    hodlLnWipeMem();
+    page.getElementById("ln-format").dispatchEvent(new Event("change"));
+    assert.equal(page.getElementById("ln-out").innerHTML, "", "the wiped result was re-rendered");
+  } finally {
+    delete globalThis.document;
+  }
+});
+
+test("the CLN result carries the not-a-channel-backup note", () => {
+  const page = lnPage();
+  try {
+    page.getElementById("ln-format").value = "cln-hsm";
+    page.getElementById("ln-seed").value = CLN_ABANDON;
+    lnDerive(page);
+    // The note's wording is translatable copy; the data attribute is the
+    // stable hook (AGENTS.md: tests never assert English text).
+    assert.ok(page.getElementById("ln-out").innerHTML.includes('data-ln-note="single-key"'), "the CLN result is missing its single-key note");
+  } finally {
+    delete globalThis.document;
+  }
 });

@@ -4,10 +4,13 @@
 //   - the author is the configured GitHub App's bot identity;
 //   - the base is rock and the head branch is in the automation namespace
 //     (i18n/translate-<lang>);
-//   - exactly one locale catalog and its matching provenance sidecar changed
-//     — no JavaScript, HTML, workflow, dependency, build, or config file;
-//   - the changed catalog and sidecar pass validation (content + source
-//     hashes, exactly consistent with each other).
+//   - exactly one locale catalog changed, with at most its matching
+//     provenance sidecar — no JavaScript, HTML, workflow, dependency, build,
+//     or config file. The sidecar hashes only the English keys, so a
+//     correction that changes values alone (scripts/i18n-context.json,
+//     issue #862) leaves it untouched;
+//   - the catalog and the sidecar on disk, changed or not, pass validation
+//     (content + source hashes, exactly consistent with each other).
 // The label is never trusted by itself. Auto-merge's expected-head-SHA check
 // (set by the publish job) completes the binding: the merged commit is the
 // exact commit this gate validated.
@@ -54,9 +57,9 @@ export function gateProblems({ author, appSlug, baseRef, headRef, changedFiles }
   if (!changedFiles.includes(`src/locales/${lang}.json`)) {
     problems.push(`the catalog src/locales/${lang}.json did not change`);
   }
-  if (!changedFiles.includes(`src/locales/.sources/${lang}.json`)) {
-    problems.push(`the provenance sidecar src/locales/.sources/${lang}.json did not change — catalog and sidecar always move together`);
-  }
+  // An unchanged sidecar is fine here: contentProblems still requires it to
+  // exist and to match the new catalog key for key, so a catalog that gains
+  // or loses a key without its sidecar fails there.
   return problems;
 }
 

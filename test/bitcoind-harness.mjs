@@ -1,17 +1,34 @@
 // Bitcoin Core fixtures for tests that check the app against a real node.
 // Every test using these skips where bitcoind and bitcoin-cli are not
-// installed; CI runners and the dev image skip them (verified locally with
-// Bitcoin Core v31.1.0).
+// installed — except under REQUIRE_BITCOIND=1, which the "Bitcoin Core
+// interop" CI job sets after installing its pinned Bitcoin Core v32.1
+// release: there a missing binary throws at import, because a job that
+// silently skips its whole point must fail. Everywhere else (local runs
+// without a node, the dev image) the tests still skip.
 import { execFileSync, spawnSync } from "node:child_process";
 import { existsSync, mkdtempSync, rmSync } from "node:fs";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
+// The probe retries: in CI one test file's probe failed within 120 ms while
+// the other file, in the same step and on the same PATH, ran its bitcoind
+// tests (PR #818's interop run), so a single failed --version is not proof
+// the binaries are missing. A failure that persists reports why.
 export const BITCOIND = (() => {
-  const daemon = spawnSync("bitcoind", ["--version"], { stdio: "pipe" });
-  const cli = spawnSync("bitcoin-cli", ["--version"], { stdio: "pipe" });
-  return daemon.status === 0 && cli.status === 0;
+  const probe = (bin) => spawnSync(bin, ["--version"], { stdio: "pipe", timeout: 30000 });
+  const why = (bin, r) => `${bin}: status ${r.status}, signal ${r.signal}, error ${r.error?.code || r.error?.message || "none"}, stderr ${String(r.stderr || "").trim().slice(0, 200) || "empty"}`;
+  let daemon, cli;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    if (attempt) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 500 * attempt);
+    daemon = probe("bitcoind");
+    cli = probe("bitcoin-cli");
+    if (daemon.status === 0 && cli.status === 0) return true;
+  }
+  if (process.env.REQUIRE_BITCOIND === "1") {
+    throw new Error(`REQUIRE_BITCOIND=1 but bitcoind and bitcoin-cli are not both on PATH — the Bitcoin Core interop job must install the pinned release before running these tests (${why("bitcoind", daemon)}; ${why("bitcoin-cli", cli)})`);
+  }
+  return false;
 })();
 
 export const CHAIN_FIXTURES = {

@@ -174,10 +174,15 @@ for UI testing only and must never receive funds. The loader and its
   content-keyed — the English string at the call site is the catalog key
   (`t("Save watch-only sheet")`), and a content sweep translates static markup
   in place. There is no key naming and no `en.json`. After adding or editing
-  user-facing text, run `npm run i18n:sync` and fill the entries it appends to
-  all four catalogs in `src/locales/` (es, pt, fr, de); CI fails on missing or
-  dead entries. If you cannot translate a string competently, flag it in the
-  pull request — do not leave the catalogs silently incomplete.
+  user-facing text, leave locale catalogs and their `.sources/` provenance
+  sidecars unchanged. Missing translations fall back to English until the
+  post-merge translation workflow fills them; see
+  [docs/Translation_Automation_Setup.md](docs/Translation_Automation_Setup.md).
+  `npm run i18n:sync` prunes dead entries rather than adding translations.
+  Missing translations and dead entries are reported without failing CI;
+  invalid catalog content, corrupt source hashes, and source markup outside
+  the sanitizer allowlist fail validation. Once `TRANSLATION_APP_SLUG` is
+  configured, the translation gate rejects locale changes outside automation.
 - **Pull requests:** small and focused, one change each. No drive-by
   reformatting or refactors. Describe what and why, and list the commands you
   ran. Comments explain intent and security reasoning, not the code.

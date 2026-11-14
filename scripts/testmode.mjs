@@ -32,6 +32,8 @@ if (process.argv.includes("--help")) {
 const keys = integerFlag("keys", 12, 1, 100);
 const port = integerFlag("port", 4173, 1, 65535);
 const outDir = mkdtempSync(join(tmpdir(), "entropylab-testmode-"));
+const cleanup = () => rmSync(outDir, { recursive: true, force: true });
+process.on("exit", cleanup);
 execFileSync(process.execPath, [join(root, "scripts/build.mjs"), "--test-hooks", "--out", outDir], {
   cwd: root,
   stdio: "inherit",
@@ -68,8 +70,6 @@ const server = createServer((request, response) => {
   }
 });
 
-const cleanup = () => rmSync(outDir, { recursive: true, force: true });
-process.on("exit", cleanup);
 for (const signal of ["SIGINT", "SIGTERM"]) process.on(signal, () => {
   server.close(() => process.exit(0));
 });

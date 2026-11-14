@@ -77,8 +77,15 @@ Also: `node --check harness.mjs` for a syntax check without launching.
 
 Any of those fails the run, and so does a Jev verdict of **broken**
 (`outcome.mjs`, tested in `test/adversarial-outcome.test.mjs`). A
-**suspect**, or no verdict at all (no API key, or the API is down), does
-not: a suspect is for a person to read in the table.
+**suspect** does not: it is for a person to read in the table.
+
+A scenario with no verdict does not fail on its own either. But with an
+API key configured, a run in which Jev judged **no** scenario fails: the
+judge was unreachable or refused the key, so nothing was judged (on
+2026-10-09 a rejected key passed silently every night). A run with only
+some verdicts missing prints a warning naming them, plus a `::warning::`
+annotation on GitHub. With no key at all (local runs, forks) neither
+applies.
 
 ## Notes
 

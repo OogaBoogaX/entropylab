@@ -79,7 +79,7 @@ test("24-word hashed dice warn below 100 rolls and hash every entered roll", () 
       // Node's SHA-256 is the independent reference for the existing
       // original-digit / 6-to-0 transcript contract.
       const transcript = method === "coleman" ? rolls.replaceAll("6", "0") : rolls;
-      assert.equal(entropy.hex, createHash("sha256").update(transcript).digest("hex"));
+      assert.equal(Buffer.from(entropy.bytes).toString("hex"), createHash("sha256").update(transcript).digest("hex"));
     }
     for (const value of ["", "123X456", "1".repeat(100) + "X"]) {
       assert.equal(api.hodlDiceEntropy(value, method, 24).ok, false, `${method}: invalid transcript accepted`);
@@ -98,5 +98,18 @@ test("hashed dice derive a full mnemonic for every target size and method", () =
       const mnemonic = _n(entropy.bytes, hodlBip39Wordlist);
       assert.equal(mnemonic.split(" ").length, words, `${words}, ${method}: ${mnemonic}`);
     }
+  }
+});
+
+test("entropy results carry bytes only, never a hex string copy", () => {
+  // A JavaScript string cannot be zeroed, so a hex copy of the seed entropy
+  // would linger until garbage collection. The results expose the byte buffer
+  // (which callers zero) and no text copy; the brain-lab display encodes at
+  // the point of rendering.
+  const result = api.hodlDiceEntropy("123456", "coldcard", 24);
+  assert.equal(result.ok, true);
+  assert.equal(Object.hasOwn(result, "hex"), false);
+  for (const name of ["hodlDiceEntropy", "hodlNumberBaseEntropy", "hodlCardsEntropy", "hodlDirectCardsEntropy", "hodlBrainLabEntropy"]) {
+    assert.doesNotMatch(loadSlice(name), /\bhex\b/, `${name} must not build a hex string`);
   }
 });

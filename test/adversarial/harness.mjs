@@ -10,7 +10,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { SCENARIOS, HELPER } from "./scenarios.mjs";
 import { verdict, jevAvailable } from "./jev.mjs";
-import { runFailures } from "./outcome.mjs";
+import { judgeFailures, judgeWarnings, runFailures } from "./outcome.mjs";
 
 // The app under test: the built page at the repo root, resolved relative to
 // this file so the harness works in any checkout (override with --app=<path>).
@@ -439,7 +439,12 @@ if (!jevAvailable()) {
 
 // The table is for reading; this is the run's result, and the exit status
 // the workflow reports (see outcome.mjs for what fails it).
-const failed = runFailures(rows);
+for (const warning of judgeWarnings(rows, jevAvailable())) {
+  console.log(`\nWARNING: ${warning}`);
+  // An annotation too, so the gap shows on the run page, not only in the log.
+  if (process.env.GITHUB_ACTIONS) console.log(`::warning title=Jev verdicts missing::${warning}`);
+}
+const failed = [...runFailures(rows), ...judgeFailures(rows, jevAvailable())];
 if (failed.length) {
   console.log(`\nRun FAILED, ${failed.length} reason(s):`);
   for (const failure of failed) console.log("  - " + failure);

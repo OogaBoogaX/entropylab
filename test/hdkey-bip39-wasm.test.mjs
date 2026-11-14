@@ -12,9 +12,10 @@
 //     the rust-bip39 crate's English list (single source of truth check).
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { HDKey as ScureHDKey } from "@scure/bip32";
 import * as scureBip39 from "@scure/bip39";
 import { wordlist as scureEnglish } from "@scure/bip39/wordlists/english.js";
@@ -195,6 +196,36 @@ test("BIP39 seed matches the published vector (TREZOR passphrase)", () => {
   );
 });
 
+// BIP39 hashes NFKD("mnemonic" + passphrase) as UTF-8. A lone surrogate has
+// no UTF-8 encoding; TextEncoder substitutes U+FFFD, so accepting it would
+// derive the seed of a different passphrase. The byte path must likewise
+// refuse malformed UTF-8 instead of decoding it with replacement characters.
+test("BIP39 refuses a passphrase that is not well-formed Unicode or valid UTF-8", () => {
+  const phrase = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about";
+  for (const passphrase of ["\uD800", "a\uDC00b", "\uD800\uD800", new String("\uD800")]) {
+    assert.throws(() => mnemonicToSeedSync(phrase, passphrase), /Invalid passphrase/, JSON.stringify(passphrase));
+  }
+  // A well-formed surrogate pair is a valid passphrase and derives what
+  // @scure/bip39 derives for it.
+  assert.deepEqual(mnemonicToSeedSync(phrase, "🔑"), scureBip39.mnemonicToSeedSync(phrase, "🔑"));
+  // null is a caller bug: must throw, not silently derive the empty-passphrase wallet.
+  assert.throws(() => mnemonicToSeedSync(phrase, null), /Invalid passphrase/);
+  // Valid non-ASCII UTF-8 bytes derive what the same text derives in @scure.
+  assert.deepEqual(mnemonicToSeedSync(phrase, new TextEncoder().encode("päss phrase")), scureBip39.mnemonicToSeedSync(phrase, "päss phrase"));
+  // The coercion matches "mnemonic" + passphrase: a Symbol still throws.
+  assert.throws(() => mnemonicToSeedSync(phrase, Symbol("x")), TypeError);
+  // Malformed UTF-8 bytes: an encoded surrogate, a truncated sequence, and a
+  // stray continuation byte. The vault refuses these at intake; the direct
+  // byte path must too.
+  for (const bytes of [
+    Uint8Array.of(0xed, 0xa0, 0x80),
+    Uint8Array.of(0xc3),
+    Uint8Array.of(0x80),
+  ]) {
+    assert.throws(() => mnemonicToSeedSync(phrase, bytes), /Invalid passphrase/, bytes.toString());
+  }
+});
+
 test("BIP39 differential vs @scure/bip39 (mnemonic, entropy, seed, validate)", () => {
   for (let i = 0; i < 16; i++) {
     const entropy = new Uint8Array(16 + (i % 5) * 4).map((_, j) => (i * 77 + j * 31 + 11) & 0xff);
@@ -264,6 +295,7 @@ test("BIP39 separator matrix: acceptance matches @scure/bip39 for every word cou
     "line separator (U+2028)": "\u2028",
     "paragraph separator (U+2029)": "\u2029",
     "zero-width no-break space (U+FEFF)": "\uFEFF",
+    "next line (U+0085, outside JavaScript's \\s)": "\u0085",
     "no-break space (U+00A0, NFKD folds)": "\u00A0",
     "ideographic space (U+3000, NFKD folds)": "\u3000",
   };
@@ -298,7 +330,7 @@ test("BIP39 separator matrix: acceptance matches @scure/bip39 for every word cou
 // guard rejects every one of them before the crate sees the text.
 test("BIP39: no non-canonical separator yields a derivable seed-bearing phrase", () => {
   const words = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about".split(" ");
-  const sneak = ["\t ", " \t", " \n", "\v ", "\f ", "\u2028 ", " \u2029"];
+  const sneak = ["\t ", " \t", " \n", "\v ", "\f ", "\u2028 ", " \u2029", "\u0085 ", " \u0085"];
   for (const sep of sneak) {
     for (let gap = 1; gap < words.length; gap++) {
       const phrase = words.slice(0, gap).join(" ") + sep + words.slice(gap).join(" ");
@@ -312,6 +344,21 @@ test("BIP39: no non-canonical separator yields a derivable seed-bearing phrase",
     assert.equal(validateMnemonic(phrase), scureBip39.validateMnemonic(phrase, scureEnglish), `${count} words`);
     assert.throws(() => mnemonicToEntropy(phrase), undefined, `${count} words`);
   }
+});
+
+// Deep sweep of cb18b09 (GLM 5.3, Kimi K3, DeepSeek V4.1): JavaScript's \S
+// matches U+0085 (NEL) while rust-bip39 splits on it, so twelve tokens with
+// three hidden NELs validated as the fifteen-word phrase, gave its entropy,
+// and hashed to a different seed.
+test("BIP39: a NEL inside a token is not a separator the guard lets through", () => {
+  const words = entropyToMnemonic(new Uint8Array(20).fill(0)).split(" ");
+  const hidden = [words.slice(0, 2), words.slice(2, 4), words.slice(4, 6)].map((pair) => pair.join("\u0085"));
+  const phrase = [...hidden, ...words.slice(6)].join(" ");
+  assert.equal(phrase.split(" ").length, 12);
+  assert.equal(scureBip39.validateMnemonic(phrase, scureEnglish), false, "scure baseline");
+  assert.equal(validateMnemonic(phrase), false);
+  assert.throws(() => mnemonicToEntropy(phrase), /Invalid mnemonic/);
+  assert.throws(() => mnemonicToSeedSync(phrase), /Invalid mnemonic/);
 });
 
 test("wordlist agreement: JS data file == rust-bip39 English list, word for word", () => {
@@ -416,3 +463,107 @@ for (const operation of ["master", "child"]) {
     assert.equal(root.privateExtendedKey, wipeVectorXprv);
   });
 }
+
+// Contract: privateExtendedKey returns the published serialization, and every
+// byte buffer hdkey.js allocates to build it (the 33-byte key field and the
+// 78-byte body that holds the key and chain code) is zero when it returns.
+// observeHdKeyTemporaries sees only slice/subarray copies, so this observes
+// `new Uint8Array(n)` made directly by hdkey.js. The constructor is proxied,
+// not subclassed, so the buffers stay plain Uint8Arrays and instanceof checks
+// elsewhere keep passing. Found by the mutation-testing pilot: deleting either
+// fill(0) passed every test that reaches hdkey.js.
+function observeHdKeyAllocations(operation) {
+  const RealUint8Array = globalThis.Uint8Array, allocated = [];
+  const Observed = new Proxy(RealUint8Array, {
+    construct(target, args, newTarget) {
+      const bytes = Reflect.construct(target, args, newTarget === Observed ? target : newTarget);
+      if (new Error().stack.split("\n")[2]?.includes("/src/js/hdkey.js:")) allocated.push(bytes);
+      return bytes;
+    },
+  });
+  let result;
+  globalThis.Uint8Array = Observed;
+  try { result = operation(); } finally { globalThis.Uint8Array = RealUint8Array; }
+  return { result, allocated };
+}
+
+test("privateExtendedKey clears the key field and the serialization it builds", () => {
+  // BIP32 test vector 1: m and m/0H.
+  const root = HDKey.fromMasterSeed(hexToBytes(wipeVectorSeed));
+  const child = root.deriveChild(0x80000000);
+  for (const [node, expected] of [
+    [root, wipeVectorXprv],
+    [child, "xprv9uHRZZhk6KAJC1avXpDAp4MDc3sQKNxDiPvvkX8Br5ngLNv1TxvUxt4cV1rGL5hj6KCesnDYUhd7oWgT11eZG7XnxHrnYeSvkzY7d2bhkJ7"],
+  ]) {
+    const { result, allocated } = observeHdKeyAllocations(() => node.privateExtendedKey);
+    assert.equal(result, expected);
+    assert.deepEqual(allocated.map((bytes) => bytes.length).sort((a, b) => a - b), [33, 78], "observes the key field and the body");
+    for (const bytes of allocated) assert.ok(bytes.every((byte) => byte === 0), `the ${bytes.length}-byte buffer still holds key material`);
+    // The node itself is untouched: the getter wipes its own copies only.
+    assert.equal(node.privateExtendedKey, expected);
+  }
+  child.wipePrivateData();
+  root.wipePrivateData();
+});
+
+// Contract: when a CKD step reports the BIP32 retry verdict (I_L >= n, or a
+// child at infinity; WASM code 1), deriveChild proceeds with the next index,
+// exactly as BIP32 specifies, and refuses once no next index exists (2^32 - 1
+// for a private parent, 2^31 - 1 for a public one). No real vector exists
+// (about 2^-128 per step) and the WASM exports are frozen, so the test loads
+// a copy of hdkey.js whose only change routes the CKD call through a stub
+// that reports the retry verdict at chosen indexes and calls the real WASM
+// export otherwise. @scure/bip32 is the oracle for the node that results.
+// The #359 test above pins the same wiring by source text; this one runs it.
+async function loadHdKeyWithCkdStub() {
+  const source = readFileSync(join(repoRoot, "src/js/hdkey.js"), "utf8");
+  const call = "wasm()[fn](p, index >>> 0, outPtr)";
+  assert.equal(source.split(call).length, 2, "hdkey.js must make exactly one CKD call in this form; update the seam with it");
+  const srcUrl = pathToFileURL(join(repoRoot, "src/js/")).href;
+  const patched = source
+    .replace(call, "globalThis.__hdkeyCkdStub(fn, p, index >>> 0, outPtr)")
+    .replace(/from "\.\/([^"]+)"/g, (_, file) => `from "${srcUrl}${file}"`);
+  const dir = mkdtempSync(join(tmpdir(), "hdkey-ckd-stub-"));
+  try {
+    writeFileSync(join(dir, "hdkey.mjs"), patched);
+    return (await import(pathToFileURL(join(dir, "hdkey.mjs")).href)).HDKey;
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+test("a BIP32 retry verdict derives the next index, and the last index refuses (issue #359)", async () => {
+  const StubbedHDKey = await loadHdKeyWithCkdStub();
+  let retryAt = new Set();
+  globalThis.__hdkeyCkdStub = (fn, p, index, outPtr) => retryAt.has(index) ? 1 : wasmExports()[fn](p, index, outPtr);
+  try {
+    const seed = hexToBytes(wipeVectorSeed);
+    const root = StubbedHDKey.fromMasterSeed(seed);
+    const publicRoot = root.neutered();
+    const oracle = ScureHDKey.fromMasterSeed(seed);
+    const H = 0x80000000;
+    // Control: with no retry verdict the copy derives exactly what scure does.
+    assert.equal(root.deriveChild(5).privateExtendedKey, oracle.deriveChild(5).privateExtendedKey);
+    // One retry verdict: the next index, for private normal, private hardened
+    // and public children.
+    retryAt = new Set([5, H + 5]);
+    for (const [parent, index, expected] of [
+      [root, 5, oracle.deriveChild(6).privateExtendedKey],
+      [root, H + 5, oracle.deriveChild(H + 6).privateExtendedKey],
+      [publicRoot, 5, oracle.deriveChild(6).publicExtendedKey],
+    ]) {
+      const child = parent.deriveChild(index);
+      assert.equal(child.index, index + 1, `retry at ${index}`);
+      assert.equal(parent === publicRoot ? child.publicExtendedKey : child.privateExtendedKey, expected, `retry at ${index}`);
+    }
+    // Consecutive verdicts keep moving forward.
+    retryAt = new Set([5, 6]);
+    assert.equal(root.deriveChild(5).privateExtendedKey, oracle.deriveChild(7).privateExtendedKey);
+    // The last index has no next one: refuse instead of wrapping or guessing.
+    retryAt = new Set([2 ** 32 - 1, H - 1]);
+    assert.throws(() => root.deriveChild(2 ** 32 - 1), /cannot retry child derivation at index 4294967295/);
+    assert.throws(() => publicRoot.deriveChild(H - 1), /cannot retry child derivation at index 2147483647/);
+  } finally {
+    delete globalThis.__hdkeyCkdStub;
+  }
+});

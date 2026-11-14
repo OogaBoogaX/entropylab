@@ -1,0 +1,4 @@
+# The same pinned Rust as the WASM crates. This crate runs natively.
+[toolchain]
+channel = "1.95.0"
+profile = "minimal"

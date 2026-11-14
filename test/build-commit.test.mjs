@@ -17,9 +17,15 @@ import { appendFileSync, cpSync, mkdtempSync, readFileSync, rmSync, symlinkSync,
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { BUILD_INPUTS } from "../scripts/build-commit.mjs";
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
-const COPIED = ["src", "scripts", "assets", "manifest.webmanifest", "package.json", "package-lock.json"];
+const COPIED = [
+  "src", "scripts", "assets", "manifest.webmanifest", "package.json", "package-lock.json",
+  "entropylab-wasm/src", "entropylab-wasm/Cargo.toml", "entropylab-wasm/Cargo.lock", "entropylab-wasm/rust-toolchain.toml",
+  "psbt-wasm/src", "psbt-wasm/Cargo.toml", "psbt-wasm/Cargo.lock", "psbt-wasm/rust-toolchain.toml",
+  "vanity-wasm/src", "vanity-wasm/Cargo.toml", "vanity-wasm/Cargo.lock", "vanity-wasm/rust-toolchain.toml",
+];
 
 const git = (cwd, ...args) => execFileSync("git", [
   "-c", "user.name=test", "-c", "user.email=test@example.invalid", "-c", "commit.gpgsign=false",
@@ -55,12 +61,14 @@ const withRepo = (fn) => {
     const repo = join(dir, "repo");
     for (const path of COPIED) cpSync(join(root, path), join(repo, path), { recursive: true });
     git(repo, "init", "-q");
+    git(repo, "config", "gc.auto", "0");
+    git(repo, "config", "maintenance.auto", "false");
     // node_modules is linked, not committed, so commits record the sources alone
     writeFileSync(join(repo, ".gitignore"), "node_modules\n");
     linkModules(repo);
     return fn({ dir, repo, sources: commit(repo, "sources") });
   } finally {
-    rmSync(dir, { recursive: true, force: true });
+    rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
   }
 };
 
@@ -87,10 +95,20 @@ test("a commit to any build input moves the stamp to that commit", { timeout: 30
     const touches = {
       "src/css/styles.css": "\n",
       "assets/favicon.png": "\0",
+      "assets/favicon.svg": "\n",
+      "assets/logo-dark.svg": "\n",
       "manifest.webmanifest": "\n",
       "package.json": "\n",
       "package-lock.json": "\n",
       "scripts/build.mjs": "\n// touched\n",
+      // inputs the build imports but does not itself name as paths: a stamp
+      // that ignores them names a commit the artifact was not built from
+      "scripts/preview-blocks.mjs": "\n// touched\n",
+      "scripts/ln-worker-source.mjs": "\n// touched\n",
+      "scripts/qr-worker-source.mjs": "\n// touched\n",
+      "scripts/ots-worker-source.mjs": "\n// touched\n",
+      "scripts/build-wasm.mjs": "\n// touched\n",
+      "psbt-wasm/src/lib.rs": "\n// touched\n",
     };
     for (const [path, suffix] of Object.entries(touches)) {
       appendFileSync(join(repo, path), suffix);
@@ -99,6 +117,29 @@ test("a commit to any build input moves the stamp to that commit", { timeout: 30
       commit(repo, "docs after the change");
       assert.equal(buildStamp(repo, join(dir, `out-${path.replace(/\W/g, "-")}`)).stamp, changed, `a change to ${path} must move the stamp`);
     }
+  });
+});
+
+test("an artifact-only change to a generated WASM module does not move the stamp", { timeout: 120000 }, () => {
+  withRepo(({ dir, repo, sources }) => {
+    appendFileSync(join(repo, "src/js/psbt-wasm-b64.js"), "\n// artifact-only\n");
+    const artifact = commit(repo, "artifact refresh only");
+    assert.notEqual(artifact, sources);
+    assert.equal(buildStamp(repo, join(dir, "out-artifact")).stamp, sources, "derived modules are not source-of-truth build inputs");
+  });
+});
+
+test("a dirty build input stamps unknown instead of a trusted commit", { timeout: 120000 }, () => {
+  withRepo(({ dir, repo, sources }) => {
+    appendFileSync(join(repo, "src/css/styles.css"), "\n/* uncommitted */\n");
+    assert.equal(buildStamp(repo, join(dir, "out-dirty")).stamp, "unknown");
+  });
+});
+
+test("an untracked file under a build input stamps unknown too", { timeout: 120000 }, () => {
+  withRepo(({ dir, repo, sources }) => {
+    writeFileSync(join(repo, "src/css/styles.css.bak"), "/* editor backup */\n");
+    assert.equal(buildStamp(repo, join(dir, "out-untracked")).stamp, "unknown", "untracked input files are not any commit either");
   });
 });
 
@@ -116,4 +157,17 @@ test("a build refuses a shallow clone, release and test-hook staging alike", { t
       assert.match(result.stderr, /shallow/);
     }
   });
+});
+
+// The hand-kept list drifts: an import added to the build and not to
+// BUILD_INPUTS leaves the stamp naming a commit the artifact was not built
+// from, while every gate only checks ancestry. Derive the build's own
+// relative imports and require each to be covered, so forgetting the list
+// fails here rather than at a release.
+test("every relative input the build imports is a declared build input", () => {
+  const covered = (file) => BUILD_INPUTS.some((input) => file === input || file.startsWith(`${input}/`));
+  const source = readFileSync(join(root, "scripts/build.mjs"), "utf8");
+  const imports = [...source.matchAll(/(?:from |import\()\s*"\.\/([^"]+)"/g)].map((match) => `scripts/${match[1]}`);
+  assert.ok(imports.length >= 5, "fixture: the build imports its helper modules");
+  for (const file of imports) assert.ok(covered(file), `${file} is imported by scripts/build.mjs but missing from BUILD_INPUTS`);
 });

@@ -12,6 +12,7 @@
 import { t, tAttr, tHtml } from "./i18n.js";
 import { createModal } from "./modal.js";
 import { copyText } from "./clipboard.js";
+import { watchOnlyQrButtonOptions } from "./psbt-ur.js";
 
 // An address or an xpub reads in full; a PSBT export does not, so anything
 // past this length shows head and tail around an ellipsis. The code and the
@@ -36,6 +37,14 @@ export const addressQrButtonHtml = (address, label, { animate = "" } = {}) => {
   // than losing bytes or losing its button.
   const animated = animate ? ` data-address-qr-animate="${escapeHtml(animate)}"` : "";
   return `<button type="button" class="addr-qr no-print" data-address-qr="${escapeHtml(value)}" data-address-qr-label="${escapeHtml(caption)}"${animated} aria-label="${tAttr("Show QR code for {label}", { label: caption })}">${tHtml("QR")}</button>`;
+};
+
+// The QR button for a watch-only descriptor or BIP-388 policy: a single text
+// QR up to the static limit, an animated "watch" sequence past it, and no
+// button at all for text carrying private key material (psbt-ur.js decides).
+export const watchOnlyQrButtonHtml = (value, label) => {
+  const options = watchOnlyQrButtonOptions(value);
+  return options ? addressQrButtonHtml(value, label, options) : "";
 };
 
 // One shared overlay for every address table. `renderQr` is injected by the
@@ -149,6 +158,10 @@ export const initAddressQr = (renderQr, icons = {}, { frames = null } = {}) => {
   addEventListener("pageshow", (event) => {
     if (event.persisted) teardown();
   });
+  // Conceal-on-leave and stage wipes dispatch this: an open overlay can hold
+  // an entire PSBT (proprietary xprv included) and is a body-level sibling of
+  // every view the wipe reaches.
+  document.addEventListener("hodl:conceal", teardown);
   const open = (target) => {
     const value = target.dataset.addressQr ?? "";
     if (!value) return;

@@ -82,6 +82,7 @@ export function assertValidSecp256k1Secret(bytes) {
 
 export function deriveBip85Entropy(root, path) {
   if (!root || typeof root.derive !== "function") throw new Error("BIP-85 needs a BIP32 root private key.");
+  if (/^[mM]'?$/.test(String(path).trim())) throw new Error("BIP-85 needs a hardened child path, not the root.");
   // No private-key preflight: a truthiness read of the getter would copy the
   // key out and drop it unzeroed. The fully-hardened path refuses a watch-only
   // node in derive() ("Could not derive hardened child key") before any
@@ -93,7 +94,9 @@ export function deriveBip85Entropy(root, path) {
     return hmacSha512(HMAC_KEY_BYTES, key);
   } finally {
     wipeBytes(key); // the getter copy
-    child.wipePrivateData(); // the node itself (derive already wiped the intermediates)
+    // A path of "m" returns the caller-owned root; deriving a real child is
+    // the only case where the returned node is ours to wipe.
+    if (child !== root) child.wipePrivateData();
   }
 }
 

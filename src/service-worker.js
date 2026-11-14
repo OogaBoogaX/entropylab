@@ -8,10 +8,23 @@ const CACHE_NAME = `${CACHE_PREFIX}${VERSION}`;
 self.addEventListener("install", (event) => {
   event.waitUntil((async () => {
     const cache = await caches.open(CACHE_NAME);
-    await cache.addAll([
+    // Both documents enter one cache and must come from this worker's own
+    // revision: two independent reload fetches can straddle a rolling deploy
+    // and cache the landing page of one revision beside the app of another
+    // (audit L7). Each generated document carries this build's own
+    // service-worker URL marker; a mismatch fails the install — the previous
+    // usable cache stays and the next install retries.
+    for (const request of [
       new Request("./", { cache: "reload" }),
       new Request("./entropylab.html", { cache: "reload" }),
-    ]);
+    ]) {
+      const response = await fetch(request);
+      if (!response.ok) throw new Error(`Precache failed: ${response.status}`);
+      const clone = response.clone();
+      const marker = (await response.text()).match(/service-worker\.js\?v=([^"'\s]+)/)?.[1];
+      if (marker !== VERSION) throw new Error(`Precached document is revision ${marker ?? "unknown"}, not this worker's ${VERSION}.`);
+      await cache.put(request, clone);
+    }
     await self.skipWaiting();
   })());
 });

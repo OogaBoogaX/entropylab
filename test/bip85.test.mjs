@@ -238,11 +238,12 @@ test("the mnemonic load path follows the session network like the xprv path", ()
     throw new Error(name);
   };
   const hodlUseKeyForBip85 = new Function(
-    "hodlBip85WipeParent", "hodlMnemonicToSeed", "hodlHDKey", "hodlWipeBytes", "hodlNetworkFamily", "hodlParseExtendedKey", "hodlResultRootNode", "hodlEntropyToMnemonic", "hodlBip39Wordlist",
+    "hodlBip85WipeParent", "hodlMnemonicToSeed", "hodlSeedFromEntropy", "hodlHDKey", "hodlWipeBytes", "hodlNetworkFamily", "hodlParseExtendedKey", "hodlResultRootNode", "hodlEntropyToMnemonic", "hodlBip39Wordlist",
     `${slice("hodlNetworkFamily")}; ${slice("hodlResultHasSeed")}; ${slice("hodlResultMnemonic")}; ${slice("hodlSeedSessionRoot")}; ${slice("hodlUseKeyForBip85")}; return hodlUseKeyForBip85;`,
   )(
     () => {},
     () => new Uint8Array(64), // a stand-in seed; only the flag is under test
+    () => new Uint8Array(64), // the same stand-in for the byte-based path
     HDKey,
     (bytes) => bytes.fill(0),
     undefined, // hodlNetworkFamily is sliced in
@@ -262,4 +263,11 @@ test("the mnemonic load path follows the session network like the xprv path", ()
   assert.doesNotMatch(useKey, /hodlBip85Testnet = false/);
   assert.ok((useKey.match(/hodlNetworkFamily\(result\.network\) === "testnet"/g) || []).length >= 2, "mnemonic and xprv paths both read the session network");
   delete globalThis.hodlBip85Testnet;
+});
+
+test("a root path is refused without wiping the caller's root", () => {
+  const root = HDKey.fromExtendedKey(MASTER);
+  assert.throws(() => deriveBip85Entropy(root, "m"), /root/);
+  assert.throws(() => deriveBip85Entropy(root, "m'"), /root/);
+  assert.ok(root.privateKey, "the caller-owned root still has its private key");
 });

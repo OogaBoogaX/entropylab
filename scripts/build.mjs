@@ -13,28 +13,56 @@
 // `--test-hooks --out <dir>`: it compiles in the suite's test bridge (see
 // src/js/app.js) and writes the files outside the repository root. The
 // release build leaves the flag off, so no test code reaches entropylab.html.
-import { mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { lstatSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createHash } from "node:crypto";
-import { dirname, join, resolve } from "node:path";
+import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { buildSync } from "esbuild";
+import { build } from "esbuild";
 import { buildCommit } from "./build-commit.mjs";
+import { applyPreviewBlocks, previewHtmlPlugin } from "./preview-blocks.mjs";
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
 const SRC = join(root, "src");
 
 const testHooks = process.argv.includes("--test-hooks");
+const preview = process.argv.includes("--preview");
 const outFlag = process.argv.indexOf("--out");
 if (outFlag !== -1 && !process.argv[outFlag + 1]) throw new Error("--out requires a directory");
 const outDir = outFlag === -1 ? root : resolve(root, process.argv[outFlag + 1]);
 if (testHooks && outDir === root) {
   throw new Error("--test-hooks requires --out outside the repository root: the release artifact ships no test code");
 }
+if (preview && outDir === root) {
+  throw new Error("--preview requires --out outside the repository root: the release artifact ships no unreleased features");
+}
+// Unreleased features merge hidden, in two mechanisms. JavaScript gates on the
+// __ENTROPYLAB_PREVIEW__ define below: esbuild folds it to false in a release
+// build and drops the dead branch. Markup gates on the <!-- preview --> /
+// <!-- /preview --> comment blocks that applyPreviewBlocks strips from the
+// shell. A preview build is never deployed.
+
+// Build inputs are committed files. readFileSync and esbuild both follow a
+// symbolic link (or a Windows junction), so a committed link would pull a
+// file from outside the checkout into the artifact. Refuse any link among
+// the inputs before one is read (red-team sweep 0eed735, build #5). --clean
+// builds nothing, so it still removes the generated files from such a tree
+// (#1477 r5 gate, DeepSeek).
+const refuseLinks = (path) => {
+  const stats = lstatSync(path);
+  if (stats.isSymbolicLink()) throw new Error(`Build input is a symbolic link: ${relative(root, path)}`);
+  if (stats.isDirectory()) for (const name of readdirSync(path)) refuseLinks(join(path, name));
+};
+if (!process.argv.includes("--clean")) {
+  // scripts/ too: the build imports its modules and inlines what the
+  // worker-source ones return (#1477 r9 gate, DeepSeek).
+  for (const input of ["src", "assets", "scripts", "manifest.webmanifest", "package.json"]) refuseLinks(join(root, input));
+}
 
 const read = (path) => readFileSync(join(SRC, path), "utf8");
 const version = JSON.parse(readFileSync(join(root, "package.json"), "utf8")).version;
 
-if (!/^\d+(?:\.\d+)*$/.test(version)) {
+// Rock builds carry "-dev" (#1406); a release tag never does.
+if (!/^\d+(?:\.\d+)*(?:-dev)?$/.test(version)) {
   throw new Error(`Invalid version in package.json: ${version}`);
 }
 
@@ -59,19 +87,85 @@ if (process.argv.includes("--clean")) {
   process.exit(0);
 }
 
-const template = read("index.html");
+// Both templates that reach the artifact take the same preview-block pass.
+const template = applyPreviewBlocks(read("index.html"), preview);
 // The page body lives once in shell.html: it is injected into index.html for
 // first paint / no-JS and imported by app.js (esbuild text loader) for the
 // boot render, so the two can never drift.
-const shell = read("shell.html");
+const shell = applyPreviewBlocks(read("shell.html"), preview);
 const workerTemplate = read("service-worker.js");
 const css = read("css/styles.css");
+// The stylesheet is inlined into a <style> element as it is: a "</style"
+// would end it and turn the rest into page markup (#1477 r2 gate, Kimi).
+if (/<\/style/i.test(css)) throw new Error("src/css/styles.css holds </style, which would end the page's inlined <style> element");
 // The header logo is inlined as SVG markup so the downloaded file shows it
 // without reaching for assets/ (which only exists on the hosted site). The
 // empty span is replaced in the template and in the runtime header template.
-const logoSvg = (name) =>
-  read(`assets/${name}.svg`).trim()
-    .replace("<svg ", `<svg class="site-${name}" aria-hidden="true" focusable="false" `);
+// The SVG lands raw in the page, whose CSP allows inline script, and inside a
+// JS string literal in the bundle (a template literal today; esbuild picks the
+// quote). A list of what to refuse kept missing shapes the HTML parser still
+// reads: a handler after "/" or straight after a quoted value, javascript:
+// split by a tab, and HTML elements such as <meta http-equiv=refresh> or
+// <div>, which the parser lifts out of the SVG into the page, where the CSP
+// does not stop a redirect (red-team sweep 0eed735, build #1; #1477 gate:
+// Kimi, GLM, MiniMax, DeepSeek). So the logo is checked against what it may
+// hold: plain shape elements with double-quoted presentation attributes, and
+// none of &, <!--, a backtick, ${, a backslash or ' (which the string
+// literal would read).
+const SVG_ELEMENTS = new Set(["svg", "g", "path", "circle", "ellipse", "rect", "line", "polyline", "polygon", "title"]);
+const SVG_ATTRIBUTES = new Set(["xmlns", "viewBox", "width", "height", "d", "fill", "fill-rule", "fill-opacity", "clip-rule", "stroke", "stroke-width", "stroke-linecap", "stroke-linejoin", "stroke-miterlimit", "stroke-opacity", "opacity", "transform", "x", "y", "cx", "cy", "r", "rx", "ry", "x1", "y1", "x2", "y2", "points"]);
+// The logo must also be one balanced <svg> element with nothing after it: an
+// element left open, or one after the closing tag, lands in the page's HTML,
+// where a <title> swallows the rest of the page as text (#1477 r4 gate, Kimi).
+const svgProblem = (svg) => {
+  // A line break is refused too: it would end the bundle string the logo is
+  // spliced into if esbuild ever wrote the shell with quotes, not backticks.
+  // The logos are one line (#1477 r9 gate, DeepSeek).
+  if (/&|<!--|`|\$\{|\\|'|[\r\n]/.test(svg)) return "an &, <!--, a backtick, ${, a backslash, ' or a line break";
+  // The root is written "<svg " with its attributes after a space: the build
+  // adds the logo's class and ARIA attributes there, so another root shape
+  // (a bare <svg>, a line break after the name) shipped without them
+  // (#1477 r8 gate, GLM).
+  if (!svg.startsWith("<svg ")) return "a root other than \"<svg \" and its attributes";
+  // Tags are read with HTML's whitespace (tab, LF, FF, CR, space), not
+  // JavaScript's \s: HTML reads a U+00A0 as part of the tag name, so
+  // "</title\u00a0>" closes nothing (#1477 r7 gate, Kimi).
+  let problem = null, rootClosed = false;
+  const open = [];
+  const rest = svg.replace(/<(\/?)([A-Za-z][\w:-]*)((?:[\t\n\f\r ]+[A-Za-z][\w:-]*="[^"<>]*")*)[\t\n\f\r ]*(\/?)>/g, (tag, close, element, attributes, selfClosing) => {
+    if (!SVG_ELEMENTS.has(element)) problem ??= `the element <${element}>`;
+    // A <title> is an HTML integration point: markup inside it is parsed as
+    // HTML, where a nested <title> reads the rest as text and a self-closing
+    // tag stays open, so the logo's root never closes (#1477 r6 gate, Kimi).
+    // A title holds text only.
+    if (open.at(-1) === "title" && !(close && element === "title")) problem ??= "markup inside a <title>";
+    for (const [, attribute] of attributes.matchAll(/[\t\n\f\r ]([A-Za-z][\w:-]*)=/g)) {
+      if (close || !SVG_ATTRIBUTES.has(attribute)) problem ??= `the attribute ${attribute}`;
+    }
+    if (rootClosed) problem ??= "markup after the closing </svg>";
+    else if (close) {
+      if (open.pop() !== element) problem ??= `an unbalanced </${element}>`;
+      if (!open.length) rootClosed = true;
+    } else if (!selfClosing) {
+      if (element === "svg" && open.length) problem ??= "a nested <svg>";
+      open.push(element);
+    } else if (!open.length) problem ??= "a self-closing root";
+    return "";
+  });
+  if (problem) return problem;
+  if (/[<>]/.test(rest)) return "markup that is not a plain element with double-quoted attributes";
+  // Text after the root lands in the page too (#1477 r5 gate, Kimi).
+  if (rootClosed && !svg.endsWith("</svg>")) return "text after the closing </svg>";
+  return open.length || !rootClosed ? `an unclosed <${open.at(-1) ?? "svg"}>` : null;
+};
+const logoSvg = (name) => {
+  const svg = read(`assets/${name}.svg`).trim();
+  const problem = svgProblem(svg);
+  if (problem) {
+    throw new Error(`src/assets/${name}.svg holds ${problem}; the inlined logo may hold only ${[...SVG_ELEMENTS].join(", ")} elements with presentation attributes`);
+  }
+  return svg.replace("<svg ", `<svg class="site-${name}" aria-hidden="true" focusable="false" `);
+};
 const siteLogoSpan = '<span class="site-logo" aria-hidden="true"></span>';
 const siteLogo = `<span class="site-logo" aria-hidden="true">${logoSvg("logo-dark")}${logoSvg("logo-light")}</span>`;
 // Inlined from the same files the site publishes, so the downloaded document
@@ -114,7 +208,21 @@ const wasmAezNotice = `/*!
  *   SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
  */
 `;
-const jsMain = buildSync({
+// shell.html reaches the artifact twice: injected into index.html below and
+// inlined into the app bundle by esbuild's text loader for the boot render.
+// previewHtmlPlugin applies the same preview-block transform to every .html
+// module esbuild loads, so a release build hides the markup in both copies.
+// Plugins need the async API.
+const previewHtml = previewHtmlPlugin(preview);
+// The QR-capture license text goes into a JS comment ahead of the bundle: a
+// "*/" would end the comment and run the rest as code, and "</script" or
+// "<!--" would change where the page's script element ends (red-team sweep
+// 0eed735, build #3).
+const ur2License = readFileSync(join(root, "src/licenses/ur2.txt"), "utf8");
+if (/\*\/|<\/script|<!--/i.test(ur2License)) {
+  throw new Error("src/licenses/ur2.txt holds */, </script or <!--, which would break out of the bundle's license comment");
+}
+const jsMain = (await build({
   entryPoints: [join(SRC, "js/app.js")],
   bundle: true,
   minify: true,
@@ -125,21 +233,39 @@ const jsMain = buildSync({
   legalComments: "none",
   charset: "utf8",
   loader: { ".html": "text" },
-  banner: { js: wasmAezNotice },
-  define: { __ENTROPYLAB_TEST_HOOKS__: testHooks ? "true" : "false" },
-}).outputFiles[0].text.split(siteLogoSpan).join(siteLogo)
+  banner: { js: wasmAezNotice + "\n/*! QR capture: Foundation Devices ur2-derived fragment selection, BSD-2-Clause-Patent.\n" + ur2License + "\n*/\n" },
+  plugins: [previewHtml],
+  define: {
+    __ENTROPYLAB_TEST_HOOKS__: testHooks ? "true" : "false", __LN_WORKER_SOURCE__: JSON.stringify(await (await import("./ln-worker-source.mjs")).buildLnWorkerSource()),
+    __QR_WORKER_SOURCE__: JSON.stringify(await (await import("./qr-worker-source.mjs")).buildQrWorkerSource()),
+    __OTS_WORKER_SOURCE__: JSON.stringify(await (await import("./ots-worker-source.mjs")).buildOtsWorkerSource()),
+    __ENTROPYLAB_PREVIEW__: preview ? "true" : "false",
+  },
+})).outputFiles[0].text.split(siteLogoSpan).join(siteLogo)
   // @scure/base probes TextDecoder with "A0+" and a DEL (U+007F). Its source
   // spells DEL as an escape, but esbuild writes the character itself, which
   // HTML forbids in a script. Put the escape back: the string is unchanged.
   .split(String.fromCharCode(0x7f)).join(String.fromCharCode(92) + "x7f");
 const jsSqliteWriter = read("js/sqlite-writer.js");
+const jsSqliteReader = read("js/sqlite-reader.js");
 const jsWalletExport = read("js/wallet-export.js");
+const jsCoreWallet = read("js/core-wallet.js");
 const jsOnline = read("js/online.js");
 const jsNetwork = read("js/network-check.js");
 const jsBrowserCheck = read("js/browser-check.js");
 const jsLifeHash = read("js/lifehash.js");
 const jsEnhanced = read("js/enhanced-inputs.js");
 const jsRepeat = read("js/repeat-inputs.js");
+// The classic scripts are inlined verbatim: esbuild never sees them, so the
+// preview constant would be an undefined name there and break the release
+// page. Refuse it at build time; gate classic-script features from app.js.
+// Nothing escapes them either, so a "</script" (or a "<!--", which changes
+// where the element ends) would close their <script> element early and turn
+// the rest into page markup (red-team sweep 0eed735, build #2).
+for (const [name, text] of Object.entries({ jsSqliteWriter, jsSqliteReader, jsWalletExport, jsCoreWallet, jsOnline, jsNetwork, jsBrowserCheck, jsLifeHash, jsEnhanced, jsRepeat })) {
+  if (text.includes("__ENTROPYLAB_PREVIEW__")) throw new Error(`${name}: classic scripts cannot use __ENTROPYLAB_PREVIEW__ (only ES modules bundled by esbuild see it)`);
+  if (/<\/script|<!--/i.test(text)) throw new Error(`${name}: classic scripts are inlined into <script> elements as they are, so they cannot contain </script or <!--`);
+}
 
 let html = template
   .replace("/*@@SHELL@@*/", () => shell)
@@ -149,7 +275,9 @@ let html = template
   .replace("/*@@CSS@@*/", () => css)
   .replace("/*@@JS_MAIN@@*/", () => jsMain)
   .replace("/*@@JS_SQLITE_WRITER@@*/", () => jsSqliteWriter)
+  .replace("/*@@JS_SQLITE_READER@@*/", () => jsSqliteReader)
   .replace("/*@@JS_WALLET_EXPORT@@*/", () => jsWalletExport)
+  .replace("/*@@JS_CORE_WALLET@@*/", () => jsCoreWallet)
   .replace("/*@@JS_ONLINE@@*/", () => jsOnline)
   .replace("/*@@JS_NETWORK@@*/", () => jsNetwork)
   .replace("/*@@JS_BROWSER_CHECK@@*/", () => jsBrowserCheck)
@@ -161,6 +289,28 @@ let html = template
 html = html
   .split("{{COMMIT}}").join(commit)
   .split("{{COMMIT_SHORT}}").join(commit === "unknown" ? "unknown" : commit.slice(0, 7));
+
+// A -dev build (#1406) is an unsigned rock candidate, never a release. It keeps
+// the shell's <!-- dev-build --> block, a banner with no dismiss control, and
+// asks search engines not to index the page. A release build drops the block
+// whole and adds nothing. The shell reaches the page twice (injected for first
+// paint, bundled for the boot render), so the block must be found once in each
+// copy, its markers alone on their lines: anything else fails the build rather
+// than shipping a banner that boot puts back or takes away.
+const devBuild = version.includes("-dev");
+const devBlock = /^[ \t]*<!-- dev-build -->[ \t]*\r?\n([\s\S]*?)^[ \t]*<!-- \/dev-build -->[ \t]*\r?\n/gm;
+const devMarkers = html.match(/<!-- \/?dev-build -->/g)?.length ?? 0;
+const devBlocks = html.match(devBlock)?.length ?? 0;
+if (devMarkers !== 4 || devBlocks !== 2) {
+  throw new Error(`Expected one dev-build block in each shell copy, each marker alone on its line; found ${devBlocks} blocks and ${devMarkers} markers`);
+}
+html = html.replace(devBlock, (_, kept) => (devBuild ? kept : ""));
+if (devBuild) {
+  const charset = '<meta charset="utf-8">';
+  const at = html.indexOf(charset);
+  if (at === -1 || at > html.indexOf("</head>")) throw new Error("The template head has no charset meta for the robots meta to follow");
+  html = `${html.slice(0, at + charset.length)}<meta name="robots" content="noindex, nofollow">${html.slice(at + charset.length)}`;
+}
 
 // The hosted service-worker URL must change whenever the self-contained app
 // or its offline shell changes, even while several commits share one package
@@ -197,6 +347,6 @@ if (outDir === root) {
 writeFileSync(join(outDir, appFile), html);
 writeFileSync(join(outDir, workerFile), worker);
 
-console.log(`Built EntropyLab v${version}${testHooks ? " (test hooks enabled; not for release)" : ""}`);
+console.log(`Built EntropyLab v${version}${testHooks ? " (test hooks enabled; not for release)" : ""}${preview ? " (preview: unreleased features on; not for release)" : ""}`);
 console.log(`  ${appFile} (${Buffer.byteLength(html, "utf8")} bytes)`);
 console.log(`  ${workerFile} (${Buffer.byteLength(worker, "utf8")} bytes)`);

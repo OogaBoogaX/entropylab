@@ -30,11 +30,18 @@
 # Bump the digest, the snapshot, and the clang versions together.
 FROM --platform=linux/amd64 ubuntu:24.04@sha256:496754492fb28b4d3049432f2ca787449331e23fb14f0dd3fffea86bf5a93eb4
 
-ARG NODE_VERSION=v22.23.2
+ARG NODE_VERSION=v22.23.4
 ARG FIREFOX_VERSION=140.14.0esr
+ARG RUSTUP_VERSION=1.29.1
 ARG UBUNTU_SNAPSHOT=20260916T000000Z
 ARG CLANG_VERSION=1:18.0-59~exp2
 ARG CLANG18_VERSION=1:18.1.3-1ubuntu1
+# Integrity pins for the downloads below. The base image is pinned by digest
+# and apt checks its own signatures; these tools are not in the archive, so
+# their bytes are pinned here (audit H2).
+ARG NODE_SHA256=1805bcd35e6815559bd2eb97db438d3fdb0eb3a5e6a977b7c1badca76337e9ce
+ARG FIREFOX_SHA512=53c667ded54f0044855072c7b66333d6566beb91178009bbfe10a7220d7abd88b580cb2884269e98a13586075906b76c047a73544203b93325957237ff59399b
+ARG RUSTUP_INIT_SHA256=dda7234360b7f578ca8b0ddcb80145646fa61a67c1720a5abc7051b35c9fcb71
 
 ENV DEBIAN_FRONTEND=noninteractive \
     RUSTUP_HOME=/usr/local/rustup \
@@ -83,8 +90,10 @@ RUN set -eu; \
       fontconfig fonts-liberation; \
     rm -rf /var/lib/apt/lists/*
 
-# Pinned Node.js (engines: >= 20.19; CI runs 22).
+# Pinned Node.js (engines: >= 20.19; CI runs 22). Verify the tarball against
+# the hash pinned above before it becomes the build's node/npm.
 RUN curl -fsSLO "https://nodejs.org/dist/${NODE_VERSION}/node-${NODE_VERSION}-linux-x64.tar.xz" \
+    && echo "${NODE_SHA256}  node-${NODE_VERSION}-linux-x64.tar.xz" | sha256sum -c - \
     && tar -xJf "node-${NODE_VERSION}-linux-x64.tar.xz" -C /usr/local --strip-components=1 \
     && rm "node-${NODE_VERSION}-linux-x64.tar.xz" \
     && node --version && npm --version
@@ -101,6 +110,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # Pinned Firefox ESR tarball (Ubuntu's apt firefox is a snap shim and cannot
 # run in a container; the harness already handles the unconfined tarball).
 RUN curl -fsSLO "https://archive.mozilla.org/pub/firefox/releases/${FIREFOX_VERSION}/linux-x86_64/en-US/firefox-${FIREFOX_VERSION}.tar.xz" \
+    && echo "${FIREFOX_SHA512}  firefox-${FIREFOX_VERSION}.tar.xz" | sha512sum -c - \
     && mkdir -p /opt/firefox \
     && tar -xJf "firefox-${FIREFOX_VERSION}.tar.xz" -C /opt/firefox --strip-components=1 \
     && ln -s /opt/firefox/firefox /usr/local/bin/firefox \
@@ -109,9 +119,12 @@ RUN curl -fsSLO "https://archive.mozilla.org/pub/firefox/releases/${FIREFOX_VERS
 
 # Chrome from Google's official apt repository (amd64). Chrome covers the
 # whole Chromium family: Microsoft Edge is a Chromium fork that shares its
-# engine and headless code path.
+# engine and headless code path. apt trusts every primary in a signed-by
+# keyring, so the key file must hold exactly one — the pinned Google key.
 RUN curl -fsSL https://dl.google.com/linux/linux_signing_key.pub \
         | gpg --dearmor --yes -o /usr/share/keyrings/google-chrome.gpg \
+    && [ "$(gpg --show-keys --with-colons /usr/share/keyrings/google-chrome.gpg | grep -c '^pub:')" = "1" ] \
+    && gpg --show-keys --with-colons /usr/share/keyrings/google-chrome.gpg | grep -q '^fpr:::::::::EB4C1BFD4F042F6DDDCCEC917721F63BD38B4796:' \
     && echo "deb [arch=amd64 signed-by=/usr/share/keyrings/google-chrome.gpg] http://dl.google.com/linux/chrome/deb stable main" \
         > /etc/apt/sources.list.d/google-chrome.list \
     && apt-get update \
@@ -126,20 +139,27 @@ RUN groupmod -n dev ubuntu && usermod -l dev ubuntu && usermod -d /home/dev -m d
 
 # Rust: `default-toolchain none` keeps the base image lean; the exact
 # 1.95.0 toolchain + wasm32 target activate from each crate's
-# rust-toolchain.toml. The dependency graphs of all three crates are
+# rust-toolchain.toml. The dependency graphs of all four crates are
 # fetched into the shared CARGO_HOME so the first `npm run build:wasm`
 # needs no network.
-RUN curl -fsS https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain none
+RUN curl -fsSLO "https://static.rust-lang.org/rustup/archive/${RUSTUP_VERSION}/x86_64-unknown-linux-gnu/rustup-init" \
+    && echo "${RUSTUP_INIT_SHA256}  rustup-init" | sha256sum -c - \
+    && chmod +x rustup-init \
+    && ./rustup-init -y --profile minimal --default-toolchain none \
+    && rm rustup-init
 
 COPY entropylab-wasm/ /warm/crate/
 COPY vanity-wasm/ /warm/vanity-crate/
 COPY psbt-wasm/ /warm/psbt-crate/
+COPY qr-wasm/ /warm/qr-crate/
 RUN cd /warm/crate \
     && rustup target add wasm32-unknown-unknown --toolchain 1.95.0 \
     && cargo fetch \
     && cd /warm/vanity-crate \
     && cargo fetch \
     && cd /warm/psbt-crate \
+    && cargo fetch \
+    && cd /warm/qr-crate \
     && cargo fetch
 
 # Warm the shared npm cache (locked dependencies only — the app has no

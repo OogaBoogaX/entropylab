@@ -18,8 +18,11 @@
 //   - every tag matches a fixed allowlist form exactly and nesting is
 //     balanced — the sanitizer must not have to escape, drop, or auto-close
 //     anything;
+//   - the same tags as the English source, each as many times (in whatever
+//     order the sentence needs): a translation renders with exactly the
+//     English formatting, so it can neither add bold or code nor drop a link;
 //   - anchors carry only the fixed forms the English source itself carries:
-//     a translation may drop a link but can never retarget or invent one;
+//     a translation can never retarget or invent a link;
 //   - no entity or character references beyond the five the sanitizer emits
 //     (amp, lt, gt, quot, #39) — a browser could decode the others into bidi
 //     or invisible text;
@@ -47,13 +50,21 @@ export const placeholdersOf = (text) =>
 // would display it literally — fail it here instead.
 const canonicalEntities = new Set(["amp", "lt", "gt", "quot", "#39"]);
 
+// A string's tags as a sorted list ("strong", "/strong", ...): compared as a
+// multiset, so a translation may move a bold word but not add or drop one.
+const tagsOf = (text) =>
+  [...hodlCatalogTokens(String(text ?? ""))]
+    .filter((token) => token.text === undefined)
+    .map((token) => (token.closing ? "/" : "") + token.name)
+    .sort();
+
 // Fixed attribute forms are compared by identity: hodlCatalogTagForm returns
 // the allowlist table's own frozen objects, so two tokens matching the same
 // form hold the same reference.
 const anchorFormsOf = (text) => {
   const forms = new Set();
   for (const token of hodlCatalogTokens(text)) {
-    if (token.text !== undefined || token.name !== "a") continue;
+    if (token.text !== undefined || token.name !== "a" || token.closing) continue;
     const form = hodlCatalogTagForm(token);
     if (form) forms.add(form);
   }
@@ -98,6 +109,9 @@ export function valueProblems(key, value) {
     stack.push(token.name);
   }
   for (const name of stack) problems.push(`unclosed <${name}>`);
+  const expectedTags = tagsOf(key), actualTags = tagsOf(value);
+  if (expectedTags.join(" ") !== actualTags.join(" "))
+    problems.push(`tags [${actualTags.join(" ")}] do not match the English source's [${expectedTags.join(" ")}]: a translation keeps the English formatting`);
   return problems;
 }
 

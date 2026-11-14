@@ -115,3 +115,177 @@ test("the editor renders the builder on every output row and wires it", () => {
   assert.match(editor, /buildOutputScript\(text, \{ network: network\(\), mode \}\)/);
   const css = read("src/css/styles.css");
 });
+
+// Audit M7: address intent is not a full-regex exercise. A mistyped bech32 or
+// Base58 address must error, not silently become OP_RETURN text or a raw
+// script (which would pay an unspendable or unrelated output).
+test("a malformed address-shaped string is an error, never OP_RETURN or raw script", () => {
+  assert.throws(() => buildOutputScript("bc1q" + "1".repeat(38)), /does not decode on mainnet/);
+  assert.throws(() => buildOutputScript("1" + "a".repeat(51)), /does not decode on mainnet/);
+  assert.throws(() => buildOutputScript("1" + "A".repeat(30)), /does not decode on mainnet/);
+  assert.throws(() => buildOutputScript("tb1q" + "1".repeat(38), { network: "testnet" }), /does not decode on testnet/);
+  // The error points at the way out when the input was meant as text.
+  assert.throws(() => buildOutputScript("bc1 rocks"), /OP_RETURN-text mode/);
+});
+
+// The Base58 arm stops at 60 characters (just past the longest real
+// Base58Check address), so long 0x-less raw hex keeps its raw-script reading.
+test("long raw hex starting with 1, 2 or 3 stays a raw script", () => {
+  const hex62 = "1" + "a".repeat(61);
+  assert.deepEqual(buildOutputScript(hex62), { scriptHex: hex62, kind: "raw", note: "raw script (31 bytes)" });
+  const hex70 = "3" + "b".repeat(69);
+  assert.deepEqual(buildOutputScript(hex70), { scriptHex: hex70, kind: "raw", note: "raw script (35 bytes)" });
+  // 60 characters is still address-shaped and errors rather than degrading.
+  assert.throws(() => buildOutputScript("1" + "a".repeat(59)), /does not decode on mainnet/);
+});
+
+test("Base58 address typos with a forbidden character do not become outputs", () => {
+  const valid = "1BgGZ9tcN4rm9KBzDn7KprQz87SZ26SAMH";
+  assert.equal(buildOutputScript(valid).kind, "address");
+  for (const typo of ["0", "O", "I", "l"]) {
+    const input = valid.slice(0, -1) + typo;
+    assert.throws(() => buildOutputScript(input), /does not decode/);
+    assert.equal(buildOutputScript(input, { mode: "opreturn-text" }).kind, "opreturn");
+  }
+  // More than one confusable, a punctuation typo, or a trailing paste
+  // artefact is still a mistyped address: intent follows the prefix and the
+  // shape of the token, not its alphabet. Explicit text mode still works.
+  for (const input of [valid.slice(0, -2) + "ll", valid.slice(0, -2) + "lO", valid.slice(0, -1) + "-", valid.slice(0, -1) + "_", valid.slice(0, -1) + "!", valid + ".", valid + ","]) {
+    assert.throws(() => buildOutputScript(input), /does not decode/, input);
+    assert.equal(buildOutputScript(input, { mode: "opreturn-text" }).kind, "opreturn");
+  }
+  const testnet = "mipcBbFg9gMiCh81Kj8tqqdgoZub1ZJRfn";
+  assert.equal(buildOutputScript(testnet, { network: "testnet" }).kind, "address");
+  for (const input of [testnet.slice(0, -2) + "0O", testnet + "."]) assert.throws(() => buildOutputScript(input, { network: "testnet" }), /does not decode on testnet/, input);
+  // Text keeps its intent: a short token, and anything carrying whitespace.
+  assert.equal(buildOutputScript("1hello").kind, "opreturn");
+  assert.equal(buildOutputScript("1 Dec 2026, proof of existence").kind, "opreturn");
+  assert.equal(buildOutputScript("1" + "a".repeat(32) + "0").kind, "raw");
+});
+
+// Audit M7, first character: a confusable or any other typo in the leading
+// character takes the token out of every prefix class, so the shape alone
+// must carry the intent. A whitespace-free run of letters and digits the
+// length of an address is a mistyped address, never OP_RETURN text.
+test("a typo in the first character of an address is still a mistyped address", () => {
+  const mainnet = "1BgGZ9tcN4rm9KBzDn7KprQz87SZ26SAMH";
+  for (const first of ["l", "I", "0", "O", "x"]) {
+    const input = first + mainnet.slice(1);
+    assert.throws(() => buildOutputScript(input), /does not decode on mainnet/, input);
+    assert.equal(buildOutputScript(input, { mode: "opreturn-text" }).kind, "opreturn", input);
+  }
+  const testnet = "mipcBbFg9gMiCh81Kj8tqqdgoZub1ZJRfn";
+  assert.throws(() => buildOutputScript("M" + testnet.slice(1), { network: "testnet" }), /does not decode on testnet/);
+  // bech32 with a mistyped human-readable part: P2WPKH (42) and P2TR (62).
+  assert.throws(() => buildOutputScript("vc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4"), /does not decode on mainnet/);
+  assert.throws(() => buildOutputScript("xc1p5cyxnuxmeuwuvkwfem96lqzszd02n6xdcjrs20cac6yqjjwudpxqkedrcr"), /does not decode on mainnet/);
+  // Digits only at address length is refused rather than silently text.
+  assert.throws(() => buildOutputScript("4" + "7".repeat(33)), /does not decode on mainnet/);
+  // Text keeps its intent below address length and when it carries
+  // punctuation; raw script keeps its reading behind a 0x prefix.
+  assert.equal(buildOutputScript("x" + "a".repeat(23)).kind, "opreturn");
+  assert.equal(buildOutputScript("https://example.com/proof-of-existence").kind, "opreturn");
+  assert.equal(buildOutputScript("0x" + "a".repeat(30)).kind, "raw");
+});
+
+// Audit M7, symbols: a stray symbol in the first position, or quotes and
+// brackets around the token from a chat or spreadsheet paste, must not turn
+// a mistyped address into text. Up to two symbols keep the address reading;
+// a URL or e-mail separator (/, : or @), or a third symbol, keeps text.
+test("a mistyped address wrapped in or starting with a symbol is still a mistyped address", () => {
+  const mainnet = "1BgGZ9tcN4rm9KBzDn7KprQz87SZ26SAMH";
+  const bech32 = "bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4";
+  for (const input of ["!" + mainnet.slice(1), "\"" + mainnet, "\"" + mainnet + "\"", "“" + mainnet + "”", "(" + mainnet + ")", "<" + mainnet + ">", "'" + bech32 + "'", "!" + bech32.slice(1)]) {
+    assert.throws(() => buildOutputScript(input), /does not decode on mainnet/, input);
+    assert.equal(buildOutputScript(input, { mode: "opreturn-text" }).kind, "opreturn", input);
+  }
+  assert.throws(() => buildOutputScript("[mipcBbFg9gMiCh81Kj8tqqdgoZub1ZJRfn]", { network: "testnet" }), /does not decode on testnet/);
+  // URLs, e-mail addresses and hyphenated phrases keep their text intent.
+  for (const input of ["https://example.com/proof-of-existence", "mailto:someone@example.com", "entropylab-proof-of-existence", "entropylab-reproducible-build-2026-11-03"]) {
+    assert.equal(buildOutputScript(input).kind, "opreturn", input);
+  }
+});
+
+// Red-team sweep 0eed735, script-builder #2, #6, #10, #12, #13: the builder
+// refused each of these silently or not at all.
+test("a bare 0x is refused: it set an empty, anyone-can-spend script", () => {
+  assert.throws(() => buildOutputScript("0x"), /after 0x/);
+  assert.throws(() => buildOutputScript("  0X  "), /after 0x/);
+  assert.equal(buildOutputScript("0x51").scriptHex, "51", "a one-byte script still passes through");
+});
+
+// 0x marks raw script hex: a malformed one is refused, not read as OP_RETURN
+// text that burns the output's value (#1478 gate, Kimi).
+test("malformed hex after 0x is refused, not turned into OP_RETURN text", () => {
+  for (const typed of ["0x5", "0x51z", "0xabc", "0xGG"]) {
+    assert.throws(() => buildOutputScript(typed), /even number of 0-9\/a-f digits/, typed);
+  }
+  assert.equal(buildOutputScript("0x51z", { mode: "opreturn-text" }).kind, "opreturn", "the text mode still takes it");
+  assert.equal(buildOutputScript("0x 51 ac").scriptHex, "51ac", "spaced hex still passes through");
+});
+
+// Raw script hex that happens to look like "<letters>1<bech32 characters>"
+// keeps its raw reading (#1478 r3 gate, Kimi, GLM, DeepSeek, MiniMax, Gemini).
+test("raw script hex shaped like a long bech32 string is still raw script", () => {
+  for (const raw of ["face1" + "0".repeat(51), "ab1" + "cd".repeat(30) + "e", "deadbeef1" + "0".repeat(51)]) {
+    const built = buildOutputScript(raw);
+    assert.equal(built.kind, "raw", raw.slice(0, 10));
+    assert.equal(built.scriptHex, raw.toLowerCase());
+  }
+});
+
+test("a decimal opcode value is not an ASM token", () => {
+  for (const token of ["118", "172", "106"]) {
+    assert.throws(() => assembleScriptAsm(token), /Unknown script token/, token);
+  }
+});
+
+test("raw script hex has the same 10,000-byte cap as ASM", () => {
+  assert.equal(buildOutputScript("0x" + "ab".repeat(10000)).kind, "raw");
+  assert.throws(() => buildOutputScript("0x" + "ab".repeat(10001)), /10,000-byte/);
+});
+
+test("a data push over 520 bytes is refused outside an OP_RETURN script", () => {
+  const data = (n) => "0x" + "ab".repeat(n);
+  assert.ok(assembleScriptAsm(`${data(520)} OP_DROP OP_TRUE`), "520 bytes is the limit, still allowed");
+  assert.throws(() => assembleScriptAsm(`${data(521)} OP_DROP OP_TRUE`), /exceeds 520 bytes/);
+  assert.throws(() => assembleScriptAsm(`OP_TRUE ${data(600)}`), /exceeds 520 bytes/, "anywhere in the script");
+  assert.throws(() => buildOutputScript(`OP_DUP ${data(521)}`), /exceeds 520 bytes/, "auto mode's ASM too");
+  assert.ok(assembleScriptAsm(`OP_RETURN ${data(600)}`).startsWith("6a4d5802"), "an OP_RETURN script may carry one");
+});
+
+test("a bare small integer in auto mode is OP_RETURN text, as every other number is", () => {
+  for (const number of ["5", "0", "16", "-1"]) {
+    assert.equal(buildOutputScript(number).kind, "opreturn", number);
+  }
+  assert.equal(buildOutputScript("OP_5").scriptHex, "55", "an OP_ name is still ASM");
+  assert.equal(buildOutputScript("5", { mode: "asm" }).scriptHex, "55", "the explicit ASM mode still reads 5 as OP_5");
+});
+
+test("a silent payment address is refused, not turned into OP_RETURN text", () => {
+  const address = "sp1qqgste7k9hx0qftg6qmwlkqtwuy6cycyavzmzj85c6qdfhjdpdjtdgqjuexzk6murw56suy3e0rd2cgqvycxttddwsvgxe2usfpxumr70xc9pkqwv";
+  for (const pasted of [address, "tsp1" + address.slice(3), "sprt1" + address.slice(3), address.toUpperCase()]) {
+    assert.throws(() => buildOutputScript(pasted), /Silent payment addresses/, pasted.slice(0, 6));
+  }
+  assert.equal(buildOutputScript("sp1 is a good name").kind, "opreturn", "text with spaces is still text");
+  for (const label of ["TSP1000XL", "sp1abc", "SPRT1-test"]) {
+    assert.equal(buildOutputScript(label).kind, "opreturn", `${label}: a short label stays text (#1478 r4 gate, GLM)`);
+  }
+  // Wrapped by a paste, or with a mistyped prefix (#1478 r2 gate, Kimi).
+  for (const wrapped of [`"${address}"`, `<${address}>`, `(${address})`]) {
+    assert.throws(() => buildOutputScript(wrapped), /Silent payment addresses/, wrapped.slice(0, 6));
+  }
+  assert.throws(() => buildOutputScript("xp1" + address.slice(3)), /does not decode/, "a mistyped prefix is an address that does not decode");
+  assert.throws(() => buildOutputScript(`"xp1${address.slice(3)}"`), /does not decode/);
+  // A mistyped character outside the bech32 alphabet, or a leading digit, still
+  // reads as a silent payment address (#1478 r3 gate, Kimi, Gemini, DeepSeek).
+  const typo = address.slice(0, 40) + "b" + address.slice(41);
+  for (const pasted of [`"${typo}"`, typo, "1" + address, `(1${typo})`]) {
+    assert.throws(() => buildOutputScript(pasted), /Silent payment addresses/, pasted.slice(0, 8));
+  }
+  // A wrapped regtest Taproot address past 64 characters, with a mistyped
+  // character, is an address that does not decode (#1478 r3 gate, Gemini).
+  const regtest = "bcrt1p" + "q".repeat(58);
+  assert.throws(() => buildOutputScript(`"${regtest.slice(0, 20)}b${regtest.slice(21)}"`, { network: "regtest" }), /does not decode/);
+  assert.equal(buildOutputScript(address, { mode: "opreturn-text" }).kind, "opreturn", "the explicit text mode still takes it");
+});

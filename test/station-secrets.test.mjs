@@ -84,7 +84,7 @@ const vanityStation = await load(["hodlVanityClearResults"], {
   settable: ["hodlVanityGrinder", "hodlVanityRunning"],
 });
 const vanityRender = await load(["hodlRenderVanityOut"], {
-  stubs: { hodlFillKeyTabLifehash: () => {} },
+  stubs: { hodlFillKeyTabLifehash: () => {}, hodlSyncWorkspaceCounts: () => {} },
   settable: ["hodlVanityMatches", "hodlVanityRun", "hodlVanityReveal", "hodlVanityFound"],
 });
 const station = await load(["hodlRenderLastWordPicker", "hodlBip85SessionKeyState", "hodlResultMnemonic", "hodlSeedSessionRoot", "hodlResultRootXprv", "hodlResultRootNode", "hodlSinglePrivateKey", "hodlBip85ChildFingerprint", "hodlRenderBip85Out", "hodlBip85WipeMem", "hodlSeedPhraseField"], {

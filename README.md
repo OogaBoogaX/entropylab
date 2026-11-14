@@ -6,9 +6,27 @@ private keys into wallet recovery information without intentionally sending
 sensitive data to a server. The whole application is one HTML file, and its
 markup passes the W3C HTML validator with zero errors.
 
-Current version: **v1.0.0**
+Current version: **v1.1.0-dev**
+
+That is the development line on `rock`, which the website follows. The latest
+signed release is [v1.0.0](https://github.com/OogaBoogaX/entropylab/releases/tag/v1.0.0).
 
 Official website: [entropylab.online](https://entropylab.online)
+
+## Security
+
+EntropyLab is built to run on a computer that never goes online, with entropy
+you supply: it never generates key entropy, and its Content Security Policy
+lets the page make no network requests of its own (the hosted copy's service
+worker checks for updates). Under the maintainers' process, every pull request
+other than automated translation updates is reviewed by five models and an
+adversarial red team before it merges, and model-written code runs only in an
+isolated sandbox. Releases are signed by four maintainers and reproducible
+byte for byte inside the pinned build image. The
+[security posture](docs/SECURITY_POSTURE.md) maps each claim to the code and
+tests behind it and lists the known limits. Report vulnerabilities privately
+through
+[GitHub Security Advisories](https://github.com/OogaBoogaX/entropylab/security/advisories/new).
 
 ## Features
 
@@ -22,11 +40,30 @@ shares those exact modules with downstream tests and artifact publication.
 For local testing after Rust changes, run `npm run build:wasm` before
 `npm run build && npm test`; the checked-in modules may predate the changes.
 
+How the code is tested (the CI suite, Bitcoin Core interop checks,
+differential fuzzing, mutation testing, and the October 2026 review record)
+is summarised in [docs/TESTING.md](docs/TESTING.md).
+
 Clearing a Key or Multisig station cancels its pending derivation. Leaving
 the page clears rendered seed-word copies and prevents a late derivation or
-import from restoring cleared secrets. Locking the journal also invalidates
+import from restoring cleared secrets. Clearing the journal also invalidates
 pending notebook and Key Manager imports. See [SECURITY.md](SECURITY.md) for
 the limits of browser-memory cleanup.
+
+The crypto WASM module overwrites Rust heap allocations before releasing them,
+including dependency-owned descriptor keys and text. Resizing preserves the
+live bytes and erases the old allocation. This does not erase live objects,
+JavaScript strings, browser copies, or operating-system memory.
+
+The code fixes merged in [PR #843](https://github.com/OogaBoogaX/entropylab/pull/843)
+provide the following behavior. Rejected HD derivation paths wipe any intermediate
+private child already created, while preserving the caller's root. The sequential
+PSBT UR decoder API deduplicates identical fragments and allocates only for supplied fragments;
+invalid sequence numbers are refused. Large transaction scripts serialize
+without depending on the browser's function-argument limit.
+Nonce reports never pair a repeated-nonce warning with a no-repeat claim.
+Inputs requiring more than 32,768 same-r pair comparisons are refused with
+an explicit error before those pairs are allocated.
 
 - A live **Security log** below Important shows the browser's initial
   connection status, online/offline changes, and detected browser translation
@@ -109,6 +146,23 @@ the limits of browser-memory cleanup.
   derived from the exported
   output descriptor itself by rust-miniscript (in the WASM crate), so the two
   cannot drift.
+- Watch-only descriptors (single-signature and multisig) and a multisig's
+  BIP 388 wallet policy each carry a QR button. Up to 1,000 characters the
+  code is the text itself; a longer one is shown as an animated `ur:bytes`
+  sequence, in the same fixed-rate UR parts the PSBT editor uses for
+  `ur:crypto-psbt`. An extended private key never gets a code.
+- Encrypted multisig backup (BIP-138), in MultiSig's downloads and its
+  import panel. An encrypted backup is a scrambled copy of your multisig
+  wallet's descriptor: the recipe that turns your keys into addresses. A
+  multisig wallet can't be recovered without it, even with all the seeds, so
+  it's worth keeping spare copies. The encrypted copy can sit on a USB drive,
+  in email or in cloud storage without showing strangers your addresses or
+  keys. Anyone who holds one of the wallet's xpubs can open it, including
+  every cosigner and any app or service you shared an xpub with. It is not a
+  seed backup: it holds no private keys, can't spend anything, and won't help
+  if your seeds are lost. BIP-138 is still a draft standard, so keep a plain
+  copy of the descriptor somewhere you trust as well, and check that a saved
+  copy opens.
 - Inspects PSBT v0 transactions (paste, or upload a binary .psbt / hex or
   base64 text export; the loaded bytes download as .psbt or .txn), reports
   PSBT-provided amounts and fees, checks
@@ -117,6 +171,9 @@ the limits of browser-memory cleanup.
   rather than skipped — verifies optional Jade
   anti-exfil (sign-to-contract) transcripts without a key, and can compare supported
   SegWit v0 SIGHASH_ALL signatures with RFC 6979, including Bitcoin Core-style low-r grinding, in a temporary session.
+  A signature on a script containing OP_CODESEPARATOR is reported as
+  unverifiable rather than compared, because its digest commits to the script
+  from just past the last executed separator.
   Every input's declared sighash policy and each signature's appended sighash
   byte are decoded without a key; anything other than exact SIGHASH_ALL (or
   Taproot's equivalent SIGHASH_DEFAULT) is a
@@ -126,6 +183,38 @@ the limits of browser-memory cleanup.
   result whenever required data or support is missing. “Completed” describes
   only that check against the data in the file; it is not a claim that the
   transaction is safe or that PSBT-provided data is true.
+
+  Host randomness (rho) remains sensitive after signing. A malicious signer using
+  an operator-known base nonce can expose the signing key if its operator later
+  obtains rho and the signature. With the corresponding account xpub and a
+  non-hardened derivation path, compromise can extend to the account private key.
+  Do not save, share or record real transcripts or paste them on a shared/recorded
+  screen. Clipboard copies can persist outside this page.
+
+  In normal and preview builds, tab hide, idle timeout and print clear the pasted
+  transcript and last-inspection cache and close its disclosure. Plain window
+  blur preserves them so the opening or PSBT can be copied from another window;
+  other revealed secrets and visible result panes are still concealed. End
+  Session and pagehide clear field/cache. Clearing is best-effort; browser/OS
+  copies are outside reliable erasure. A successful transcript check does not
+  establish that host randomness stayed secret.
+  PSBT camera scans keep one stream across animated parts. A visible blur
+  while a permission prompt is pending does not cancel the request, but a
+  grant starts capture only when the page is visible and focused. Active
+  blur, tab hide, print, idle, cancellation, another PSBT scanner and teardown
+  stop capture and discard pending scan data.
+  A **Scan PSBT QR** control under the PSBT Inspector, Nonce Inspector and
+  PSBT Editor fields (and the fee-bump original, the PSBT sent to the signer
+  and the Editor's comparison PSBT) reads a PSBT shown as a QR code with the device camera:
+  one static code (base64 or hex), an animated `ur:crypto-psbt` sequence, or
+  PSBT BBQr (`H`, `2` and `Z` encodings).
+  Nothing is written to the field until the whole PSBT has arrived and it
+  starts with the PSBT magic; a QR that holds anything else is refused, and
+  a field that already has a PSBT asks before it is replaced.
+  The Editor and PSBT Inspector also accept pasted UR/BBQr frames separated
+  by whitespace. A paste must contain exactly one complete transfer: any
+  frame after completion is refused, including a duplicate. An in-progress
+  UR or BBQr transfer cannot be replaced by another transport without reset.
 - Accepts a fully signed raw Bitcoin transaction (hex or base64) in the same
   inspector: outputs, extracted ECDSA nonces, and inscription-envelope hints.
   Fee and RFC 6979 cannot be checked without previous outputs.
@@ -173,7 +262,49 @@ the limits of browser-memory cleanup.
   shown as an animated `ur:crypto-psbt` fragment sequence for air-gapped
   scanning, and an **Insane editing** switch lifts the consensus-layer checks
   for deliberately broken files while still listing their problems. The
-  editor never signs anything.
+  editor never signs anything. Its output-script builder can interpret input
+  as an address, raw script, or OP_RETURN text; check the resulting script
+  carefully. In auto mode a whitespace-free token of 25 to 64 characters
+  with at most two symbols, and no `/`, `:` or `@`, is read as an address
+  and refused unless it decodes; a token starting with 1, 2, 3, m or n is
+  read as an address from 21 characters. A mistyped address of that shape
+  errors instead of becoming OP_RETURN text; one that is shorter, carries
+  three or more symbols, a `/`, `:` or `@`, or an inserted space still
+  reads as text. Bare hex is a raw script only when it is even-length,
+  contains an a-f digit and does not read as a Base58 address; a `0x`
+  prefix always marks raw script.
+  The Editor's input label is version-neutral; the decoded report identifies
+  the submitted PSBT version. The separate PSBT Inspector and Nonce Inspector
+  retain their v0-only input labels and parsing limits.
+- Verifies and extends Bitcoin Core descriptor wallets (Bitcoin Core tab):
+  upload a SQLite `wallet.dat` (Bitcoin Core 23+; legacy Berkeley DB wallets
+  are refused) and every record is decoded — client versions, wallet flags,
+  sync locators, descriptors with their cached branch parents and private-key
+  records, and the active scriptPubKey pointers — then re-checked claim by
+  claim: descriptor checksums and recomputed DescriptorIDs, cache parents
+  re-derived from the account keys (an honest warning where a descriptor
+  shape sits outside that re-derivation, never a silent pass), private-key
+  records against their pubkeys
+  and record hashes, the network magic against the chain's genesis hash, and
+  every descriptor key's xpub/tpub version against that network.
+  Private key material is listed but redacted unless a reveal toggle is on.
+  Additional ranged descriptors (watch-only or, into a wallet that already
+  signs, private) can be appended; the rebuilt database is re-parsed and
+  re-verified before it downloads (an edited file that fails any check is not
+  offered), and records the tool does not decode are preserved byte-for-byte.
+  As with Core, a private descriptor is refused by a disable-private-keys
+  wallet, and a descriptor whose keys belong to another network is refused. A signing wallet's proven key material can also
+  move into a Key Station slot for review: the private key records are
+  reassembled into the exact root or account xprv they belong to (given the
+  descriptor's own public bookkeeping) — only when the secret provably matches
+  the record's pubkey and the embedded extended key — and the Key Station
+  opens with the key filled in for the user to derive and compare by hand,
+  on the wallet's own chain (a regtest wallet derives `bcrt1…`).
+  Only the standard path the Key Station derives is accepted (a master key
+  with its purpose/coin/account-0 tail, or an account key on `/0/*` or
+  `/1/*`); a non-standard path is skipped, because the fingerprint would
+  still match while every address would not. Watch-only and Core-encrypted
+  wallets are refused outright.
 - Derives BIP-85 child entropy from the active key's BIP32 root (or a pasted
   root xprv): English BIP-39 mnemonics (12–24 words), HD-seed WIF, XPRV, HEX,
   and Base64/Base85 passwords. Same parent, application, and index always
@@ -194,6 +325,16 @@ the limits of browser-memory cleanup.
   DNS TXT to paste on a domain you control; paste that URI back on Send.
   Hybrid URIs with an ordinary Bitcoin fallback address still use Silent
   Payments; the results identify the fallback address as not used.
+- Privacy tab, BIP-47 payment codes station: derives your payment code and
+  notification address from the BIP-47 account (m/47'/coin'/0') of a seed or
+  root xprv, decodes a
+  contact's code with no private key, lists the pair addresses to pay or
+  receive (10 at a time, real indexes, skipped indexes listed), and checks a
+  pasted notification transaction offline (designated input found
+  automatically; a manual override is marked unverified). A receive key is
+  shown only on request; anyone who paid you there could rebuild your BIP-47
+  account key from it, so it must never be shared. Nothing is signed or
+  broadcast.
   This is a calculator: it does not scan the chain or resolve names.
 - Grinds vanity addresses for a Key Station key or a compatible BIP-85 child
   (Vanity tab), picked through the same chip picker as BIP-85 and Silent
@@ -226,84 +367,223 @@ the limits of browser-memory cleanup.
   wallet birthday are shown alongside the node key; the decoded entropy and
   salt and the BIP32 root xprv (what `chantools showrootkey` prints) sit
   behind a reveal toggle. Decoding only: the tab never creates seeds.
-- A session **Journal** (temporarily hidden from release navigation while its
-  backup and restore flow is polished) holds an **Entropy
-  Journal** notebook, a notepad stamped with this computer's date and time,
-  a Key Manager, a live summary of everything derived in this sitting, and a debug log
-  of tool switches and derives (fingerprints, not seeds). Its introduction
-  remains above the Journal controls. Notepad, Key manager, Session state, and Session log
-  stay visible but disabled until the user creates a journal, with or without
-  a password, or successfully opens an existing journal; the create/open gate
-  then disappears and the Journal starts on Notepad. The create form reports
+- A session **Journal** has three working areas: **Notes**, **Keys**, and
+  **Session**. Notes opens first; Keys holds recoverable key inputs, and
+  Session shows the current report first, saved historical snapshots in their
+  own disclosure, and the **Debug log** separately. Current and saved reports
+  have independent reveal, copy, and export controls; revealed labels use the
+  same red cue as private data elsewhere. In live and saved snapshots, private field
+  labels are red and their values blue, using the same styles as derived keys;
+  public fields keep their ordinary styling. Saved snapshots, including older
+  backups and files opened through **Open report**, highlight recognized report
+  fields without changing their text. Unrecognized text stays plain; coloring
+  does not verify saved contents. Copy and export preserve the original text.
+  Multisig reports include public
+  descriptors, paths, and displayed addresses.
+  **Create journal** and **Open backup** are the starting choices. Section
+  tabs and global controls stay hidden until the user creates a journal, with
+  or without a password, or opens an existing backup. The create form reports
   whether password protection is enabled and checks confirmation matches live
   without exposing what was typed. A blank password is accepted and provides
   no access protection: anyone holding the resulting file can open it by
-  leaving the password blank. Journal-wide **Download journal** and **Clear journal** actions stay
-  below the introduction once a journal is unlocked; clearing wipes the
-  entries, notepad, session snapshot, and log from page memory and
-  returns to the create/open gate. The notebook keeps
-  entropy the user already produced — dice, coins, hex, brain-wallet text, or
-  a seed — under AES-256-GCM; the key is PBKDF2-SHA-256 (600,000 rounds) of the
+  leaving the password blank. Journal-wide backup and **Clear journal**
+  actions remain available alongside protection and save status in every area.
+  The complete backup contains every notes page and its formatting, all
+  managed and archived key inputs, unfinished Key Station inputs, saved
+  historical records, the session snapshot, and the debug log. The complete backup includes the current
+  private recovery snapshot even when the on-screen snapshot is concealed.
+  Unfinished Key Station inputs restore as a separate, unverified input set in
+  Keys; they never replace the current working form or derive automatically.
+  An empty working form consumes no backup slot. The 100-active-input limit
+  includes an unfinished form; backup refuses overflow rather than omitting it.
+  These limits apply to Journal storage, not standalone Key Station derivation.
+  Changes to notes and key inputs mark the
+  Journal as unsaved; edits made while a backup is encrypting remain unsaved.
+  **Clear journal** opens a confirmation with choices to download a backup,
+  discard the Journal, or cancel. Downloading keeps the Journal open: the page
+  cannot verify that the file was saved, so discarding still requires an
+  explicit choice. Cancel keeps the Journal intact. Discard wipes the
+  password and Journal contents from page memory on a best-effort basis and
+  returns to the create/open gate. Keys still open in Key Station remain
+  there; End Session clears the whole page. Leaving the page still clears
+  the Journal without this confirmation.
+  The backup uses AES-256-GCM; the key is PBKDF2-SHA-256 (600,000 rounds) of the
   optional password the user chooses, with the salt derived from that password
-  and the IV HMAC-SHA-256 of the plaintext, so the file is a pure function of
-  password and entries and no CSPRNG is ever called. One JSON file the user
-  downloads and loads back. Nothing is stored in the browser; download a file
-  to keep it. Closing the page discards the sitting. The notebook is a
-  calculator companion, not a password manager: it only stores material the
-  user generated themselves.
-  The **Key manager** tab packages selected Key Station source inputs and
-  settings, including ignored entries, into an `.elkeys` file. It reuses the unlocked
-  Journal's password setting, so it adds no password prompt, random salt,
-  or random nonce. Imports are **unverified inputs**, not ready-to-use wallets.
-  Choose **Load inputs to derive**, review the inputs/settings, then derive each
-  key in Key Station. Cached addresses, private outputs, and fingerprints from
-  legacy files are discarded; only fresh derivation can match an existing key.
-  **Add all to Key Station** applies only to already-derived keys, leaving
-  unverified and ignored entries untouched. New files use input-only format
-  version 2 (requires this updated reader); version 1 files remain importable.
-  Cached-output-only files cannot replace missing source inputs.
-  Deleting a Key Station tab while a Journal is open
-  likewise removes it from the station without discarding it from Key Manager.
-  The Journal also includes a paged notepad. Pages use
+  and the IV HMAC-SHA-256 of the plaintext. The file is a pure function of
+  password and backup content; no CSPRNG is called. Nothing is stored in the
+  browser; download a file to keep it. Closing the page discards the sitting.
+  Opening a complete backup restores its Journal sections together. Saved
+  snapshots are historical text, concealed until explicitly revealed; they do
+  not recreate live wallets, multisig sessions, or PSBTs. Backup snapshots keep
+  recovery material and descriptors but omit recomputable address and WIF rows;
+  the live Session report and its separate export still include those rows.
+  Reopening and saving without newly derived results does not append another
+  snapshot. Changed derived results append a report while preserving earlier
+  recovery material. The snapshot size limit remains explicit; export saved
+  history before removing it if that limit is reached.
+  **Open report** reads exported snapshot and Debug log files using the open
+  Journal's password setting. Its read-only viewer starts concealed and never
+  installs data into tools or the Journal. Closing the viewer, automatic
+  concealment, or clearing the Journal releases its report text. Session offers
+  **Remove saved snapshot** when history is present. Confirmation removes
+  that history from this Journal and future backups while preserving current
+  session data, notes, key inputs, and existing downloaded files; Cancel keeps
+  it. Old entry-only files remain readable, and their records appear in Keys
+  only when present.
+  Existing saved records can be edited. Save or cancel an open record edit
+  before downloading a complete backup. Changing its recovery inputs removes
+  the old wallet association; changing its label or notes preserves it.
+  Journal no longer creates manual entries or duplicate records on each
+  derivation. Complete backups retain historical records and require the
+  updated reader (payload version 3).
+  Section-only exports remain secondary controls. **Clear debug log** asks for
+  confirmation; Cancel keeps the log. Confirming removes its events and leaves
+  one event marking the clear. Pending log exports cannot download the old log
+  after it is cleared. The log follows new events only while the reader is
+  already at the bottom.
+  Recovery exports use the Journal's password setting; a password protects
+  them, while files created without one have no access protection. The
+  debug log export follows the same password setting.
+  The **Keys** area exports all available source inputs and archived inputs
+  into an `.elkeys` file. Its summaries use the app's shared text styles;
+  public fingerprints, paths, and keys copy on click with inline feedback.
+  Archived metadata wraps to keep the complete path readable.
+  The file uses the open Journal's password setting without
+  another password prompt, random salt, or random nonce. **Import key inputs**
+  is available beside the Key Station action and previews the input names and
+  archived count before changing the Journal. Encrypted key-input imports
+  must use the current Journal's password; importing with a separate source
+  password is not yet supported.
+  **Import and derive** adds the new inputs and derives them in order, using
+  each input's saved network; archived inputs stay archived. Canceling the
+  preview leaves the Journal unchanged. An archive-only file imports its
+  archived inputs without starting derivation. **Derive all pending** retries
+  outstanding inputs, and **Review inputs** loads one into Key Station for
+  editing, asking before replacing an unfinished draft. The saved network
+  appears beside Derive Key and follows an explicit Network-menu change.
+  Archiving the source or clearing Journal does not change that reviewed
+  draft's network or bypass its duplicate checks.
+  If Journal has been cleared and derivation reuses an existing key, the
+  reviewed inputs remain in the Key Station draft.
+  Imports remain **unverified inputs** until fresh derivation succeeds.
+  Cached addresses, private outputs, fingerprints, and claimed identities
+  from legacy files are discarded. New key files use input-only format
+  version 2; version 1 files remain importable. Cached outputs cannot replace
+  missing source inputs. A present passphrase must be text; malformed values
+  reject the whole file before preview or installation.
+  A freshly derived full-root identity (or compressed public key for an
+  imported single key) and matching setup reuse the existing
+  station key unchanged and archive the imported source inputs. The setup
+  comparison includes network, scripts, paths, ranges, and available recovery
+  material. If reviewed inputs were corrected before reusing an existing key,
+  the original inputs and a separately labeled reviewed copy are retained in
+  the archive. If the same wallet has a different setup, choose **Keep existing**
+  to leave the imported inputs pending, **Add separate setup**, or **Stop
+  deriving** to stop the batch. Account-level imports without a comparable
+  root identity get separate station tabs.
+  Failed and unprocessed inputs remain pending; stopping a batch keeps keys
+  already added. Low-entropy and fingerprint-collision warnings still require
+  their usual decisions. The batch preserves and restores the unfinished Key
+  Station draft and previous station selection. Newly derived imported keys
+  keep their names, with a numbered suffix if another key uses the same name;
+  reusing an existing setup keeps that station key's name.
+  Archiving is available for detached inputs and does not unload a live Key
+  Station key. **Restore and derive** returns archived inputs to the active
+  list and runs the same derivation and duplicate checks as import. Failed
+  or stopped inputs stay available for review and retry. Archive rows show
+  the saved method, network, and path to distinguish input sets before use.
+  Deleting a Key Station tab while a Journal is open removes it from the
+  station while retaining its inputs in the Journal.
+  **Open all saved keys** returns multiple verified, detached keys to Key
+  Station together, without deriving them again or changing pending inputs.
+  Notes is a plain text editor with up to 100 named pages. Pages use
   the Key Station's numbered naming convention, can be added or removed with
   the +/− controls, and can be renamed by activating the selected page again
   or pressing F2. Default names such as `Page 1` shorten to `P1` in narrow
-  windows. A responsive control row below the editor sets each page's
-  typeface, text size, and line spacing. Its key picker lists the currently
-  derived Key Station keys with their LifeHashes; choosing one inserts a
-  public inline reference with a line-height LifeHash and master fingerprint.
-  Notepad, Session state, and Session log downloads use the unlocked Journal's
-  file encryption by default. If the Journal has a password, that password
-  protects the downloads; without one, the encoded downloads have no access
-  protection. Their matching checkboxes stay synchronized, so one change applies
-  to Notepad, Session state, and Session log; unchecking exports the original
-  plain JSON or text. Notepad can upload either its plain notebook JSON or its
-  Journal-format export while that journal is unlocked.
-  Each page opens
-  with a live local timestamp and freezes it when note text is entered. Delete
-  the note back to its timestamp to return to the live new-note prompt. Press
-  Enter after a note to open the next live timestamp and prompt. Press Enter on
-  that empty prompt to leave an unstamped blank line and move a fresh live
-  prompt to the line below. Delete at the empty prompt moves it back through
-  those blank lines; once it reaches a completed note, the empty timestamp and
-  prompt disappear and the caret returns to that note's end. Clicking any blank
-  line moves an untouched live note there, or inserts a new live note there if
-  the last note is already written; dragging across blank lines only selects
-  them. Deleting a selected bottom section opens a live prompt on the blank line
-  left at the caret. Clicking a written note cancels an untouched pending note
-  and keeps the caret where clicked. Moving the pointer over the editor briefly
+  windows. Notes defaults to the same monospace input text as the rest of
+  the app. Appearance controls can customize each page's
+  typeface, text size, and line spacing. The editor can be resized vertically.
+  Its key picker lists derived Key Station keys, multisig wallets, and BIP-85
+  children with their LifeHashes. Choosing one inserts a public inline
+  reference; multisig references retain the wallet name, threshold, and ordered
+  co-signer fingerprints, with unknown origins explicitly marked.
+  Notes can import plain notebook JSON or a Journal-format export while the
+  matching Journal is open.
+  Switching pages retains each page's caret, selection, and scroll position
+  for this sitting. Invalid or duplicate page names show a correction message.
+  Names and note text remain exactly as entered when the interface language
+  changes. Section imports accept encrypted exports up to 4 MiB; canceling
+  an import or rejecting a file does not mark saved content as changed.
+  New pages start with this computer's current local date and time.
+  A placeholder beside each live timestamp disappears when editing begins;
+  it is never included in copied notes or backups.
+  **Ctrl/⌘+Enter** appends another timestamped block at the end of the
+  page, preserving existing text and separating notes with a blank line.
+  The new timestamp ticks each second until the first edit on that page,
+  including typing, paste, deletion, undo, or starting input composition.
+  Clicking, selecting, and scrolling leave it ticking without moving the
+  caret or changing backup status. Deleting a note's entire body while leaving
+  its final timestamp restarts that clock; Undo can recover the deleted text.
+  Imported timestamp-only notes stay fixed until explicitly edited. Importing
+  onto an untouched starter page replaces that starter instead of adding a
+  redundant page.
+  Enter continues the current note. Typing, clicking, and deleting never
+  insert timestamps. Each line-start timestamp and its two following spaces
+  are protected from partial edits, including timestamps in older backups.
+  Select its complete note, through the text before the next timestamp, to
+  delete it; selecting all clears the page. Body text and timestamp selections
+  remain freely copyable. A refused drag into a protected timestamp restores
+  the source text. Imported CRLF/CR newlines normalize to the editor's LF
+  newlines, and lookalike references retain their literal spelling. Backspace
+  immediately after an empty timestamp
+  removes the complete timestamp and its two spaces together; a fully cleared
+  page stays empty. Key
+  references still select and delete as complete units. Moving the pointer over the editor briefly
   reveals its clipboard button at the right edge; the same control is reachable
-  from the keyboard and copies the active page as readable text. **Download notebook** writes versioned
-  UTF-8 JSON containing page names, styles, and structured text/key runs; it
-  stores only the key's display name and public fingerprint, then regenerates
-  the LifeHash locally when that file is uploaded in a later session. Older
+  from the keyboard and copies the active page as readable text.
+  Notes and Debug log copy controls read their current text only when clicked;
+  they do not retain another copy of it on the button. The separate
+  notes export encrypts versioned UTF-8 JSON containing page names, styles,
+  and structured text/key runs. References contain public descriptive metadata,
+  never key material or instructions to restore a wallet. Multisig references
+  use text runs so older notebook readers preserve their contents.
+  LifeHashes are regenerated locally when that file is uploaded in a later session. Older
   `.txt` notes can also be uploaded as a single page. The Journal also holds
-  a read-only summary that updates as the sitting changes and a debug log of
-  meaningful dashboard actions: tool and station changes, calculations and
-  failures, safe setting changes, copies, imports, downloads, clears, and PSBT
-  structural edits. The log records public fingerprints where useful, but never
-  secret-field values, filenames, note bodies, PSBT bytes, or individual entry
-  keystrokes. It can be copied from its output field or downloaded. Nothing is stored in the
+  a read-only summary that updates as the sitting changes and a detailed debug
+  log: navigation, appearance, tool and station changes, calculations and
+  failures, safe setting changes, privacy toggles, copies, imports, downloads,
+  clears, and PSBT structural edits. It retains up to **512 KiB of UTF-8 JSON
+  event data or 10,000 events**, whichever comes first. At the limit it removes
+  the oldest events and shows how many were removed. The reader shows 400
+  events at a time, with Earlier, Newer, and Latest events controls; reading
+  earlier history does not change what gets copied or exported. Opening a
+  complete backup places its saved history before events already recorded in
+  this browser session and combines their discarded-event counts. The same
+  retention limits apply to the combined log; opening a legacy entry-only file
+  also preserves this session's existing events.
+  Backups from the original 400-event Journal remain readable within the
+  512 KiB log limit; an unusually large older log is rejected explicitly,
+  without trimming it. Backups with more events require this updated reader.
+  The existing overall backup and
+  file-size limits still apply. New events record public
+  fingerprints where useful, but omit secret-field values, raw derivation-path
+  input, filenames, note bodies, PSBT bytes, and individual entry keystrokes.
+  Imported event text is unverified and may contain sensitive information.
+  Display, Copy, and Export escape control characters and invisible separators
+  so an imported field cannot impersonate another event; backups retain the
+  original field data.
+  **Copy debug log** copies all retained events as plain text. **Export debug
+  log** downloads an encrypted report using the Journal's password setting.
+  Both capture the log when clicked, before adding their own outcome events,
+  and include a notice if older events have been removed.
+  Requests and completed operations are distinguished; a download starting does
+  not confirm that the file was saved. The exported report keeps the existing
+  format and remains readable through **Open report**. **Clear debug log**
+  offers **Export first**, **Clear**, and **Cancel**. Export first keeps the
+  log and dialog open so you can check the downloaded file before explicitly
+  clearing. Clear removes only the log and its discarded count, then records
+  one clear event. Cancelling an export still being prepared prevents its
+  download handoff. Nothing is stored in the
   browser; download a file to keep it. Closing the page discards the sitting.
 - Runs a quick barrage of startup sanity checks on the host browser (secure
   context, CSPRNG, BigInt, UTF-8 encoding, NFKD, and WebAssembly). If any
@@ -366,6 +646,24 @@ the limits of browser-memory cleanup.
   its next complete character. Hashed inputs update the non-hashed methods in
   one direction; edits to non-hashed methods never overwrite hashed inputs.
   With sync off, every dice-roll method retains its own independent transcript.
+- An optional **Secure entry** switch in Key Station (off on every load, never
+  saved) limits copies of secrets during entry:
+  - Seed words go in one at a time through a word picker.
+  - A private key goes into a masked field.
+  - Hashed dice rolls go on a six-button pad.
+
+  None of them is kept as page text, and words and rolls can be reviewed one
+  at a time. Secrets still exist in memory while the page is open, so End
+  Session and closing the browser still matter. Turning it on with text
+  already typed asks whether to keep that text or clear it. Keep moves the
+  format on screen into Secure entry and clears the key's other saved
+  formats. Global sync is unavailable while Secure entry is on.
+- **Scan QR** in Key Station reads a seed (Standard SeedQR, CompactSeedQR or
+  BIP39 words) or a WIF private key from the camera or a photo, straight into
+  Secure entry. With Secure entry off, Scan first offers to turn it on. The
+  scanned secret never passes through a text field. A confirmation names the
+  format before anything loads, and warns that a QR from someone else's backup
+  derives someone else's wallet.
 - SLIP-132 extended-key display is a prefix swap only (same payload, new
   version bytes and checksum). Import/derive shows the key as pasted, the
   account xpub/tpub, any account private-key export, and the descriptor
@@ -417,6 +715,49 @@ through the [computer hardening checklist](docs/Computer_Hardening_Checklist.md)
 
 To build the HTML file yourself, see [Building from source](#building-from-source).
 
+### Anti-exfil QR observer
+
+Unexpected proof-verifier exceptions produce a STOP result and completion clears
+the capture. Oversized QR decode results are skipped so scanning can continue.
+Invalid/conflicting frames discard partial fragments for the current message;
+already completed messages remain available for the same exchange.
+
+The Nonce Inspector includes an experimental in-memory camera observer. First allow camera access and choose a camera, then scan
+`ur:x-btc-anti-exfil` stages 2/4 on the signer and stage 3 on Sparrow. It checks
+the AEXB proof and the supplied signatures against the embedded PSBT. It never
+signs or broadcasts. Completion clears captured messages before showing a
+blocking PASS or STOP result; only verdict metadata remains until acknowledgement.
+Animated UR assembly uses the shared collector from #1273 with the observer's
+existing bounds and canonical envelope checks. Worker cleanup requests a memory
+scrub and waits up to four seconds for a busy worker (250 ms when idle).
+An unresponsive worker may terminate before wiping transferred frames or WASM
+memory. The shared decoder returns a scrub result; the observer does not currently
+surface it. Immutable decoded strings and browser/OS copies also
+remain outside reliable erasure guarantees.
+Multipart CRC-32 fields accept the reference encoder's fixed-width uint32 form,
+including small values, as well as previously accepted minimal-width values.
+Other CBOR fields retain canonical encoding checks; message CRC validation is unchanged.
+This does not prove host honesty or randomness secrecy. The user reports successful local SeedSigner and Kern multisig sessions;
+broader compatibility qualification remains pending; see `docs/QR_CAPTURE_PROTOTYPE.md` for limits.
+
+The QR observer supports PSBT v0, SIGHASH_ALL, native P2WPKH, P2SH-P2WPKH,
+native P2WSH standard m-of-n multisig and P2SH-P2WSH standard m-of-n multisig.
+All input contexts are checked. Already-finalized inputs are refused with
+`TRANSACTION_ALREADY_FINALIZED`: a conservative observer scope limit, not a
+tamper finding. Existing partial signatures do not by themselves finalize an input.
+
+The pasted transcript follows the confidentiality lifecycle described above:
+plain window blur preserves it; tab hide, idle timeout and print retire it.
+QR capture still pauses on every conceal trigger, including blur. Incomplete
+captured messages remain in memory until Clear Capture, End Session or page exit.
+Clearing remains best-effort.
+Coverage counts/indexes retained in the result are transaction metadata, not
+cryptographic secrets; Clear Capture retires that result too.
+
+For the QR observer, scan the signer’s M4 into EntropyLab first. Only after EL
+shows PASS, scan that same M4 into Sparrow. Do not continue after an incomplete
+result or STOP. Sparrow’s own checks and broadcast decision remain necessary.
+
 ### iPhone home-screen app
 
 On iPhone, open [entropylab.online](https://entropylab.online) in Safari, then
@@ -437,7 +778,22 @@ For sensitive or long-term use, the recommended path remains the downloaded,
 verified `entropylab.html` on a dedicated air-gapped computer. The downloaded
 file is still self-contained and never registers the hosted service worker.
 
+Keep iOS fully updated. On an out-of-date iPhone, one malicious web page can
+take over the phone, and after that, turning networks off does not keep
+secrets on it safe. Even an updated phone is less safe than the air-gapped
+computer above. Never keep seed words, or a photo or screenshot of a seed or
+SeedQR, anywhere on the phone or in the cloud, including Notes, Photos or
+iCloud. Scan a SeedQR live with the camera, not from a saved photo. If a photo
+was saved, delete it, including from Recently Deleted and iCloud Photos;
+deleting it cannot undo exposure that already happened.
+
 ### Verifying the download
+
+New to checksums and signatures? The step-by-step guide, with Windows, Mac and
+Linux commands, is [Verify your download](docs/Verify_Your_Download.md). A
+signed release also carries `SHA256SUMS.asc` and `KEYS`: run
+`gpg --import KEYS` and `gpg --verify SHA256SUMS.asc SHA256SUMS.txt`, and
+compare each signer's fingerprint with the guide's list.
 
 Every merge to `rock` publishes a `SHA256SUMS.txt` checksum manifest for
 `entropylab.html` (committed next to it in this repository), a matching
@@ -448,10 +804,17 @@ for the exact bytes built by CI, and an OpenTimestamps proof
 
 ```sh
 sha256sum -c SHA256SUMS.txt
-gh attestation verify entropylab.html -R OogaBoogaX/entropylab
+gh attestation verify entropylab.html -R OogaBoogaX/entropylab --signer-workflow OogaBoogaX/entropylab/.github/workflows/ci-cd.yml --source-ref refs/heads/rock
 ```
 
-The three WASM modules embedded in the HTML are committed as
+The two extra options matter. `--signer-workflow` and `--source-ref` accept
+only an attestation made by this repository's CI workflow for the `rock`
+branch. Without them the check would also accept an attestation made by any
+other workflow or branch in this repository. They need GitHub CLI
+2.68.0 or later; an older one stops with `unknown flag: --source-ref`.
+
+The four WASM modules embedded in the HTML (secp256k1, PSBT, vanity and the
+QR decoder) are committed as
 `src/js/*-wasm-b64.js`; their digests are in `WASM-SHA256SUMS.txt`, committed
 next to `SHA256SUMS.txt`. From a checkout of the release commit:
 
@@ -471,6 +834,11 @@ docker compose run --rm dev bash -c "npm ci --ignore-scripts && npm run build"
 sha256sum entropylab.html       # compare with SHA256SUMS.txt
 ```
 
+One caveat after a Rust change: the stamped commit still carries the previous
+committed WASM modules, so check out the artifact commit that published the
+page (or any later commit whose `WASM-SHA256SUMS.txt` matches the published
+one) instead — it stamps the same commit.
+
 This rebuilds the HTML from source using the committed WASM modules as fixed
 inputs. Rebuilding those modules (`npm run build:wasm` inside the same image)
 uses the image's pinned clang. CI requires two such builds to match the
@@ -478,6 +846,19 @@ modules it publishes: the artifact commit and the Pages deploy wait for that
 check. A host clang build is not those bytes. Rebuilds on other machines that
 matched the published hashes, the page and the modules alike, are recorded in
 [docs/Reproductions.md](docs/Reproductions.md), with how to add one.
+
+The boundary is the image. The page and the WASM modules are reproducible
+inside it: same commit, same digest. The Dockerfile pins the Ubuntu base by
+digest, the package archive to one snapshot, and the Node, Rust and clang
+versions; the image built from it is not itself bit-for-bit reproducible (the
+three builders in docs/Reproductions.md got three image digests and the same
+outputs). Its compilers are prebuilt binaries, trusted as a seed. This is not
+a full-source bootstrap. Full-source chains exist, from a few hundred bytes of
+hex assembler (hex0, GNU Mes) up to GCC and, in Guix, on to Rust through
+mrustc, but EntropyLab's toolchain has not been built that way, and no one
+has checked that such a build gives the same compiler or the same modules.
+EntropyLab claims byte-identical builds inside the pinned image, not that the
+compiler was built from an inspectable seed.
 
 The checksum detects accidental corruption. The attestation (Sigstore) says
 this repository's CI built those bytes. OpenTimestamps says the digest
@@ -487,7 +868,7 @@ stamped until `ots info entropylab.html.ots` shows a Bitcoin attestation.
 Then, on a machine with Bitcoin Core (a pruned node is fine):
 
 ```sh
-ots verify entropylab.html
+ots verify entropylab.html.ots
 ```
 
 On **Windows**, `opentimestamps-client`'s `python-bitcoinlib` dependency
@@ -498,8 +879,9 @@ is needed: Git for Windows already ships it. Copy
 `C:\Program Files\Git\mingw64\bin\` into any PATH directory as
 `libeay32.dll` and verification runs natively.
 
-EntropyLab itself never stamps, upgrades, or verifies `.ots` files and never
-talks to a calendar. The HTML stays air-gappable.
+EntropyLab itself never stamps or upgrades `.ots` files and never talks to a
+calendar. Its Verify tab checks a proof offline against a Bitcoin block header
+you supply. The HTML stays air-gappable.
 
 The CID is a self-describing name for the SHA-256, not a second hash. The
 calculator never talks to IPFS. To store or fetch the file on a **local**
@@ -584,6 +966,26 @@ experiments, so they are accepted with a warning. Hashing a short transcript
 does not add entropy. Never secure funds with an input below the displayed
 recommendation.
 
+### Do enough input bits or a good dice score prove my wallet is secure?
+
+No. Displayed bit counts describe the input's capacity under assumptions:
+dice rolls must be independent and fair, and card deals must come from
+uniformly shuffled decks with independent reshuffles. The app cannot infer
+those properties from the transcript. Hashing or converting the input to
+24 words does not increase its unpredictability.
+
+The dice panel checks face frequencies only. Repeating `123456` has balanced
+counts but is predictable. Its χ² percentile is not the probability that
+the die is fair, and passing the check does not certify randomness. This
+limitation is consistent with [NIST's guidance on statistical randomness
+tests](https://csrc.nist.gov/pubs/sp/800/22/r1/upd1/final).
+
+A valid BIP39 checksum checks internal consistency; it does not prove that
+the phrase is secret, random, or the intended backup. Every BIP39 passphrase
+produces a seed, so a mistyped passphrase can lead to a different wallet
+without an error. Verify the intended wallet independently before funding it.
+See the [BIP39 specification](https://github.com/bitcoin/bips/blob/master/bip-0039.mediawiki).
+
 ### How should I report a possible security problem?
 
 Do not open a public issue for a suspected vulnerability involving incorrect
@@ -638,14 +1040,14 @@ run on rust-bitcoin 0.32.102 compiled to WebAssembly from the pinned crate in
 committed as `src/js/psbt-wasm-b64.js`. The WASM sees only PSBT bytes and
 UTF-8 JSON; it holds no keys and generates no randomness.
 
-Requirements: Node.js 20.19 or newer.
+Requirements: Node.js 20.19 or newer. Use a patched release (22.23.4 or 24.22.1 or later, as `.nvmrc` and CI do): older Node releases carry the Brotli decoder flaw CVE-2026-111497, and Node 20 is end of life with no fix.
 
 ```sh
 npm ci
 npm run build
 ```
 
-To modify the Rust bindings (`entropylab-wasm/`, `psbt-wasm/`, `vanity-wasm/`),
+To modify the Rust bindings (`entropylab-wasm/`, `psbt-wasm/`, `vanity-wasm/`, `qr-wasm/`),
 Rust (with the `wasm32-unknown-unknown` target, installed automatically by
 rustup) is also required; regenerate the committed artifacts with
 `npm run build:wasm`.
@@ -673,7 +1075,7 @@ To remove generated files, run `npm run clean`.
 ├── test/
 │   ├── browser-instrumentation.html  In-page browser test hooks
 │   ├── browser-suite.html            In-page browser test suite
-│   ├── browser.test.mjs              Headless-Firefox integration harness
+│   ├── browser.test.mjs              Headless-browser integration harness (Firefox, Chrome/Chromium, Edge)
 │   ├── browser-check.test.mjs        Tests for the startup browser sanity checks
 │   ├── self-test-wasm.test.mjs       Tests for the boot self-test (oracle-checked vectors)
 │   ├── network-check.test.mjs        Tests for the network-check module
@@ -712,20 +1114,25 @@ To remove generated files, run `npm run clean`.
 └── versions/archived/      Historical releases excluded from the picker
 ```
 
+Tool tabs show the number of retained generated items: keys, multisig wallets,
+BIP-85 children, Silent Payment receive addresses, and listed vanity matches.
+Empty stations and cleared results do not count; zero-count badges stay hidden.
+PSBT inspections are not generated items and have no badge.
+
 ## Development and deployment
 
-The toolchain is npm and Node.js (>=20.19). Install the exact dependency tree
+The toolchain is npm and Node.js (>=20.19; `.nvmrc` pins 22.23.4, the version CI runs). Install the exact dependency tree
 with `npm ci`; every local and CI operation is exposed as an npm script:
 
 ```bash
-npm test                    # run all tests, including the headless-Firefox suite
-npm run test:ci             # the CI subset: network-check, ui-defaults, source invariants
+npm test                    # run all tests, including the headless browser suites
+npm run test:ci             # every test file except the two browser suites (what CI's "complete dependency-free suite" runs)
 npm run test:validate       # validate source and security invariants
-npm run test:browser        # test crypto, sanitization, networking, exports in headless Firefox
+npm run test:browser        # test crypto, sanitization, networking, exports in headless browsers (Firefox in CI; Chrome/Chromium and Edge too when installed)
 npm run build               # compile src/ into the generated root files
 npm run build:wasm          # rebuild the committed crypto WASM artifact (needs Rust)
 npm run verify              # verify the site artifact (entropylab.html, assets)
-npm run ci                  # run the CI test subset, build, and verify in order
+npm run ci                  # run test:ci, build, and verify in order
 ```
 
 GitHub Actions builds the site first, then runs the same test steps for pull
@@ -736,13 +1143,17 @@ back to the repository so the file stays downloadable; pull requests never
 carry the generated output, so they stop conflicting on it. The staging step
 copies the verified `entropylab.html` to a deployment-only `index.html`,
 allowing both the site root and `/entropylab.html` to serve the same
-application without committing a second application artifact. CI runs the
-test suites that need no browser; the headless-Firefox suite runs locally
-where a Firefox binary is available. Local checks and CI/CD use the same
-commands; the workflow contains no separate build implementation.
+application without committing a second application artifact. CI runs every
+test file on every pull request: `npm run test:ci` and the two headless browser
+suites (`npm run test:browser`, Firefox in CI); locally the browser suites also
+run in Chrome/Chromium and Microsoft Edge when installed. Local checks and CI/CD
+use the same commands; the workflow contains no separate build implementation.
 
-The browser suite runs the assembled application in headless Firefox against a
-local Node.js HTTP server. It feeds hostile markup and event-handler strings
+The browser suite runs the assembled application in every installed supported
+engine: Firefox, Chrome/Chromium, and Microsoft Edge. Missing engines are
+skipped; at least one must be installed. Set `FIREFOX_BINARY`,
+`CHROME_BINARY` (or `CHROMIUM_BINARY`), or `EDGE_BINARY` to select a binary.
+The harness uses a local Node.js HTTP server. It feeds hostile markup and event-handler strings
 through user-facing fields, verifies the application makes no network
 requests at runtime, exercises the hosted warning and
 assets, derives a known wallet through the UI, and inspects both watch-only

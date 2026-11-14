@@ -28,6 +28,18 @@ test("the CI workflow and the Dockerfile pin the same exact Node version", () =>
   assert.equal(workflow[1], dockerfile[1]);
 });
 
+// Every workflow that runs the toolchain must pin the same exact Node version
+// as ci-cd.yml: a floating major (translate.yml carried "22") makes the
+// translation jobs run a different Node than the builds they feed.
+test("every workflow pins the same exact Node version", () => {
+  const canonical = read(".github/workflows/ci-cd.yml").match(/^  NODE_VERSION: "([^"]+)"$/m)[1];
+  for (const path of [".github/workflows/translate.yml", ".github/workflows/jev-adversarial.yml"]) {
+    const pin = read(path).match(/^  NODE_VERSION: "([^"]+)"$/m);
+    assert.ok(pin, `${path} carries an exact NODE_VERSION pin`);
+    assert.equal(pin[1], canonical, `${path} drifts from ci-cd.yml's Node pin`);
+  }
+});
+
 test("all WASM crates and the dev image pin the same Rust channel", () => {
   const channels = buildCrates().map((crate) => {
     const channel = read(`${crate}/rust-toolchain.toml`).match(/^channel = "([^"]+)"$/m);
@@ -144,9 +156,9 @@ test("the uploaded WASM modules land where every downstream job reads them", () 
   const workflow = read(".github/workflows/ci-cd.yml");
   const uploaded = artifactStep(workflowJob(workflow, "build-wasm"), "upload-artifact")
     .match(/path: \|\n((?: {12}\S+\n)+)/)?.[1].trim().split(/\s+/) ?? [];
-  assert.deepEqual(uploaded, ["src/js/entropylab-wasm-b64.js", "src/js/psbt-wasm-b64.js", "src/js/vanity-wasm-b64.js"]);
+  assert.deepEqual(uploaded, ["src/js/entropylab-wasm-b64.js", "src/js/psbt-wasm-b64.js", "src/js/vanity-wasm-b64.js", "src/js/qr-wasm-b64.js"]);
   const entries = artifactEntries(uploaded);
-  assert.deepEqual(entries, ["entropylab-wasm-b64.js", "psbt-wasm-b64.js", "vanity-wasm-b64.js"], "the artifact is rooted at src/js");
+  assert.deepEqual(entries, ["entropylab-wasm-b64.js", "psbt-wasm-b64.js", "vanity-wasm-b64.js", "qr-wasm-b64.js"], "the artifact is rooted at src/js");
   const downloadDir = (name) => artifactStep(workflowJob(workflow, name), "download-artifact").match(/^\s+path: (\S+)$/m)?.[1];
   // The site build consumes the fresh modules in place of the committed ones.
   assert.deepEqual(entries.map((entry) => `${downloadDir("build")}/${entry}`), uploaded);
@@ -170,4 +182,114 @@ test("every job that pushes to rock uses the maintainer push token", () => {
     assert.equal(rawPushes.length, 0, "a bare git push to rock remains — it would be rejected under protection");
     assert.ok(pushes.length > 0, "expected at least one protected push site");
   }
+});
+
+test("the dev image verifies every remote tool download against a pinned digest", () => {
+  const dockerfile = read("Dockerfile");
+  assert.match(dockerfile, /^ARG NODE_SHA256=[0-9a-f]{64}$/m);
+  assert.match(dockerfile, /^ARG FIREFOX_SHA512=[0-9a-f]{128}$/m);
+  assert.match(dockerfile, /^ARG RUSTUP_INIT_SHA256=[0-9a-f]{64}$/m);
+  assert.match(dockerfile, /echo "\$\{NODE_SHA256\}  node-\$\{NODE_VERSION\}-linux-x64\.tar\.xz" \| sha256sum -c -/);
+  assert.match(dockerfile, /echo "\$\{FIREFOX_SHA512\}  firefox-\$\{FIREFOX_VERSION\}\.tar\.xz" \| sha512sum -c -/);
+  assert.match(dockerfile, /echo "\$\{RUSTUP_INIT_SHA256\}  rustup-init" \| sha256sum -c -/);
+  assert.doesNotMatch(dockerfile, /curl -fsS https:\/\/sh\.rustup\.rs \| sh/, "rustup is installed from a verified binary");
+  // A versioned archive URL keeps the pinned hash valid across rustup
+  // releases; the dist/ URL serves whatever release is current.
+  assert.match(dockerfile, /^ARG RUSTUP_VERSION=\d+\.\d+\.\d+$/m);
+  assert.match(dockerfile, /rustup\/archive\/\$\{RUSTUP_VERSION\}\/x86_64-unknown-linux-gnu\/rustup-init/, "rustup-init comes from the versioned archive");
+  assert.doesNotMatch(dockerfile, /rustup\/dist\/x86_64-unknown-linux-gnu\/rustup-init/, "the rolling dist URL defeats the hash pin on the next rustup release");
+  assert.match(dockerfile, /EB4C1BFD4F042F6DDDCCEC917721F63BD38B4796/, "the Chrome signing key fingerprint is pinned");
+  // apt trusts every primary in a signed-by keyring, so the key file must
+  // hold exactly one primary, not only contain the pinned one.
+  assert.match(dockerfile, /\[ "\$\(gpg --show-keys --with-colons \/usr\/share\/keyrings\/google-chrome\.gpg \| grep -c '\^pub:'\)" = "1" \]/, "the Chrome keyring must contain exactly one primary key");
+});
+
+test("attestation permissions stay on the push-only job", () => {
+  const workflow = read(".github/workflows/ci-cd.yml");
+  const job = (name) => workflow.match(new RegExp(`^  ${name}:\\n[\\s\\S]*?(?=^  [\\w-]+:)`, "m"))?.[0] ?? "";
+  const build = job("build");
+  assert.ok(build, "the build job exists");
+  assert.doesNotMatch(build, /id-token: write|attestations: write/, "a PR build must not hold attestation permissions");
+  assert.match(build, /persist-credentials: false/, "the PR build checkout must not persist its token");
+  // Every job that runs on a pull request (all but the push-only ones:
+  // attest, artifact, timestamp, deploy) keeps GITHUB_TOKEN out of the
+  // checkout. There is no reason for a PR-run checkout to hold it.
+  const pushOnly = new Set(["attest", "artifact", "timestamp", "deploy"]);
+  const jobsBlock = workflow.slice(workflow.indexOf("\njobs:"));
+  for (const name of jobsBlock.match(/^  [a-z][a-z-]*(?=:\n)/gm).map((s) => s.trim())) {
+    if (pushOnly.has(name)) continue;
+    const block = job(name);
+    const checkouts = block.split(/(?=uses: actions\/checkout@[0-9a-f]{40})/).filter((s) => s.startsWith("uses: actions/checkout@"));
+    for (const checkout of checkouts) {
+      assert.match(checkout, /persist-credentials: false/, `${name} must not persist the checkout token`);
+    }
+  }
+  const attest = job("attest");
+  assert.ok(attest, "a separate attestation job exists");
+  assert.match(attest, /github\.ref == 'refs\/heads\/rock' && github\.event_name == 'push'/);
+  assert.match(attest, /id-token: write/);
+  assert.match(attest, /attestations: write/);
+  assert.match(attest, /subject-path: candidate\/entropylab\.html/);
+});
+
+// The scheduled workflows hold secrets (the adversarial API key, the
+// translation LLM secret, the App private key) and run unattended. Their
+// checkouts persisted the job's GITHUB_TOKEN into .git/config — one more
+// live credential a compromised step could read. Nothing in either workflow
+// pushes with that credential (translate's publish job mints its own App
+// token), so it must not survive the checkout. release-assets.yml runs pip
+// install and node scripts after its checkout, and its only authenticated
+// step (gh release download) takes the token through GH_TOKEN env, so the
+// persisted credential buys a compromised wheel or script nothing but a
+// live contents:read token — it must not survive that checkout either.
+test("the scheduled and release workflows' checkouts do not persist their tokens", () => {
+  for (const path of [".github/workflows/jev-adversarial.yml", ".github/workflows/translate.yml", ".github/workflows/release-assets.yml"]) {
+    const blocks = read(path).split(/\n(?=      - uses: actions\/checkout@)/).slice(1)
+      .map((block) => block.split(/\n(?=      - )/)[0]);
+    assert.ok(blocks.length > 0, `${path} has checkout steps`);
+    for (const block of blocks) assert.match(block, /persist-credentials: false/, `${path}: a checkout persists the job's token`);
+  }
+  // pages-release.yml names its steps, so its checkouts are found step by step.
+  const pagesCheckouts = read(".github/workflows/pages-release.yml").split(/\n(?=      - )/)
+    .filter((step) => /^\s+uses: actions\/checkout@/m.test(step));
+  assert.ok(pagesCheckouts.length >= 2, "pages-release.yml has its checkout steps");
+  for (const step of pagesCheckouts) assert.match(step, /persist-credentials: false/, "pages-release.yml: a checkout persists the job's token");
+  // Dropping the persisted credential only stays safe while release-assets
+  // authenticates its one gh call through env and pushes nothing itself.
+  const release = read(".github/workflows/release-assets.yml");
+  assert.match(release, /GH_TOKEN: \$\{\{ github\.token \}\}/, "release-assets.yml: gh must authenticate through GH_TOKEN env, not .git/config");
+  assert.doesNotMatch(release, /git push/, "release-assets.yml: no step may push with the checkout's credential");
+});
+
+// The Bitcoin Core interop job downloads a real node to test the exported
+// wallets and descriptors against. That binary is a supply-chain input like
+// the dev image's downloads above: pinned by digest, verified with
+// sha256sum -c, and never extracted — let alone run — before the hash check.
+// And because a runner whose bitcoind vanished would silently skip every
+// interop test, the job must set REQUIRE_BITCOIND=1 so the harness fails
+// instead, and it must gate a merge like the other behavioral test jobs.
+test("the Bitcoin Core interop job verifies the pinned bitcoind download before using it", () => {
+  const workflow = read(".github/workflows/ci-cd.yml");
+  const job = workflowJob(workflow, "test-bitcoind");
+  assert.ok(job, "the test-bitcoind CI job exists");
+  assert.match(job, /^    name: Bitcoin Core interop$/m);
+  assert.match(job, /^      BITCOIN_CORE_VERSION: "32\.1"$/m);
+  assert.match(job, /^      BITCOIN_CORE_SHA256: "61545c17c3120fb7412f896d248b11993af04ec8817aad3649c55b2afb044963"$/m);
+  assert.match(job, /curl -fsSL -o "bitcoin-\$\{BITCOIN_CORE_VERSION\}-x86_64-linux-gnu\.tar\.gz" "https:\/\/bitcoincore\.org\/bin\/bitcoin-core-\$\{BITCOIN_CORE_VERSION\}\/bitcoin-\$\{BITCOIN_CORE_VERSION\}-x86_64-linux-gnu\.tar\.gz"/);
+  assert.match(job, /echo "\$\{BITCOIN_CORE_SHA256\}  bitcoin-\$\{BITCOIN_CORE_VERSION\}-x86_64-linux-gnu\.tar\.gz" \| sha256sum -c -/);
+  // Anchor on the step itself: the env comment above the steps also names
+  // bitcoincore.org, so indexOf("bitcoincore.org") would find the comment.
+  const download = job.indexOf("curl -fsSL -o \"bitcoin-");
+  const verify = job.indexOf("sha256sum -c");
+  const extract = job.indexOf("tar -xzf");
+  const run = job.indexOf("REQUIRE_BITCOIND=1 node --test --test-concurrency=1");
+  assert.ok(download !== -1 && verify > download, "the download is verified");
+  assert.ok(extract > verify, "the archive is extracted only after the hash check");
+  assert.ok(run > extract, "the binaries run only after the verified extraction");
+  // One file at a time: concurrent --version probes flaked in CI (PR #818).
+  assert.match(job, /REQUIRE_BITCOIND=1 node --test --test-concurrency=1 test\/wallet-export\.test\.mjs test\/msig-wallet-output\.test\.mjs test\/core-importdescriptors\.test\.mjs/);
+  // The job gates a merge exactly like the other behavioral test gates.
+  const needsOf = (name) => workflowJob(workflow, name).match(/^    needs: \[([^\]]+)\]$/m)?.[1] ?? "";
+  assert.ok(needsOf("artifact").split(", ").includes("test-bitcoind"), "the artifact job must need the interop job");
+  assert.ok(needsOf("preview").split(", ").includes("test-bitcoind"), "the preview deploy must need the interop job");
 });

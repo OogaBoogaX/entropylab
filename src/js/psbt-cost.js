@@ -13,7 +13,7 @@ const varintSize = (value) => {
   return 9;
 };
 
-const finalFields = (map, name) => map.filter((pair) => pair.name === name);
+const finalFields = (map, name) => map.filter((pair) => pair.name === name && pair.key.length === 2);
 
 const finalScripts = (map) => {
   const scriptSigFields = finalFields(map, "PSBT_IN_FINAL_SCRIPTSIG");
@@ -25,6 +25,9 @@ const finalScripts = (map) => {
   if (scriptSig?.decodeError || witness?.decodeError) return null;
   const scriptSigLength = scriptSig ? hexByteLength(scriptSig.value) : 0;
   const witnessItems = witness?.decoded?.items?.map(hexByteLength) ?? [];
+  // An empty final field is not a spend: a native-SegWit input with an empty
+  // scriptSig and no witness used to get an exact vsize and fee rate.
+  if (!scriptSigLength && !witnessItems.length) return null;
   return { scriptSigLength, witness: witnessItems };
 };
 

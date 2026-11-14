@@ -3,6 +3,7 @@
 //   entropylab-wasm/ -> src/js/entropylab-wasm-b64.js
 //   psbt-wasm/       -> src/js/psbt-wasm-b64.js
 //   vanity-wasm/     -> src/js/vanity-wasm-b64.js
+//   qr-wasm/         -> src/js/qr-wasm-b64.js
 //
 // The generated modules are committed so that `npm run build` keeps working
 // with Node alone. CI rebuilds them from the Rust sources (pinned by each
@@ -118,6 +119,14 @@ const crates = [
     blurb: `// libsecp256k1 0.8.0 (vendored by secp256k1-sys 0.14.0, see
 // vanity-wasm/Cargo.lock) plus sha2 0.10.9 / ripemd 0.1.3, compiled to
 // WebAssembly from vanity-wasm/ with the pinned Rust 1.95.0 toolchain.`,
+  },
+  {
+    dir: "qr-wasm",
+    wasm: "qr_wasm.wasm",
+    out: "src/js/qr-wasm-b64.js",
+    symbol: "QR_WASM_B64",
+    blurb: `// quircs 0.10.3 (see qr-wasm/Cargo.lock), compiled to WebAssembly from
+// qr-wasm/ with the pinned Rust 1.95.0 toolchain.`,
   },
 ];
 

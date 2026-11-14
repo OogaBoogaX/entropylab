@@ -3,11 +3,12 @@
 // saves the app-switcher picture to disk.
 //
 // Contract: the conceal callback runs when the window loses focus, when the
-// page becomes hidden (not when it becomes visible), and when no key, click,
-// touch or scroll has reached the page for the idle period; any of those
-// inputs restarts the idle period. The page's own hiding (each view
-// re-rendering masked, tabs off screen included) is covered in the browser
-// suite.
+// page becomes hidden (not when it becomes visible), when printing begins
+// (the print preview would otherwise render whatever is revealed — audit L5),
+// and when no key, click, touch or scroll has reached the page for the idle
+// period; any of those inputs restarts the idle period. The page's own
+// hiding (each view re-rendering masked, tabs off screen included) is covered
+// in the browser suite.
 // Run with `npm test`.
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -28,6 +29,12 @@ function page() {
     clearTimeout: (id) => { timers.delete(id); },
   };
   const doc = { visibilityState: "visible", addEventListener: add("doc") };
+  const media = new Map();
+  win.matchMedia = (query) => {
+    const entry = { query, listeners: new Map(), addEventListener(type, listener) { entry.listeners.set(type, listener); } };
+    media.set(query, entry);
+    return entry;
+  };
   const advance = (ms) => {
     now += ms;
     for (const [id, timer] of [...timers]) {
@@ -38,7 +45,7 @@ function page() {
     }
   };
   const fire = (target, type) => listeners[target].get(type).listener({ type });
-  return { win, doc, listeners, advance, fire, pending: () => timers.size };
+  return { win, doc, listeners, media, advance, fire, pending: () => timers.size };
 }
 
 const start = () => {
@@ -62,6 +69,22 @@ test("becoming hidden conceals, and becoming visible does not", () => {
   p.doc.visibilityState = "hidden";
   p.fire("doc", "visibilitychange");
   assert.equal(p.calls(), 1);
+});
+
+test("beginning a print job conceals before the preview renders (audit L5)", () => {
+  const p = start();
+  p.fire("win", "beforeprint");
+  assert.equal(p.calls(), 1);
+});
+
+test("engaging print mode conceals even without a beforeprint event", () => {
+  const p = start();
+  const print = p.media.get("print");
+  assert.ok(print, "the print media query was not observed");
+  print.listeners.get("change")({ matches: false });
+  assert.equal(p.calls(), 0, "leaving print mode concealed");
+  print.listeners.get("change")({ matches: true });
+  assert.equal(p.calls(), 1, "print mode engaged without concealing");
 });
 
 test("an idle page conceals once the idle period has passed", () => {

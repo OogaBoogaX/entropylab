@@ -95,6 +95,40 @@ test("signing leaves neither the private key nor the extra entropy in linear mem
 // erase it. The loader zeroes the stack region once per task after any export
 // ran, so these checks let the task settle before scanning.
 const settled = () => new Promise((resolve) => setImmediate(resolve));
+
+for (const [name, invalid, capacity] of [
+  ["success", false, 1024],
+  ["short output buffer", false, 1],
+  ["invalid word after a valid prefix", true, 1024],
+]) {
+  test(`bech32m encoding wipes temporary words on ${name} (#959 follow-up)`, async () => {
+    const wasm = wasmExports();
+    // Fixed dummy 5-bit words, never a real key. Scan an interior portion:
+    // allocator bookkeeping may overwrite the beginning of a freed block.
+    const words = Uint8Array.from({ length: 64 }, (_, i) => (i * 7 + (i >>> 2) * 3 + 11) & 31);
+    const marker = words.slice(16, 48);
+    const input = invalid ? Uint8Array.from([...words, 32]) : words;
+    const hrp = new TextEncoder().encode("spspend");
+    const h = wasm.el_alloc(hrp.length);
+    const w = wasm.el_alloc(input.length);
+    const out = wasm.el_alloc(capacity);
+    try {
+      heap().set(hrp, h);
+      heap().set(input, w);
+      assert.ok(wasmMemoryContains(marker), "positive control: the scanner must see the input");
+      const length = wasm.el_bech32m_encode(h, hrp.length, w, input.length, out, capacity);
+      if (invalid || capacity === 1) assert.equal(length, -1, "invalid input or insufficient capacity must be refused");
+      else assert.ok(length > 0 && length <= capacity, "valid words must still encode");
+    } finally {
+      wasm.el_free(out, capacity);
+      wasm.el_free(w, input.length);
+      wasm.el_free(h, hrp.length);
+    }
+    await settled();
+    assert.equal(wasmMemoryContains(marker), false, `${name}: the copied words survived in WASM linear memory`);
+  });
+}
+
 const stackResidue = [
   ["BIP39 entropy → mnemonic", (s) => entropyToMnemonic(s.entropy), { entropy: pattern(32, 43) }],
   ["BIP39 mnemonic validation", (s) => validateMnemonic(s.phrase), { entropy: pattern(32, 47) }],
@@ -427,7 +461,9 @@ test("a vanity grind leaves no input or derived secret in its linear memory once
 test("the JS facades wipe their secret byte buffers (source guard)", () => {
   const bip39 = read("src/js/bip39.js");
   assert.match(bip39, /phrase\.fill\(0\);\s*salt\.fill\(0\);/, "mnemonicToSeedSync must wipe the encoded phrase and salt");
-  assert.equal((bip39.match(/phrase\.fill\(0\)/g) || []).length, 3, "every encoded phrase buffer must be wiped");
+  // mnemonicToEntropy, validateMnemonic, mnemonicToSeedSync, and the
+  // byte-based seedFromEntropy and seedFromIndices.
+  assert.equal((bip39.match(/phrase\.fill\(0\)/g) || []).length, 5, "every encoded phrase buffer must be wiped");
   const bip85 = read("src/js/bip85.js");
   assert.match(bip85, /child\.wipePrivateData\(\)/, "deriveBip85Entropy must wipe the derived child node");
   assert.ok((bip85.match(/wipeBytes\(digest\)/g) || []).length >= 6, "every BIP-85 HMAC digest must be wiped");

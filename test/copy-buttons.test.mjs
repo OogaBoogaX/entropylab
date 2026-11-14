@@ -23,19 +23,33 @@
 // Run with `npm test`.
 import { test, mock } from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { HDKey } from "@scure/bip32";
 import { entropyToMnemonic } from "@scure/bip39";
 import { wordlist } from "@scure/bip39/wordlists/english.js";
 import { deriveApplication, wipeBip85Result } from "../src/js/bip85.js";
 import { hodlApplyStaticI18n, hodlSetLocale, t as translate } from "../src/js/i18n.js";
 import { loadAppFunctions } from "./app-slice-harness.mjs";
-import { MiniDocument, MiniNodeFilter } from "./mini-dom.mjs";
+import { MiniDocument, MiniElement, MiniNodeFilter } from "./mini-dom.mjs";
+import { appClipboardClear, appClipboardText } from "../src/js/app-clipboard.js";
 
 const inert = new Proxy(function () {}, { get: (target, key) => key === Symbol.toPrimitive ? () => "" : key === "then" ? undefined : inert, apply: () => inert, construct: () => inert });
 Object.assign(globalThis, { __ENTROPYLAB_TEST_HOOKS__: false, document: inert, window: inert });
 const seed = await loadAppFunctions(["hodlRenderDiceWordGrid", "hodlCopySeedPhraseButton", "hodlDerivedSeedRowMarkup"]);
 const station = await loadAppFunctions(["hodlRenderBip85Out", "hodlCopyBip85Child"], { stubs: { hodlFillKeyTabLifehash: () => {} }, settable: ["hodlBip85Children", "hodlActiveBip85", "hodlBip85Reveal"] });
 const publicReadouts = await loadAppFunctions(["hodlVanityKeyMarkup", "hodlSetMasterFingerprintCard"]);
+const journal = await loadAppFunctions(["hodlJournalSyncCopyButton", "hodlJournalCopyContent"]);
+const journalText = await loadAppFunctions([
+  "hodlJournalRenderVisual", "hodlCreateJournalPageTab", "hodlKeyManagerRender", "hodlJournalRenderList", "hodlJournalOpenView",
+], {
+  stubs: {
+    hodlJournalSyncNotesRender() {}, hodlJournalSyncCopyButton() {}, hodlFillKeyTabLifehash() {}, hodlJournalFillFingerprint() {},
+    hodlBeginJournalPageRename() {}, hodlSelectJournalPage() {}, hodlJournalPageTabKeydown() {},
+    hodlKeyManagerDetails: () => [], hodlKeyManagerRename() {}, hodlKeyManagerUseInStation() {}, hodlKeyManagerIgnore() {}, hodlKeyManagerRestoreIgnored() {},
+    hodlKeyManagerStatus() {}, hodlJournalHideEditor() {}, hodlJournalShowWork() {}, hodlJournalLog() {}, hodlRevealTab() {},
+  },
+  settable: ["hodlJournal", "hodlKeys", "hodlKeyManagerPending", "hodlKeyManagerIgnored", "hodlJournalDoc"],
+});
 delete globalThis.document;
 delete globalThis.window;
 
@@ -54,11 +68,21 @@ const [TWELVE, , TWENTY_FOUR] = VECTORS.map(([, , phrase]) => phrase.split(" "))
 // The page, per test: a fresh document, mocked timers and a clipboard that
 // records what it is given.
 const written = [], executed = [];
+const previousContains = MiniElement.prototype.contains, previousFocus = MiniElement.prototype.focus;
 const navigatorDescriptor = Object.getOwnPropertyDescriptor(globalThis, "navigator");
 const clipboard = (mode) => Object.defineProperty(globalThis, "navigator", { configurable: true, writable: true, value: mode === "none" ? {} : { clipboard: { writeText: (text) => mode === "denied" ? Promise.reject(new Error("denied")) : (written.push(text), Promise.resolve()) } } });
 function page(mode = "works") {
   written.length = executed.length = 0;
+  appClipboardClear();
   globalThis.document = new MiniDocument();
+  // Record rerenders preserve focus only when the old control belongs to
+  // that view. Model DOM ancestry and activeElement, including detached
+  // nodes, rather than treating every element as contained or focused.
+  MiniElement.prototype.contains = function (target) {
+    for (let node = target; node; node = node.parentNode) if (node === this) return true;
+    return false;
+  };
+  MiniElement.prototype.focus = function () { this.ownerDocument.activeElement = this; };
   globalThis.document.execCommand = (command) => (executed.push([command, globalThis.document.querySelector("textarea")?.value]), true);
   globalThis.NodeFilter = MiniNodeFilter;
   clipboard(mode);
@@ -67,6 +91,9 @@ function page(mode = "works") {
 }
 function leave() {
   mock.timers.reset();
+  if (previousContains) MiniElement.prototype.contains = previousContains;
+  else delete MiniElement.prototype.contains;
+  MiniElement.prototype.focus = previousFocus;
   hodlSetLocale("en", false);
   delete globalThis.NodeFilter;
   delete globalThis.document;
@@ -199,28 +226,32 @@ for (const [name, words, target, text] of GRIDS) {
 }
 
 for (const [name, words, target, text] of COPYABLE) {
-  test(`${name}: a click copies exactly the phrase`, withPage("works", async (document) => {
+  test(`${name}: a click copies exactly the phrase into the app clipboard`, withPage("works", async (document) => {
     const { button, render } = seedPage(document);
     render(words, target);
     button.click();
     await settle();
-    assert.deepEqual(written, [text]);
+    assert.deepEqual(written, [], "a private copy reached the system clipboard");
+    assert.equal(appClipboardText(), text);
   }));
 
-  test(`${name}: the fallback copy path gets exactly the phrase too`, withPage("none", async (document) => {
+  test(`${name}: a page without the Clipboard API still copies into the app clipboard only`, withPage("none", async (document) => {
     const { button, render } = seedPage(document);
     render(words, target);
     button.click();
     await settle();
-    assert.deepEqual(executed, [["copy", text]]);
+    assert.deepEqual(executed, [], "a private copy used the system clipboard fallback");
+    assert.equal(appClipboardText(), text);
   }));
 
-  test(`${name}: a refused clipboard write falls back to the same text`, withPage("denied", async (document) => {
+  test(`${name}: a refused system clipboard does not affect the app clipboard`, withPage("denied", async (document) => {
     const { button, render } = seedPage(document);
     render(words, target);
     button.click();
     await settle();
-    assert.deepEqual(executed, [["copy", text]]);
+    assert.deepEqual(written, []);
+    assert.deepEqual(executed, []);
+    assert.equal(appClipboardText(), text);
   }));
 }
 
@@ -233,6 +264,7 @@ for (const [name, words, target] of NOT_COPYABLE) {
     await settle();
     assert.deepEqual(written, []);
     assert.deepEqual(executed, []);
+    assert.equal(appClipboardText(), "");
     assert.ok(!button.classList.contains("is-copied"));
   }));
 }
@@ -274,22 +306,28 @@ for (const [name, words] of NOT_COPYABLE) {
 
 test("a click copies the grid as it is now, not as it was when the button was first used", withPage("works", async (document) => {
   const { button, render } = seedPage(document);
+  const copies = [];
   render(TWELVE, 12);
   button.click();
   await settle();
+  copies.push(appClipboardText());
   mock.timers.tick(1600);
   render(VECTORS[1][2].split(" "), 12);
   button.click();
   await settle();
+  copies.push(appClipboardText());
   mock.timers.tick(1600);
   render(TWELVE.slice(0, 3), 12);
   button.click();
   await settle();
+  copies.push(appClipboardText());
   mock.timers.tick(1600);
   render(TWENTY_FOUR, 24);
   button.click();
   await settle();
-  assert.deepEqual(written, [TWELVE.join(" "), VECTORS[1][2], TWELVE.slice(0, 3).join(" "), TWENTY_FOUR.join(" ")]);
+  copies.push(appClipboardText());
+  assert.deepEqual(copies, [TWELVE.join(" "), VECTORS[1][2], TWELVE.slice(0, 3).join(" "), TWENTY_FOUR.join(" ")]);
+  assert.deepEqual(written, []);
 }));
 
 test("after the page's pagehide sweep the button copies nothing", withPage("works", async (document) => {
@@ -302,28 +340,80 @@ test("after the page's pagehide sweep the button copies nothing", withPage("work
   await settle();
   assert.deepEqual(written, []);
   assert.deepEqual(executed, []);
+  assert.equal(appClipboardText(), "");
   mock.timers.tick(1600);
   assert.deepEqual(leaks(button, TWELVE.join(" ")), []);
 }));
 
-test("the Journal's copy buttons still copy what they carry", withPage("works", async (document) => {
-  // Out of scope here: they keep their text in data-phrase, and share the
-  // click and Copied handling with the seed button.
+test("the Journal's Notes copy control never retains page text", withPage("works", async (document) => {
   document.body.innerHTML = '<button id="journal-notes-copy" type="button" aria-label="Copy notepad page" title="Copy notepad page" data-copy-label="Copy notepad page" data-copied-label="Notepad page copied"></button>';
   const button = document.getElementById("journal-notes-copy");
-  button.dataset.phrase = "first line\nsecond line";
-  seed.hodlCopySeedPhraseButton(button);
-  await settle();
-  assert.deepEqual(written, ["first line\nsecond line"]);
-  assert.equal(button.getAttribute("aria-label"), "Notepad page copied");
-  mock.timers.tick(1600);
-  assert.equal(button.getAttribute("aria-label"), "Copy notepad page");
-  assert.equal(button.title, "Copy notepad page");
-  delete button.dataset.phrase;
-  seed.hodlCopySeedPhraseButton(button);
-  await settle();
-  assert.deepEqual(written, ["first line\nsecond line"]);
+  const field = { value: VECTORS[0][2] };
+  journal.hodlJournalSyncCopyButton(field, button);
+  assert.equal(button.disabled, false);
+  assert.deepEqual(leaks(button, field.value), []);
+  field.value = "";
+  journal.hodlJournalSyncCopyButton(field, button);
+  assert.equal(button.disabled, true);
+  assert.deepEqual(leaks(button, VECTORS[0][2]), []);
 }));
+
+// Notes can hold recovery material; imported Activity is untrusted text and
+// may do the same. Both read the live field at the click, use the notebook's
+// readable-text formatting or the exact activity text, and refuse a control
+// or source that is no longer shown.
+for (const notebook of [true, false]) {
+  const area = notebook ? "Notes" : "Activity";
+  function journalPage(document) {
+    document.body.innerHTML = `<div id="journal-section"><${notebook ? "textarea" : "pre"} id="journal-content"></${notebook ? "textarea" : "pre"}><button id="journal-copy" type="button" aria-label="Copy" title="Copy" data-copy-label="Copy" data-copied-label="Copied"></button></div>`;
+    const button = document.getElementById("journal-copy"), field = document.getElementById("journal-content");
+    const setText = (text) => { if (notebook) field.value = text; else field.textContent = text; };
+    return { button, field, setText };
+  }
+  test(`Journal ${area} copies current text within EntropyLab without retaining it on the control`, withPage("works", async (document) => {
+    const { button, field, setText } = journalPage(document);
+    for (const phrase of [VECTORS[0][2], VECTORS[1][2]]) {
+      const content = `first line\n  ${phrase}${notebook ? "" : "\n\n"}`;
+      setText(content);
+      await journal.hodlJournalCopyContent(button, field, notebook);
+      assert.equal(appClipboardText(), content);
+      assert.deepEqual(leaks(button, phrase), [], "the control retains no payload during confirmation");
+      mock.timers.tick(1600);
+      assert.deepEqual(leaks(button, phrase), [], "the control retains no payload after confirmation");
+      assert.equal(button.getAttribute("aria-label"), button.dataset.copyLabel);
+    }
+    assert.deepEqual(written, [], "Journal text reached the system clipboard");
+  }));
+  test(`Journal ${area} never uses the system clipboard fallback`, withPage("none", async (document) => {
+    const { button, field, setText } = journalPage(document);
+    const content = `  ${VECTORS[0][2]}${notebook ? "" : "\n"}`;
+    setText(content);
+    // The fallback creates a temporary textarea. Locate that readonly field
+    // rather than the notebook's editable textarea.
+    document.execCommand = (command) => (executed.push([command, document.querySelector("textarea[readonly]")?.value]), true);
+    await journal.hodlJournalCopyContent(button, field, notebook);
+    assert.deepEqual(executed, []);
+    assert.equal(appClipboardText(), content);
+    assert.equal(document.querySelector("textarea[readonly]"), null);
+    assert.deepEqual(leaks(button, VECTORS[0][2]), []);
+  }));
+  for (const condition of ["disabled", "hidden source", "hidden control", "detached source", "detached control", "empty source"]) {
+    test(`Journal ${area} refuses a ${condition}`, withPage("works", async (document) => {
+      const { button, field, setText } = journalPage(document);
+      setText(VECTORS[0][2]);
+      if (condition === "disabled") button.disabled = true;
+      else if (condition === "hidden source") field.hidden = true;
+      else if (condition === "hidden control") button.hidden = true;
+      else if (condition === "detached source") field.remove();
+      else if (condition === "detached control") button.remove();
+      else setText("");
+      await journal.hodlJournalCopyContent(button, field, notebook);
+      assert.deepEqual(written, []);
+      assert.deepEqual(executed, []);
+      assert.deepEqual(leaks(button, VECTORS[0][2]), []);
+    }));
+  }
+}
 
 // ---- A seed word is data, not text to translate ----------------------------
 
@@ -332,6 +422,40 @@ test("the Journal's copy buttons still copy what they carry", withPage("works", 
 // words are keys: "account", "coin" and "online". The grid must show them, and
 // the button must copy them, unchanged in every language (#609 review).
 const LOCALES = ["es", "pt", "fr", "de"];
+const shell = readFileSync(new URL("../src/shell.html", import.meta.url), "utf8");
+for (const locale of LOCALES) {
+  test(`Journal user content remains exact after the ${locale} translation sweep`, withPage("works", async (document) => {
+    const noteMarkup = shell.match(/<div\b[^>]*\bid="journal-notes-render"[^>]*><\/div>/)?.[0];
+    assert.ok(noteMarkup, "fixture uses the actual notebook rendering surface");
+    document.body.innerHTML = `${noteMarkup}<div id="page-tabs"></div><div id="journal-keymanager-tabs"></div><div id="journal-keymanager-panel"></div><section id="journal-keymanager-ignored"><div id="journal-keymanager-ignored-list"></div></section><div id="journal-list"></div><div id="journal-view"></div>`;
+    const pages = [{ id: 1, number: 1, name: "account", notesText: "coin" }];
+    journalText.__set.hodlJournal({ pages, activePage: 0 });
+    journalText.hodlJournalRenderVisual({ value: "coin" });
+    document.getElementById("page-tabs").append(journalText.hodlCreateJournalPageTab(0));
+    journalText.__set.hodlKeys([]);
+    journalText.__set.hodlKeyManagerPending([{ id: 1, number: 1, name: "account", needsDerivation: true, result: null }]);
+    journalText.__set.hodlKeyManagerIgnored([{ id: 2, number: 2, name: "coin", needsDerivation: true, result: null }]);
+    journalText.hodlKeyManagerRender();
+    journalText.__set.hodlJournalDoc({ entries: [{ id: 1, label: "online", method: "dice", created: "2026-10-22", input: "account", phrase: "coin" }] });
+    journalText.hodlJournalRenderList();
+    journalText.hodlJournalOpenView(1);
+    const note = document.getElementById("journal-notes-render");
+    const pageLabel = document.getElementById("page-tabs").children[0].children[0];
+    const keyLabel = document.getElementById("journal-keymanager-tabs").children[0].children[1];
+    const keyHeading = document.getElementById("journal-keymanager-panel").querySelector("h3");
+    const archived = document.getElementById("journal-keymanager-ignored-list").querySelector("strong");
+    const recordLabel = document.getElementById("journal-list").children[0].children[1];
+    const recordHeading = document.getElementById("journal-entry-heading");
+    const names = [note, pageLabel, keyLabel, keyHeading, archived, recordLabel, recordHeading];
+    const before = names.map((node) => node.textContent);
+    hodlSetLocale(locale, false);
+    hodlApplyStaticI18n();
+    assert.deepEqual(names.map((node) => node.textContent), before);
+    assert.equal(note.textContent, "coin");
+    assert.equal(pages[0].name, "account");
+    assert.equal(pages[0].notesText, "coin");
+  }));
+}
 // Entropy whose phrase starts with the given words: their 11-bit indices, then
 // zero bits. @scure/bip39 turns it into the phrase, checksum word included.
 function entropyStartingWith(words, bytes) {
@@ -367,7 +491,8 @@ for (const [name, words, target] of TRANSLATABLE) {
       hodlSetLocale(locale, false);
       button.click();
       await settle();
-      assert.deepEqual(written, [words.join(" ")]);
+      assert.deepEqual(written, [], "a private copy reached the system clipboard");
+      assert.equal(appClipboardText(), words.join(" "));
       assert.deepEqual(shownWords(document, words.length), words);
       assert.deepEqual(leaks(button, words.join(" ")), []);
     }));
@@ -379,7 +504,8 @@ for (const [name, words, target] of TRANSLATABLE) {
       hodlApplyStaticI18n();
       button.click();
       await settle();
-      assert.deepEqual(written, [words.join(" ")]);
+      assert.deepEqual(written, [], "a private copy reached the system clipboard");
+      assert.equal(appClipboardText(), words.join(" "));
       assert.deepEqual(shownWords(document, words.length), words);
       assert.deepEqual(leaks(button, words.join(" ")), []);
     }));
@@ -430,6 +556,7 @@ test("BIP-85 refuses to copy a hidden child", withPage("works", async (document)
   button.click();
   await settle();
   assert.deepEqual(written, [], "a hidden child reached the clipboard");
+  assert.equal(appClipboardText(), "");
 }));
 
 test("BIP-85 renders no clipboard control for a concealed child", withPage("works", async (document) => {
@@ -444,6 +571,7 @@ test("BIP-85 refuses a detached control after switching children", withPage("wor
   button.click();
   await settle();
   assert.deepEqual(written, [], "a stale control copied the new child");
+  assert.equal(appClipboardText(), "");
 }));
 
 for (const [index, [name, , secret]] of CHILDREN.entries()) {
@@ -458,32 +586,37 @@ for (const [index, [name, , secret]] of CHILDREN.entries()) {
     assert.deepEqual(leaks(button, secret), [], "after the Copied note times out");
   }));
 
-  test(`BIP-85 ${name}: a click copies exactly the child`, withPage("works", async (document) => {
+  test(`BIP-85 ${name}: a click copies exactly the child into the app clipboard`, withPage("works", async (document) => {
     const { button } = bip85Page(document, index + 1);
     assert.equal(button.disabled, false);
     button.click();
     await settle();
-    assert.deepEqual(written, [secret]);
+    assert.deepEqual(written, [], "a private copy reached the system clipboard");
+    assert.equal(appClipboardText(), secret);
     assert.equal(button.disabled, false);
   }));
 
-  test(`BIP-85 ${name}: the fallback copy path gets exactly the child`, withPage("none", async (document) => {
+  test(`BIP-85 ${name}: a page without the Clipboard API still copies into the app clipboard only`, withPage("none", async (document) => {
     const { button } = bip85Page(document, index + 1);
     button.click();
     await settle();
-    assert.deepEqual(executed, [["copy", secret]]);
+    assert.deepEqual(executed, [], "a private copy used the system clipboard fallback");
+    assert.equal(appClipboardText(), secret);
   }));
 }
 
 test("BIP-85: a click copies the active child, whichever tab it is", withPage("works", async (document) => {
   const { show } = bip85Page(document, 1);
   // Forwards, backwards, and the same tab twice.
+  const copies = [];
   for (const index of [4, 2, 8, 1, 1, 6]) {
     show(index).click();
     await settle();
+    copies.push(appClipboardText());
     mock.timers.tick(1600);
   }
-  assert.deepEqual(written, [4, 2, 8, 1, 1, 6].map((index) => CHILDREN[index - 1][2]));
+  assert.deepEqual(copies, [4, 2, 8, 1, 1, 6].map((index) => CHILDREN[index - 1][2]));
+  assert.deepEqual(written, []);
 }));
 
 test("BIP-85: with no child on show there is no button to copy from", withPage("works", async (document) => {
@@ -505,4 +638,5 @@ test("after the page's pagehide sweep the BIP-85 button copies nothing", withPag
   await settle();
   assert.deepEqual(written, []);
   assert.deepEqual(executed, []);
+  assert.equal(appClipboardText(), "");
 }));

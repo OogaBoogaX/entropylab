@@ -21,9 +21,11 @@ import {
   isP2sh,
   isP2tr,
   isP2wpkh,
+  normalizeVinWitness,
   scanSilentPaymentOutputs,
   taprootOutputPrivateKey,
   spendPrivForOutput,
+  vinHasSpendData,
   vinPrevoutScript,
   bytesToHex,
 } from "../src/js/bip352.js";
@@ -61,13 +63,13 @@ const makeResolver = (tweak = taprootOutputPrivateKey) => new Function(
   "indexHdKey", "matchOwnership", "extractInputPubKey", "vinPrevoutScript",
   "isP2pkh", "isP2sh", "isP2tr", "isP2wpkh",
   "p2pkhScript", "p2shP2wpkhScript", "p2trKeyScript", "p2wpkhScript",
-  "taprootOutputPrivateKey",
+  "taprootOutputPrivateKey", "vinHasSpendData", "normalizeVinWitness",
   `${loadSlice("hodlFingerprintHex")}; ${loadSlice("hodlSpWipeVinKeys")}; ${loadSlice("hodlSpDeriveVinKeys")}; return hodlSpDeriveVinKeys;`,
 )(
   indexHdKey, matchOwnership, extractInputPubKey, vinPrevoutScript,
   isP2pkh, isP2sh, isP2tr, isP2wpkh,
   p2pkhScript, p2shP2wpkhScript, p2trKeyScript, p2wpkhScript,
-  tweak,
+  tweak, vinHasSpendData, normalizeVinWitness,
 );
 const hodlSpDeriveVinKeys = makeResolver();
 const hodlSpWipeVinKeys = new Function(`${loadSlice("hodlSpWipeVinKeys")}; return hodlSpWipeVinKeys;`)();
@@ -225,10 +227,10 @@ test("UI construction wipes byte keys on success and throw, and suppresses the s
   setup();
   for(const fail of [false,true]){
     let saved;
-    const render=new Function("hodlSpParseRecipients","hodlSpHrp","decodeSilentPaymentAddress","hodlSpParseVins","hodlSpDeriveVinKeys","hodlSpWipeVinKeys","createSilentPaymentOutputs",
-      `${loadSlice("hodlRenderSpSend")}; return hodlRenderSpSend;`)(
-      ()=>({recipients:[]}),()=>"tsp",()=>{},()=>[vinOf(OWNED_SCRIPT)],hodlSpDeriveVinKeys,hodlSpWipeVinKeys,
-      (vins,recipients,options)=>{saved=vins;assert.equal(options.includePrivateKeySum,false);if(fail)throw new Error("construction failed");return {outputs:[]};});
+    const render=new Function("hodlSpParseRecipients","hodlSpHrp","hodlSpNetwork","decodeSilentPaymentAddress","hodlSpParseVins","hodlSpDeriveVinKeys","hodlSpWipeVinKeys","createSilentPaymentOutputs","hodlT",
+      `let hodlSpSendLast = null; ${loadSlice("hodlRenderSpSend")}; ${loadSlice("hodlPaintSpSend")}; return hodlRenderSpSend;`)(
+      ()=>({recipients:[]}),()=>"tsp",()=>"testnet",()=>{},()=>[vinOf(OWNED_SCRIPT)],hodlSpDeriveVinKeys,hodlSpWipeVinKeys,
+      (vins,recipients,options)=>{saved=vins;assert.equal(options.includePrivateKeySum,false);if(fail)throw new Error("construction failed");return {outputs:[]};},(text)=>text);
     const original=document.getElementById;document.getElementById=id=>id==="sp-out"?{}:original(id);
     if(fail)assert.throws(render,/construction failed/);else render();
     assert.ok(saved[0].private_key.every(b=>b===0));
@@ -250,7 +252,7 @@ test("SP send discloses unused fallback text safely and keeps the published outp
     "document", "hodlSpParseRecipients", "hodlSpHrp", "hodlSpNetwork", "decodeSilentPaymentAddress",
     "hodlSpParseVins", "hodlSpDeriveVinKeys", "hodlSpWipeVinKeys", "createSilentPaymentOutputs",
     "p2trAddressFromXonly", "hodlT", "hodlTAttr", "hodlTText", "hodlPublicInlineHtml", "hodlSpCopyGroupHtml",
-    `${loadSlice("hodlSpEscape")}; ${loadSlice("hodlRenderSpSend")}; return hodlRenderSpSend;`,
+    `let hodlSpSendLast = null; ${loadSlice("hodlSpEscape")}; ${loadSlice("hodlRenderSpSend")}; ${loadSlice("hodlPaintSpSend")}; return hodlRenderSpSend;`,
   )(
     document, parseRecipientLines, () => "sp", () => "mainnet", decodeSilentPaymentAddress,
     () => vector.given.vin, (vins) => vins, hodlSpWipeVinKeys,
@@ -297,6 +299,22 @@ test("non-Taproot session scalars retain their exact bytes", () => {
   } finally {node.wipePrivateData();}
 });
 
+test("a hex-string witness array resolves like its txinwitness form", () => {
+  // The library path (normalizeVin) reads a witness array of hex strings;
+  // the send flow must accept the same pasted shape instead of refusing it
+  // with "witness key does not hash" before the items are read as bytes.
+  setup();
+  const path="m/84'/1'/0'/0/0", node=SESSION.derive(path), pub=node.publicKey;
+  try {
+    const script=bytesToHex(p2wpkhScript(pub)), keyHex=bytesToHex(pub);
+    const byArray=hodlSpDeriveVinKeys([vinOf(script,{path,txinwitness:"",witness:["00".repeat(71),keyHex]})]);
+    const byHex=hodlSpDeriveVinKeys([vinOf(script,{path,txinwitness:"0121"+keyHex})]);
+    assert.deepEqual(byArray[0].private_key,node.privateKey);
+    assert.deepEqual(byArray[0].private_key,byHex[0].private_key);
+    hodlSpWipeVinKeys([byArray[0],byHex[0]]);
+  } finally {node.wipePrivateData();}
+});
+
 test("UI send mode never returns the private scalar sum", () => {
   setup();const vins=hodlSpDeriveVinKeys([vinOf(OWNED_SCRIPT)]);
   const keys=deriveSilentPaymentKeys(SEED,{coinType:1});const address=encodeSilentPaymentAddress(keys.scanPoint,keys.spendPoint,"tsp");
@@ -321,4 +339,139 @@ test("P2TR tweak matches BIP-86 output scripts for both internal parities", () =
     } finally { secret.fill(0); tweaked.fill(0); }
   }
   assert.deepEqual([...parities].sort(), [2, 3]);
+});
+
+// Audit M6: derive("m") returns the session root itself. The resolver's
+// finally used to wipe that root, so a pasted path of "m" broke every later
+// operation. Refuse the root path (and never wipe it defensively).
+test("a path of 'm' is refused instead of wiping the session root", () => {
+  setup();
+  assert.throws(() => hodlSpDeriveVinKeys([vinOf(OWNED_SCRIPT, { path: "m" })]), /path must name a child/);
+  assert.throws(() => hodlSpDeriveVinKeys([vinOf(OWNED_SCRIPT, { path: "m'" })]), /path must name a child/);
+  assert.equal(SESSION.hasPrivateKey, true, "the session root must survive a rejected path");
+});
+
+test("a language switch paints the last send and scan again from what they kept", async () => {
+  // A marking translator stands in for a page language. The send keeps only
+  // its public result, so the repaint needs no session key, and what is left
+  // outside the marks is data: addresses, amounts, keys, K_max.
+  const mark = (key, vars) => "⟦" + String(key).replace(/\{(\w+)\}/g, (whole, name) => (vars?.[name] == null ? whole : String(vars[name]))) + "⟧";
+  const elements = { "sp-out": { innerHTML: "" }, "sp-session": { textContent: "" }, "sp-address-view": { hidden: true } };
+  let derived = 0;
+  const sp = await loadAppFunctions(["hodlRefreshSpLocale"], {
+    settable: ["hodlSpSendLast", "hodlSpVerifyMatches", "hodlSpSessionShown"],
+    stubs: {
+      document: { getElementById: (id) => elements[id] ?? null },
+      hodlT: mark, hodlTText: mark, hodlTAttr: mark,
+      hodlSpCopyGroupHtml: (label, id, address, extra = "") => `<div>${label} ${address}${extra}</div>`,
+      hodlPublicInlineHtml: (value) => value,
+      hodlPrivacyBarMarkup: () => "",
+      hodlPrivateFieldHtml: (label) => mark(label),
+      hodlPrivateFieldMarkup: (label) => label,
+      hodlPrivacyEyeMarkup: () => "",
+      hodlPrivateValue: () => "",
+      p2trAddressFromXonly: () => "bc1pdata",
+      spendPrivForOutput: () => { derived += 1; return new Uint8Array(32); },
+      hodlSpBytesToHex: () => "",
+      hodlRenderSpAddress: () => {},
+      hodlSpDeriveVinKeys: () => { derived += 1; return []; },
+      hodlSpDeriveSessionKeys: () => { derived += 1; },
+      hodlSpAddresses: [],
+      hodlActiveSp: 0,
+    },
+  });
+  const english = (html) => html.replace(/<[^>]*>/g, " ").replace(/⟦[^⟧]*⟧/g, " ").split(/[\s·:()…,.=]+/)
+    .filter((word) => /[A-Za-z]/.test(word) && !/^(?:bc1pdata|sp1qdata|bc1qdata|BTC|K|max|[0-9a-f]+)$/.test(word));
+
+  sp.__set.hodlSpSendLast({ network: "mainnet", outputs: ["aa", "aa"], alternatives: 2, lightning: true,
+    recipients: [{ address: "sp1qdata", fallbackAddress: "bc1qdata", amountSats: 1000 }] });
+  sp.__set.hodlSpSessionShown({ key: "Session key from {name} (BIP39 seed). Kept in page memory only.", vars: { name: { key: "existing key" } } });
+  sp.hodlRefreshSpLocale();
+  assert.deepEqual(english(elements["sp-out"].innerHTML), [], "the send repaints through the translator");
+  assert.match(elements["sp-out"].innerHTML, /⟦2 taproot outputs\.⟧/);
+  assert.match(elements["sp-out"].innerHTML, /⟦1 repeated output kept on purpose/);
+  assert.equal(elements["sp-session"].textContent, "⟦Session key from ⟦existing key⟧ (BIP39 seed). Kept in page memory only.⟧");
+
+  sp.__set.hodlSpSendLast({ network: "mainnet", outputs: [], alternatives: 0, lightning: false, recipients: [] });
+  sp.hodlRefreshSpLocale();
+  assert.match(elements["sp-out"].innerHTML, /exceeded K<sub>max<\/sub> = 2323\.⟧/, "K_max keeps its markup outside the catalog string");
+
+  sp.__set.hodlSpSendLast(null);
+  sp.__set.hodlSpVerifyMatches({ network: "mainnet", rows: [], reveal: false });
+  sp.hodlRefreshSpLocale();
+  assert.match(elements["sp-out"].innerHTML, /⟦No matching silent payment outputs/);
+  sp.__set.hodlSpVerifyMatches({ network: "mainnet", rows: [{ pub_key: "bb", label: 0, priv_key_tweak: "cc" }], reveal: false });
+  sp.hodlRefreshSpLocale();
+  assert.deepEqual(english(elements["sp-out"].innerHTML), [], "the scan repaints through the translator");
+  assert.match(elements["sp-out"].innerHTML, /⟦label m = 0 \(change\)⟧/);
+  assert.equal(derived, 0, "a repaint derives no key and scans nothing");
+});
+
+// Both paste parsers run JSON.parse (vins) or a whole-string split (outputs)
+// before any derivation, and a scan then derives per item. A pasted wall of
+// text or a huge array of tiny items locks the tab, so the parsers are
+// bounded before the expensive step.
+test("SP paste parsers refuse oversized input before the expensive step", async () => {
+  const slice = await loadAppFunctions([
+    "hodlSpParseVins", "hodlSpParseOutputs",
+    "hodlSpMaxVinText", "hodlSpMaxVins", "hodlSpMaxOutputText", "hodlSpMaxOutputs",
+  ]);
+
+  assert.deepEqual(slice.hodlSpParseVins('[{"txid":"00"}]'), [{ txid: "00" }], "a normal vin paste still parses");
+  assert.throws(
+    () => slice.hodlSpParseVins(`[${" ".repeat(slice.hodlSpMaxVinText)}]`),
+    /too large/,
+    "the text cap comes before JSON.parse",
+  );
+  const vins = `[${new Array(slice.hodlSpMaxVins + 1).fill("{}").join(",")}]`;
+  assert.throws(() => slice.hodlSpParseVins(vins), /at most/i, "the vin count is capped");
+  assert.equal(slice.hodlSpParseVins(`[${new Array(slice.hodlSpMaxVins).fill("{}").join(",")}]`).length, slice.hodlSpMaxVins, "the cap itself is accepted");
+
+  assert.deepEqual(slice.hodlSpParseOutputs("aa bb"), ["aa", "bb"]);
+  assert.throws(
+    () => slice.hodlSpParseOutputs("ab".repeat(slice.hodlSpMaxOutputText / 2 + 1)),
+    /too large/,
+    "the output text cap comes before the split",
+  );
+  assert.throws(
+    () => slice.hodlSpParseOutputs(new Array(slice.hodlSpMaxOutputs + 1).fill("aa").join(" ")),
+    /at most/i,
+    "the output count is capped",
+  );
+});
+
+test("an unsigned session-owned input resolves and sends like its signed form", () => {
+  // A sender has no signatures yet: the session-owned P2TR input with an
+  // empty scriptSig and witness resolves by ownership and the lie check, and
+  // produces the same outputs as the signed shape already tested.
+  setup();
+  const [unsigned] = hodlSpDeriveVinKeys([vinOf(OWNED_SCRIPT, { txinwitness: "" })]);
+  const [signed] = hodlSpDeriveVinKeys([vinOf(OWNED_SCRIPT)]);
+  try {
+    assert.ok(unsigned.private_key instanceof Uint8Array);
+    assert.deepEqual(unsigned.private_key, signed.private_key);
+    const keys = deriveSilentPaymentKeys(SEED, { coinType: 1, account: 0 });
+    const recipient = encodeSilentPaymentAddress(keys.scanPoint, keys.spendPoint, "tsp");
+    const byUnsigned = createSilentPaymentOutputs([unsigned], [{ address: recipient, count: 1 }], { hrp: "tsp" });
+    const bySigned = createSilentPaymentOutputs([signed], [{ address: recipient, count: 1 }], { hrp: "tsp" });
+    assert.equal(byUnsigned.outputs.length, 1);
+    assert.deepEqual(byUnsigned.outputs, bySigned.outputs);
+  } finally {
+    hodlSpWipeVinKeys([unsigned, signed]);
+  }
+});
+
+test("an unsigned input outside the session is refused", () => {
+  setup();
+  const foreign = HDKey.fromMasterSeed(new Uint8Array(64).fill(9)).derive("m/86'/1'/0'/0/0");
+  const foreignScript = bytesToHex(p2trKeyScript(foreign.publicKey.slice(1)));
+  assert.throws(() => hodlSpDeriveVinKeys([vinOf(foreignScript, { txinwitness: "" })]), /not found under this session/);
+});
+
+test("an unsigned P2WSH input is passed through without a key", () => {
+  setup();
+  const p2wsh = vinOf("0020" + "ab".repeat(32), { txinwitness: "" });
+  const [passed] = hodlSpDeriveVinKeys([p2wsh]);
+  assert.equal(passed, p2wsh);
+  assert.equal(passed.private_key, undefined);
 });

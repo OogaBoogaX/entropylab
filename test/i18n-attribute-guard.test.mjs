@@ -325,3 +325,30 @@ test("no source file interpolates raw hodlT() into a quoted attribute", () => {
   }
   assert.deepEqual(violations, [], "keep text/HTML translations out of attributes and quote translated attributes");
 });
+
+// Translated attributes are display text, never hooks. The panel listener
+// that drops a stale wallet when the final word changes matched
+// select[aria-label^="Valid final word"], so in de, es, fr and pt it never
+// fired: the old wallet's addresses stayed next to the new words (red-team
+// sweep of 0eed735, part05 #9). A selector keys on ids, names or data-*.
+const TRANSLATED_ATTRIBUTE_SELECTOR = /\[\s*(?:aria-label|aria-description|title|placeholder|alt)\s*[\^*$|~]?=/;
+
+test("no source selector matches a translated attribute", () => {
+  const violations = [];
+  for (const file of javascriptFiles(join(root, "src/js"))) {
+    if (file.relativePath.endsWith("-b64.js")) continue;
+    readFileSync(file.absolutePath, "utf8").split("\n").forEach((line, index) => {
+      if (TRANSLATED_ATTRIBUTE_SELECTOR.test(line)) violations.push(`src/js/${file.relativePath}:${index + 1}`);
+    });
+  }
+  assert.deepEqual(violations, [], "select on an id, name or data-* hook, not on text that gets translated");
+});
+
+test("the final-word select carries a data hook and the panel listener keys on it", () => {
+  const app = readFileSync(join(root, "src/js/app.js"), "utf8");
+  const start = app.indexOf("function hodlRenderLastWordPicker(");
+  assert.ok(start >= 0, "hodlRenderLastWordPicker exists");
+  const picker = app.slice(start, app.indexOf("\nfunction ", start + 1));
+  assert.match(picker, /select\.setAttribute\("data-last-word-select", ""\)/, "the select is marked for the listener");
+  assert.match(app, /target\.matches\([^)]*select\[data-last-word-select\]/, "the change listener matches the hook");
+});

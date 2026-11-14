@@ -181,11 +181,17 @@ test("the wallet.dat export view carries the spending descriptors the result no 
       assert.equal(account.receiveDescriptorPriv, spendingDescriptor(wallet.accounts[index], 0, network));
       assert.equal(account.changeDescriptorPriv, spendingDescriptor(wallet.accounts[index], 1, network));
       assert.equal(account.receiveDescriptor, wallet.accounts[index].receiveDescriptor);
+      // Every exported branch carries its own private descriptor, so a window
+      // starting at 1 or 2 still reaches wallet-export's key records (AR-03).
+      for (const entry of account.addressBranches ?? []) {
+        assert.equal(entry.privateDescriptor, spendingDescriptor(wallet.accounts[index], entry.branch, network), `${network} ${account.def.id}: branch ${entry.branch} private descriptor`);
+      }
     }
     assert.ok(!stringsIn(wallet).some((text) => text.includes(expected(network).account.x)), "building the view left text on the result");
   }
   const watch = await importedWallet(reversion(scureRoot.derive("m/84'/0'/0'").publicExtendedKey, VERSIONS.mainnet.z[1]));
   assert.equal(hodlWalletExportView(watch).accounts[0].receiveDescriptorPriv ?? null, null);
+  for (const entry of hodlWalletExportView(watch).accounts[0].addressBranches ?? []) assert.equal(entry.privateDescriptor ?? null, null);
 });
 
 // The page's download and its button hand the wallet.dat builder (stood in
@@ -195,6 +201,7 @@ test("the wallet.dat download carries the spending descriptors only while privat
   const calls = [];
   const walletExport = {
     hasDescriptors: () => true,
+    walletDatSupported: () => true,
     hasPrivateDescriptors: (wallet) => wallet.accounts.some((account) => account.receiveDescriptorPriv || account.changeDescriptorPriv),
     buildWalletDat: (wallet, withSecrets) => { calls.push({ wallet, withSecrets }); return new Uint8Array(1); },
     walletDatFilename: () => "wallet.dat",
@@ -275,6 +282,41 @@ test("the multisig co-signer exports wipe every account node they derive", async
   }
   assert.ok(nodes.every((node) => node.privateKey === null), "a co-signer account node kept its private key");
   root.wipePrivateData();
+});
+
+// The wallet.dat builder's private-child dep builds its own HDKey parent and
+// child from the account xprv text; like the co-signer exports and the
+// address search above, both nodes must be wiped before it returns.
+test("the wallet.dat private-child derivation wipes the parent and child nodes it builds", async () => {
+  const created = [];
+  const api = await load(["hodlWalletDatDeps"], {
+    hodlHDKey: {
+      fromExtendedKey: (text) => {
+        const parent = HDKey.fromExtendedKey(text), deriveChild = parent.deriveChild.bind(parent);
+        created.push(parent);
+        parent.deriveChild = (index) => {
+          // One rejected index stands in for a derivation that fails after
+          // the parent exists, so the wipe-on-throw path has a live parent.
+          if (index === 0x80000001) throw new Error("derived child is invalid");
+          const child = deriveChild(index);
+          created.push(child);
+          return child;
+        };
+        return parent;
+      },
+    },
+    hodlSecp256k1: { getPublicKey: () => { throw new Error("not under test"); } },
+    canonicalizeWatchDescriptor: () => { throw new Error("not under test"); },
+  });
+  const derive = api.hodlWalletDatDeps().deriveExtendedPrivateChild;
+  // Hardened branch 0 below the BIP84 account key: m/84'/0'/0'/0'.
+  assert.equal(derive(expected("mainnet").account.x, 0x80000000), scureRoot.derive("m/84'/0'/0'/0'").privateExtendedKey);
+  assert.equal(created.length, 2);
+  assert.ok(created.every((node) => node.privateKey === null), "the export left a derived private node unwiped");
+  created.length = 0;
+  assert.throws(() => derive(expected("mainnet").account.x, 0x80000001), /derived child is invalid/);
+  assert.equal(created.length, 1);
+  assert.ok(created.every((node) => node.privateKey === null), "a failed derivation left the parent's private key live");
 });
 
 test("an address search on hardened branches derives from a wiped copy of the account key", async () => {

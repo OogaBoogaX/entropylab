@@ -68,11 +68,9 @@ export const lowEntropyConfirmCardHtml = () => `
     </div>
   </div>`;
 
-// Builds the one shared overlay and returns its controls. `open(warning,
-// onProceed)` shows the modal for a warning shaped { bits, recommended, words,
-// detail }; "Add More Entropy" (or Escape / a backdrop click) cancels and
-// returns focus to the Derive Key button, "I Understand, Proceed" optionally
-// records the acknowledgement and then runs onProceed.
+// `open(warning, onProceed?, onCancel?)` returns a boolean decision promise
+// and keeps the optional callback interface. Replacement and every dismissal
+// resolve false; only Proceed resolves true and can remember acknowledgement.
 export const initLowEntropyConfirm = () => {
   if (document.getElementById("low-entropy-overlay")) return null;
   const modal = createModal({
@@ -98,31 +96,48 @@ export const initLowEntropyConfirm = () => {
   proceedButton.textContent = t("Derive Key Anyway");
   const acknowledgement = createLowEntropyAcknowledgement();
   const focusables = [ack, proceedButton, moreButton];
-  let proceed = null;
+  let pending = null;
 
-  const close = () => {
-    proceed = null;
-    modal.hide();
+  const complete = (request, accepted) => {
+    request.resolve(accepted);
+    (accepted ? request.onProceed : request.onCancel)?.();
   };
-  const open = (warning, onProceed) => {
-    if (typeof onProceed !== "function") return;
+  const settle = (accepted, options) => {
+    const request = pending;
+    if (!request) return;
+    pending = null;
+    modal.hide(options);
+    complete(request, accepted);
+  };
+  const close = (options) => settle(false, options);
+  const open = (warning, onProceed, onCancel) => {
+    let resolve;
+    const decision = new Promise((done) => { resolve = done; });
+    const request = { onProceed, onCancel, resolve }, previous = pending;
+    pending = request;
+    if (previous) {
+      modal.hide();
+      complete(previous, false);
+    }
+    // A cancellation callback may open a newer request, which has already
+    // canceled this one. Do not replace its message or focus afterward.
+    if (pending !== request) return decision;
     shortfall.textContent = t("You have provided only about {bits} bits of entropy.", { bits: warning?.bits ?? "" });
     recommended.textContent = t("Recommended: {recommended} bits for a {words}-word seed", {
       recommended: warning?.recommended ?? "",
       words: warning?.words ?? "",
     });
     ack.checked = false;
-    proceed = onProceed;
     // The safe choice is the default focus: one more Enter adds entropy
     // instead of deriving.
     modal.show(moreButton);
+    return decision;
   };
-  moreButton.addEventListener("click", close);
+  moreButton.addEventListener("click", () => close());
   proceedButton.addEventListener("click", () => {
+    if (!pending || !modal.isOpen()) return;
     if (ack.checked) acknowledgement.acknowledge();
-    const run = proceed;
-    close();
-    run?.();
+    settle(true);
   });
   return { open, close, isOpen: modal.isOpen, isAcknowledged: acknowledgement.isAcknowledged };
 };

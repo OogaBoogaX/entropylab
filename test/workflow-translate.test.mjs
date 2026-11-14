@@ -50,7 +50,10 @@ test("job B holds the App token but never the LLM secret, and revalidates", () =
   const job = jobBlock(translate, "publish");
   assert.ok(job, "publish job exists");
   assert.match(job, /needs: \[translate\]/);
-  assert.ok(job.includes("create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1"), "pinned App-token action");
+  // Exact on purpose: this action receives the App's private key and mints the
+  // write-capable token, so a bump has to change this line as well, and its
+  // reviewer signs off on the new commit. The test above only checks the form.
+  assert.ok(job.includes("create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510"), "pinned App-token action (v3.3.0)");
   assert.ok(job.includes("secrets.TRANSLATION_APP_PRIVATE_KEY"));
   assert.ok(!job.includes("TRANSLATE_API_KEY"), "the LLM secret never crosses into the write-capable job");
   assert.ok(job.includes("i18n-publish.mjs"), "runs the publisher");

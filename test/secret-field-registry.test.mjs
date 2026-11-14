@@ -9,7 +9,7 @@
 // Run with `npm test` (part of the default and CI suites).
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -19,6 +19,8 @@ const app = read("src/js/app.js");
 const shell = read("src/shell.html");
 const expandable = read("src/js/expandable.js");
 const psbtEditor = read("src/js/psbt-editor.js");
+const coreWallet = read("src/js/core-wallet-ui.js");
+const lightning = read("src/js/lightning.js");
 
 // A named top-level function body in app.js, for "this id is cleared in
 // this function" probes.
@@ -35,7 +37,7 @@ const fnBody = (name) => {
 const lifecycle = fnBody("hodlInitSecretFieldAutoClear");
 const journalFields = fnBody("hodlJournalClearFields");
 const journalWipe = fnBody("hodlJournalWipeMem");
-const journalLock = fnBody("hodlJournalLock");
+const journalEditor = fnBody("hodlJournalHideEditor");
 const msigRestore = fnBody("hodlRestoreMsig");
 
 // One slice of source around a marker, for "the change handler that reads
@@ -44,6 +46,25 @@ const around = (source, marker, span = 500) => {
   const at = source.indexOf(marker);
   assert.ok(at >= 0, `marker not found: ${marker}`);
   return source.slice(at, at + span);
+};
+
+// An inline `element.onclick = () => { ... };` handler, from the assignment
+// to its matching closing brace. Fails loudly if the marker is gone, so a
+// rename cannot silently drop the handler from the Undo sweep.
+const inlineHandler = (marker) => {
+  const at = app.indexOf(marker);
+  assert.ok(at >= 0, `inline handler not found: ${marker}`);
+  const open = app.indexOf("{", at);
+  assert.ok(open >= 0, `inline handler has no body: ${marker}`);
+  let depth = 0;
+  for (let i = open; i < app.length; i += 1) {
+    if (app[i] === "{") depth += 1;
+    else if (app[i] === "}") {
+      depth -= 1;
+      if (depth === 0) return app.slice(at, i + 1);
+    }
+  }
+  assert.fail(`inline handler is not closed: ${marker}`);
 };
 
 // id → probe. Every probe is a regex run against the named source; the row
@@ -55,8 +76,8 @@ const CLEARING_PATHS = [
     probe: (id) => assert.ok(lifecycle.includes(`"${id}"`), `#${id} missing from the lifecycle field sweep`),
   },
   {
-    ids: ["psbt-key", "psbt-pass", "psbt-text", "psbt-ax-transcript", "nonce-key", "nonce-pass", "nonce-text"],
-    why: "PSBT/Nonce stations: session keys, pasted PSBTs (xprvs in proprietary fields), anti-exfil transcript",
+    ids: ["psbt-key", "psbt-pass", "psbt-text", "psbt-ax-transcript", "psbt-audit-before", "psbt-rbf-original", "nonce-key", "nonce-pass", "nonce-text", "descriptor-reuse-text"],
+    why: "PSBT/Nonce stations: session keys, pasted PSBTs (xprvs in proprietary fields), anti-exfil transcript, a descriptor pasted for the key-reuse check (an xprv by mistake)",
     probe: (id) => assert.ok(lifecycle.includes(`"${id}"`) && fnBody("hodlEndPsbtSession").includes(`"${id}"`), `#${id} missing from the PSBT lifecycle/session-end sweeps`),
   },
   {
@@ -70,31 +91,62 @@ const CLEARING_PATHS = [
     probe: (id) => assert.ok(lifecycle.includes(`"${id}"`), `#${id} missing from the lifecycle sweep`),
   },
   {
-    ids: ["ln-seed", "ln-pass"],
-    why: "Lightning: aezeed cipher seed and passphrase",
-    probe: (id) => assert.ok(lifecycle.includes(`"${id}"`), `#${id} missing from the lifecycle sweep`),
+    ids: ["bip47-key", "bip47-pass"],
+    why: "BIP-47 station: session key and passphrase (preview only)",
+    probe: (id) => {
+      assert.ok(fnBody("hodlBip47WipeSource").includes(`"${id}"`), `#${id} missing from the BIP-47 wipe`);
+      assert.match(fnBody("hodlBip47WipeMem"), /hodlBip47WipeSource\(\)/, "the full BIP-47 wipe includes the source wipe");
+      assert.match(lifecycle, /hodlBip47WipeMem\(\)/, "End Session and pagehide must reach the BIP-47 wipe");
+    },
   },
   {
-    ids: ["journal-create-password", "journal-create-confirm", "journal-open-password", "journal-input", "journal-phrase", "journal-label", "journal-entry-notes", "journal-search", "journal-file"],
-    why: "Journal: passwords, raw entropy input, seed phrases, entry text",
+    ids: ["ln-seed", "ln-pass", "ln-inv-input"],
+    why: "Lightning: aezeed cipher seed and passphrase, and the pasted invoice/offer (a payment request that must not outlive the session)",
+    probe: (id) => {
+      if (id === "ln-inv-input") {
+        assert.match(lightning, /function hodlLnInvWipeMem\(\) \{[\s\S]*?getElementById\("ln-inv-input"\)[\s\S]*?input\.value = ""/, `#${id} must be emptied by the invoice wipe`);
+        assert.match(lightning, /export function hodlLnWipeMem\(\) \{[\s\S]*?hodlLnInvWipeMem\(\)/, "hodlLnWipeMem must reach the invoice wipe");
+        assert.match(lifecycle, /hodlLnWipeMem\(\)/, "End Session and pagehide must reach the Lightning wipe");
+        return;
+      }
+      assert.ok(lifecycle.includes(`"${id}"`), `#${id} missing from the lifecycle sweep`);
+    },
+  },
+  {
+    ids: ["journal-create-password", "journal-create-confirm", "journal-open-password", "journal-search", "journal-file"],
+    why: "Journal: passwords and saved-record searches",
     probe: (id) => assert.ok(journalFields.includes(`"${id}"`), `#${id} missing from the journal field clear`),
   },
   {
-    ids: ["journal-state-text", "journal-state-private"],
+    ids: ["journal-input", "journal-phrase", "journal-label", "journal-entry-notes"],
+    why: "Legacy Journal editor: raw recovery input, seed or passphrase, and user-supplied labels and notes",
+    probe: (id) => {
+      assert.ok(journalEditor.includes(`"${id}"`), `#${id} missing from the saved-record editor clear`);
+      assert.match(journalEditor, /field\.value = ""/, "closing the editor must erase its temporary values");
+      assert.match(journalWipe, /hodlJournalHideEditor\(\)/, "Journal Clear must close and scrub the saved-record editor");
+      assert.match(lifecycle, /hodlJournalWipeMem\(\)/, "End Session and pagehide must reach the Journal wipe");
+    },
+  },
+  {
+    ids: ["journal-report-file"],
+    why: "Read-only report picker is cleared on consumption and Journal teardown",
+    probe: (id) => assert.ok(fnBody("hodlJournalClearReport").includes(`"${id}"`) && /file\.value = ""/.test(fnBody("hodlJournalClearReport"))),
+  },
+  {
+    ids: ["journal-state-text", "journal-state-private", "journal-saved-state-text", "journal-saved-state-private"],
     why: "Session snapshot: with the private box ticked it holds the whole session's recovery texts",
     probe: (id) => {
       assert.ok(journalWipe.includes(`"${id}"`), `#${id} must be dropped by the journal Clear`);
-      if (id === "journal-state-text") assert.match(journalLock, /stateText\.textContent = ""/, "Lock must empty the snapshot");
-      else assert.match(journalLock, /privateBox\.checked = false/, "Lock must untick the private box");
+      if (id.endsWith("-text")) assert.match(journalWipe, /field\.textContent = ""/, "Clear must empty the snapshot");
+      else assert.match(journalWipe, /privateBox\.checked = false/, "Clear must untick the private box");
     },
   },
   {
     ids: ["journal-notes-text", "journal-log-out"],
-    why: "Session notepad and session log — free text; Lock drops them with the password (#522)",
+    why: "Session notepad and session log — free text; Clear drops them with the password (#522)",
     probe: (id) => {
       assert.ok(journalWipe.includes(`"${id}"`), `#${id} missing from the journal full wipe`);
-      assert.match(journalLock, /wipeJournal\(hodlJournal\)/, "Lock must wipe the journal's in-memory session text");
-      assert.match(journalLock, new RegExp(`getElementById\\("${id}"\\)`), `#${id} missing from the journal Lock`);
+      assert.match(journalWipe, /wipeJournal\(hodlJournal\)/, "Clear must wipe the journal's in-memory session text");
     },
   },
   {
@@ -135,14 +187,37 @@ const CLEARING_PATHS = [
   {
     // File inputs hold no content once consumed, but the reset is what lets
     // "pick the same file again" work AND keeps the fake path off screen.
-    ids: ["psbt-file", "nonce-file", "psbt-nonce-history-file", "journal-notes-file", "journal-keymanager-file"],
-    why: "file pickers for PSBT / nonce / journal / vault uploads (reset on consume)",
+    ids: ["psbt-file", "psbt-audit-file", "psbt-rbf-file", "nonce-file", "psbt-nonce-history-file", "journal-notes-file", "journal-keymanager-file", "msig-backup-file"],
+    why: "file pickers for PSBT / nonce / journal / vault / encrypted multisig backup uploads (reset on consume)",
     probe: (id) => assert.match(around(app, `getElementById("${id}")`), /value = ""/, `#${id} must be reset on consume`),
   },
   {
     ids: ["psbted-file"],
     why: "the PSBT editor's file picker (reset on consume)",
     probe: () => assert.match(around(psbtEditor, `$("psbted-file")`), /file\.value = ""/, "#psbted-file must be reset on consume"),
+  },
+  {
+    ids: ["ln-hsm-file"],
+    why: "the Core Lightning hsm_secret file picker (the bytes are zeroed on consume; Clear resets the input)",
+    probe: (id) => {
+      assert.match(lightning, /bytes\.fill\(0\)/, `#${id}: the file bytes must be zeroed`);
+      // The Clear button must reset the picker too: slice its handler so a
+      // stray `input.value = ""` elsewhere in the module cannot satisfy it.
+      const wipe = lightning.match(/getElementById\("ln-wipe"\)\.onclick = \(\) => \{([\s\S]*?)\n  \};/);
+      assert.ok(wipe, "the Clear handler exists");
+      assert.ok(wipe[1].includes(`"${id}"`), `#${id} must be reset by the Clear button`);
+      assert.match(wipe[1], /field\.value = ""/, `#${id} must be reset by the Clear button`);
+    },
+  },
+  {
+    ids: ["core-add-text"],
+    why: "Core Wallet: the add-descriptor paste may carry an xprv",
+    probe: () => assert.match(coreWallet, /wipe\.onclick[\s\S]*?addText\.value = ""/, "the Core Wallet wipe must empty #core-add-text"),
+  },
+  {
+    ids: ["core-file"],
+    why: "the Core Wallet file picker (reset on consume)",
+    probe: () => assert.match(coreWallet, /file\.addEventListener\("change", \(\) => \{\s*const chosen = file\.files\?\.\[0\];\s*file\.value = "";/, "#core-file must be reset on consume"),
   },
 ];
 
@@ -160,21 +235,28 @@ const PUBLIC_FIELDS = {
   "address-range": "address window setting",
   "address-start": "address window setting",
   "address-start-harden": "hardening toggle",
+  "bip47-contact": "a pasted payment code — public data, decoded offline with no key",
+  "bip47-notify-pub": "a manually supplied public key — public data, used only for the unverified override",
+  "bip47-notify-tx": "a pasted raw transaction — public data, decoded offline with no key",
+  "bip47-start": "BIP-47 payment-address start index setting",
   "bip85-bytes": "BIP-85 length setting",
   "bip85-index": "BIP-85 index setting",
   "bip85-pwdlen": "BIP-85 length setting",
   "branch-range": "address window setting",
   "branch-start": "address window setting",
   "branch-start-harden": "hardening toggle",
+  "core-add-active": "editor policy checkbox",
+  "core-add-internal": "editor policy checkbox",
+  "core-reveal": "privacy reveal toggle — session state, not key material",
   "derivation-path": "public derivation path text",
-  "journal-log-encrypt": "download-encryption checkbox",
-  "journal-notes-encrypt": "download-encryption checkbox",
-  "journal-state-encrypt": "download-encryption checkbox",
+  "journal-method": "saved-record input-method enum; contains no recovery text",
+
   "msig-account": "derivation setting",
   "msig-account-harden": "derivation setting",
   "msig-address-range": "derivation setting",
   "msig-address-start": "derivation setting",
   "msig-address-start-harden": "derivation setting",
+  "msig-backup-xpub": "one of the multisig's xpubs, typed only to open an encrypted backup; text that looks like a private key or seed is emptied at once",
   "msig-branch-range": "derivation setting",
   "msig-branch-start": "derivation setting",
   "msig-branch-start-harden": "derivation setting",
@@ -190,6 +272,11 @@ const PUBLIC_FIELDS = {
   "msig-reuse-session-keys": "session-key checkbox",
   "network": "network setting",
   "network-harden": "hardening toggle",
+  "ots-expected-digest": "the digest to compare against, taken from the public file being checked",
+  "ots-header-hex": "a public Bitcoin block header",
+  "ots-original-file": "the file being checked; hashed in the page, never stored",
+  "ots-proof-file": "a public OpenTimestamps proof file",
+  "ots-proof-hex": "a public OpenTimestamps proof",
   "psbted-insane": "editor policy checkbox",
   "purpose": "purpose setting",
   "purpose-harden": "hardening toggle",
@@ -206,7 +293,7 @@ const PUBLIC_FIELDS = {
 };
 
 test("the registry covers every known secret-bearing field", () => {
-  for (const id of ["dice", "pass", "seed", "key", "bip85-key", "sp-key", "psbt-key", "nonce-key", "ln-seed", "journal-input", "journal-phrase", "journal-state-text", "psbted-text", "msig-descriptor", "exp-text"]) {
+  for (const id of ["dice", "pass", "seed", "key", "bip85-key", "sp-key", "psbt-key", "nonce-key", "ln-seed", "journal-search", "journal-input", "journal-phrase", "journal-label", "journal-entry-notes", "journal-state-text", "psbted-text", "msig-descriptor", "exp-text"]) {
     assert.ok(SECRET_FIELDS.includes(id), `#${id} is secret but missing from the registry`);
   }
 });
@@ -226,4 +313,86 @@ test("every shell field is classified as secret (cleared) or public (settings)",
     assert.ok(inShell(id) || ["hex", "bin", "base4", "base8", "base32", "base64", "seed", "seed-numbers", "key", "cards", "direct-cards", "exp-text"].includes(id),
       `#${id} is classified but no longer in the shell`);
   }
+});
+
+// Clear must be an assignment. execCommand("delete") and setRangeText both
+// leave the old text in the field's Undo history, where execCommand("undo")
+// brings it back (measured in Chrome, Edge and Firefox, 2026-10-27). The
+// Journal notes field is the one place Undo is intended. The module Clear
+// handlers are already pinned to `.value = ""` by their probes above.
+const CLEAR_HANDLERS = {
+  hodlInitSecretFieldAutoClear: lifecycle,
+  hodlEndPsbtSession: fnBody("hodlEndPsbtSession"),
+  hodlWipeActiveKey: fnBody("hodlWipeActiveKey"),
+  hodlWipeActiveMsig: fnBody("hodlWipeActiveMsig"),
+  bip85Wipe: inlineHandler('document.getElementById("bip85-wipe").onclick = () => {'),
+  spWipe: inlineHandler('document.getElementById("sp-wipe").onclick = () => {'),
+  hodlJournalClearFields: journalFields,
+  hodlJournalWipeMem: journalWipe,
+  hodlJournalHideEditor: journalEditor,
+  hodlJournalClearReport: fnBody("hodlJournalClearReport"),
+  hodlRestoreMsig: msigRestore,
+};
+
+test("no Clear handler uses an editing command that keeps text in Undo", () => {
+  for (const [name, source] of Object.entries(CLEAR_HANDLERS)) {
+    assert.ok(!source.includes("execCommand"), `${name} clears with execCommand, which keeps the text in Undo`);
+    assert.ok(!source.includes("setRangeText"), `${name} clears with setRangeText, which keeps the text in Undo`);
+  }
+});
+
+test("app.js calls document.execCommand only in the Journal notes field", () => {
+  const journal = fnBody("hodlJournalCommitNoteClock");
+  assert.ok(journal.length < app.length / 4, "hodlJournalCommitNoteClock's body must be a bounded slice of app.js");
+  const total = app.split("execCommand(").length - 1;
+  const inside = journal.split("execCommand(").length - 1;
+  assert.equal(total, inside, "app.js calls execCommand outside hodlJournalCommitNoteClock: editing commands keep text in Undo, so Clear must assign .value = \"\"");
+});
+
+test("no other module calls document.execCommand except the clipboard's copy fallback", () => {
+  const dir = join(root, "src/js");
+  for (const name of readdirSync(dir).filter((file) => file.endsWith(".js") && file !== "app.js")) {
+    const source = readFileSync(join(dir, name), "utf8");
+    const calls = source.match(/execCommand\([^)]*\)/g) || [];
+    if (name === "clipboard.js") {
+      for (const call of calls) assert.equal(call, 'execCommand("copy")', `clipboard.js may only call execCommand("copy"), found ${call}`);
+    } else {
+      assert.equal(calls.length, 0, `${name} calls execCommand: editing commands keep text in Undo, so a Clear must assign .value = ""`);
+    }
+  }
+});
+
+// The Key Station's Clear builds a fresh key and re-renders the form, which
+// drops the old field nodes. Measured in CI (Firefox, Chrome): a dropped #seed
+// still held its text. The handler must empty the fields in place first.
+test("the Key Station Clear empties its secret fields in place before the form re-renders", () => {
+  const body = fnBody("hodlWipeActiveKey");
+  const empty = body.indexOf('el.value = ""');
+  const restore = body.indexOf("hodlRestoreKey()");
+  assert.ok(empty >= 0 && restore > empty, 'hodlWipeActiveKey must assign "" to the secret fields before hodlRestoreKey re-renders the form');
+  for (const id of ["dice", "hex", "bin", "base4", "base8", "base32", "base64", "seed", "seed-numbers", "key", "cards", "direct-cards"]) {
+    assert.ok(body.includes(`"${id}"`), `hodlWipeActiveKey must empty #${id} in place`);
+  }
+  assert.ok(body.includes(".dice-input-highlight"), "hodlWipeActiveKey must empty the highlight mirrors, which repeat the typed text");
+  // The transcript panels: whatever the pagehide sweep empties, Clear empties too.
+  const sweep = fnBody("hodlInitSecretFieldAutoClear").match(/for \(let id of \[([^\]]+)\]\) \{\s*let panel/);
+  assert.ok(sweep, "the pagehide sweep's transcript-panel list was not found");
+  const panelIds = [...sweep[1].matchAll(/"([^"]+)"/g)].map((match) => match[1]);
+  assert.ok(panelIds.length >= 5, "the pagehide sweep's transcript-panel list looks truncated");
+  for (const id of panelIds) {
+    assert.ok(body.includes(`"${id}"`), `hodlWipeActiveKey must empty #${id}, which the pagehide sweep empties`);
+  }
+  assert.ok(body.includes("delete el.dataset.previousValue"), "hodlWipeActiveKey must drop the dice field's previous-text copy");
+  assert.ok(body.includes("hodlPassphraseVaultField.clear()") && body.includes("getElementById(\"pass\")"), "hodlWipeActiveKey must empty the BIP39 passphrase field");
+});
+
+// MultiSig's Clear re-renders the station the same way (measured in CI: a
+// dropped #msig-x-0 still held its text), so it empties the cosigner fields
+// in place first.
+test("the MultiSig Clear empties its cosigner fields in place before the station re-renders", () => {
+  const body = fnBody("hodlWipeActiveMsig");
+  const empty = body.indexOf('[id^="msig-x-"]');
+  const restore = body.indexOf("hodlRestoreMsig()");
+  assert.ok(empty >= 0 && restore > empty, "hodlWipeActiveMsig must empty the msig-x-* fields before hodlRestoreMsig re-renders the station");
+  assert.ok(body.includes('el.value = ""'), "hodlWipeActiveMsig must empty the cosigner fields by assignment");
 });

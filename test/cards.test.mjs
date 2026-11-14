@@ -182,6 +182,25 @@ test("24-word extra cards may repeat the first shuffle", () => {
   assert.ok(parsed.bits >= 256);
 });
 
+test("a single continuous deal is credited its true one-deck entropy (audit L1)", () => {
+  // Non-24-word targets never instruct a second shuffle (needed.extra is 0)
+  // and the deal instruction says "the same shuffled deck" throughout, so the
+  // transcript is one deal from one deck: its entropy ceiling is
+  // log2(52!/(52-n)!). log2(52!) ≈ 225.58 — not a fresh-deck credit for every
+  // card past the recommendation.
+  const parsed = hodlParseCards(DECK.join(" "), 12);
+  assert.equal(parsed.duplicates.length, 0);
+  assert.equal(parsed.cards.length, 52);
+  assert.ok(Math.abs(parsed.bits - 225.58) < 0.5, `52-card single deal credited ${parsed.bits} bits, expected the one-deck ceiling ≈ 225.58`);
+  // A repeat anywhere in a one-deck target is a repeated card in the same
+  // shuffle, not a fresh-deck draw.
+  const withRepeat = hodlParseCards(`${DECK.join(" ")} AS`, 12);
+  assert.deepEqual(withRepeat.duplicates, ["AS"]);
+  // The picker keeps offering only unseen cards past the recommendation.
+  const picker = hodlCardSelectionState(DECK.slice(0, 30), hodlCardNeeded(12));
+  assert.ok(!picker.available.includes(DECK[0]), "picker re-offered an already-dealt card");
+});
+
 test("hashed transcript is SHA-256 of the displayed ASCII codes", () => {
   const transcript = "As 2c Td";
   const digest = createHash("sha256").update(transcript, "utf8").digest("hex");
@@ -192,8 +211,8 @@ test("hashed transcript is SHA-256 of the displayed ASCII codes", () => {
   assert.equal(hodlFilterCards("AS 10H TD"), "As Th Td ");
   assert.equal(hodlParseCards(hodlFilterCards("as2ctd"), 12).hashInput, transcript);
   assert.equal(hodlCardsHashInput(["AS", "2C", "TD"], false), transcript);
-  assert.equal(hodlCardsEntropy("AS 2C TD", 12).hex, digest.slice(0, 32));
-  assert.equal(hodlCardsEntropy("as 2c td", 12).hex, digest.slice(0, 32));
+  assert.equal(Buffer.from(hodlCardsEntropy("AS 2C TD", 12).bytes).toString("hex"), digest.slice(0, 32));
+  assert.equal(Buffer.from(hodlCardsEntropy("as 2c td", 12).bytes).toString("hex"), digest.slice(0, 32));
   assert.equal(digest.length, 64);
 });
 
@@ -205,9 +224,9 @@ test("Ian Coleman hashed cards SHA-256 the suit-symbol transcript", () => {
   assert.equal(coleman.ok, true);
   assert.equal(ascii.method, "cards-sha256");
   assert.equal(coleman.method, "ian-coleman-cards-sha256");
-  assert.notEqual(ascii.hex, coleman.hex);
+  assert.notEqual(Buffer.from(ascii.bytes).toString("hex"), Buffer.from(coleman.bytes).toString("hex"));
   assert.equal(coleman.hashInput, "A\u2660 2\u2663 T\u2666");
-  assert.equal(createHash("sha256").update("A\u2660 2\u2663 T\u2666", "utf8").digest("hex").slice(0, 32), coleman.hex);
+  assert.equal(createHash("sha256").update("A\u2660 2\u2663 T\u2666", "utf8").digest("hex").slice(0, 32), Buffer.from(coleman.bytes).toString("hex"));
 });
 
 test("one valid card produces a deterministic testing seed", () => {

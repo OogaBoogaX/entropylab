@@ -70,9 +70,9 @@ test("every text field in the shell opts out of Grammarly and of form restore", 
 
 test("the fields that lacked autocomplete now have it off", () => {
   // These had no autocomplete attribute, so Chrome's session restore saved
-  // what they held; journal-entry-notes can hold a secret.
+  // what they held. The Journal notepad is private text too.
   const { doc } = stampedShell();
-  for (const id of ["purpose", "network", "account", "branch-start", "address-start", "msig-account", "sp-verify-labels", "journal-entry-notes"]) {
+  for (const id of ["purpose", "network", "account", "branch-start", "address-start", "msig-account", "sp-verify-labels", "journal-notes-text"]) {
     assert.equal(doc.getElementById(id).getAttribute("autocomplete"), "off", `#${id}`);
   }
 });

@@ -153,14 +153,20 @@ const bigLeafPsbt = (leafSize, sigCount, alternate) => {
 };
 
 const DEADLINE_MS = 20000;
+// `ms` is wall-clock time. `cpuMs` is the CPU time the call itself used: the
+// worker thread's own where Node has process.threadCpuUsage (22.19+, 23.9+),
+// else this test process's, whose main thread sits idle awaiting the worker.
+// Other processes' load (a parallel test file, a busy machine) counts in
+// neither, so a ratio of two cpuMs compares the work, not the moment it ran in.
 const inspectInWorker = (psbt, timeoutMs = DEADLINE_MS, issue = "#535") =>
   new Promise((resolve, reject) => {
     const worker = new Worker(
       `const { parentPort, workerData } = require("node:worker_threads");
        import(workerData.moduleUrl).then((m) => {
-         const t0 = Date.now();
+         const cpu = () => { const u = process.threadCpuUsage ? process.threadCpuUsage() : process.cpuUsage(); return (u.user + u.system) / 1000; };
+         const t0 = Date.now(), c0 = cpu();
          const doc = m.psbtInspectDoc(new Uint8Array(workerData.psbt));
-         parentPort.postMessage({ problems: doc.problems.map((p) => ({ code: p.code, message: p.message })), ms: Date.now() - t0 });
+         parentPort.postMessage({ problems: doc.problems.map((p) => ({ code: p.code, message: p.message })), ms: Date.now() - t0, cpuMs: cpu() - c0 });
        }).catch((error) => parentPort.postMessage({ errorName: error?.name || "Error", errorMessage: String(error?.message || error) }));`,
       { eval: true, workerData: { moduleUrl: new URL("../src/js/psbt-wasm.js", import.meta.url).href, psbt } }
     );
@@ -236,24 +242,30 @@ for (const [name, psbt] of [
 // re-hashed every leaf to find its match, and the one-slot analysis memo
 // thrashed when signatures alternated leaves.
 // The deadline alone cannot catch the single-leaf case: 12-16 s of
-// per-signature rehashing slides under 20 s. A ratio is machine-independent:
-// unfixed, 255 signatures cost ~3-8x one signature on the same leaf; the fix
-// lands near 1.
+// per-signature rehashing slides under 20 s. So these tests measure relative
+// cost: the CPU time of 255 signatures over that of one, on the same shape.
+// Unfixed, 255 signatures cost ~3-8x one signature on the same leaf; the fix
+// lands near 1. Wall-clock time only guards against a hang here: a busy
+// machine stretches it (an 8 s limit failed locally under a full parallel
+// npm test) without changing the work done.
+const HANG_GUARD_539_MS = 60000;
+const perSignatureRatio = async (leafSize, alternate) => {
+  const one = await outcome(bigLeafPsbt(leafSize, 1, alternate), HANG_GUARD_539_MS, "#539");
+  const many = await outcome(bigLeafPsbt(leafSize, 255, alternate), HANG_GUARD_539_MS, "#539");
+  const cost = (result) => `${result.cpuMs.toFixed(0)}ms CPU (${result.ms}ms wall)`;
+  return { ratio: many.cpuMs / one.cpuMs, detail: `1 sig → ${cost(one)}, 255 sigs → ${cost(many)}` };
+};
 test("per-signature cost stays flat per signature (#539)", async () => {
-  const one = await outcome(bigLeafPsbt(4_000_000, 1, false), 8000, "#539");
-  const many = await outcome(bigLeafPsbt(4_000_000, 255, false), 8000, "#539");
-  const ratio = many.ms / one.ms;
-  assert.ok(ratio < 2, `1 sig → ${one.ms}ms, 255 sigs → ${many.ms}ms (ratio ${ratio.toFixed(1)}): per-signature work grows with the signature count`);
+  const { ratio, detail } = await perSignatureRatio(4_000_000, false);
+  assert.ok(ratio < 2, `${detail} (ratio ${ratio.toFixed(1)}): per-signature work grows with the signature count`);
 });
 // Alternating leaves need the ratio too: a deadline cannot tell a half fix
 // (leaf-hash map without the memo keyed by leaf) from the full one — the
 // half fix still misses the memo every signature but lands under 20 s. A
 // half fix shows ~x9; the full fix lands near 1.
 test("per-signature cost stays flat across alternating leaves (#539)", async () => {
-  const one = await outcome(bigLeafPsbt(2_000_000, 1, true), 8000, "#539");
-  const many = await outcome(bigLeafPsbt(2_000_000, 255, true), 8000, "#539");
-  const ratio = many.ms / one.ms;
-  assert.ok(ratio < 2, `1 sig → ${one.ms}ms, 255 alternating → ${many.ms}ms (ratio ${ratio.toFixed(1)}): per-signature work grows across alternating leaves`);
+  const { ratio, detail } = await perSignatureRatio(2_000_000, true);
+  assert.ok(ratio < 2, `${detail} (ratio ${ratio.toFixed(1)}): per-signature work grows across alternating leaves`);
 });
 
 // The deadline alone passes a fix that only shaves the constant. The same

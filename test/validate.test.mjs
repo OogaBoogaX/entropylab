@@ -86,7 +86,7 @@ for (const file of requiredFiles) {
 }
 
 test("package.json declares a valid version and the expected scripts", () => {
-  assert.match(appVersion, /^\d+(\.\d+)*$/, `invalid version: ${appVersion}`);
+  assert.match(appVersion, /^\d+(\.\d+)*(-dev)?$/, `invalid version: ${appVersion}`);
   for (const script of ["build", "clean", "test", "verify", "ci"]) {
     assert.equal(typeof pkg.scripts?.[script], "string", `package.json is missing the "${script}" script`);
   }
@@ -198,23 +198,29 @@ test("the WASM boot chain has a failure path that kills the page", () => {
 });
 
 test("the release build attests the wallet artifact and ships a checksum manifest (issue #58)", () => {
-  const workflow = read(".github/workflows/ci-cd.yml");
+  const ciWorkflow = ".github/workflows/ci-cd.yml";
+  const workflow = read(ciWorkflow);
   const build = workflow.match(/^  build:\n(?:.|\n)*?(?=^  [a-z-]+:)/m)?.[0] ?? "";
   // SHA256SUMS.txt names only the HTML, so `sha256sum -c` passes for someone
   // holding just the downloaded file. The modules get a manifest of their own.
-  const wasmSums = /sha256sum \\\n\s+src\/js\/entropylab-wasm-b64\.js \\\n\s+src\/js\/psbt-wasm-b64\.js \\\n\s+src\/js\/vanity-wasm-b64\.js \\\n\s+> WASM-SHA256SUMS\.txt\n/;
+  const wasmSums = /sha256sum \\\n\s+src\/js\/entropylab-wasm-b64\.js \\\n\s+src\/js\/psbt-wasm-b64\.js \\\n\s+src\/js\/vanity-wasm-b64\.js \\\n\s+src\/js\/qr-wasm-b64\.js \\\n\s+> WASM-SHA256SUMS\.txt\n/;
   assert.match(build, /run: sha256sum entropylab\.html > SHA256SUMS\.txt\n/, "build must hash only the HTML into SHA256SUMS.txt");
-  assert.match(build, wasmSums, "build must hash exactly the three WASM modules into WASM-SHA256SUMS.txt");
+  assert.match(build, wasmSums, "build must hash exactly the four WASM modules into WASM-SHA256SUMS.txt");
   assert.match(build, /name: entropylab-sha256sums\n\s+path: \|\n\s+SHA256SUMS\.txt\n\s+WASM-SHA256SUMS\.txt\n\s+CID\.txt\n/, "build must upload both manifests");
   assert.match(build, /node scripts\/cid\.mjs entropylab\.html > CID\.txt/, "build must generate CID.txt from the same HTML");
-  assert.match(build, /actions\/attest-build-provenance@[0-9a-f]{40}/, "build must attest entropylab.html");
-  assert.match(build, /subject-path: entropylab\.html/, "the attestation subject is the wallet HTML");
-  assert.match(build, /attestations: write/, "attestation requires the attestations permission");
+  // Attestation is a separate push-only job so a pull request never runs
+  // PR-controlled build code with id-token/attestations write permissions.
+  const attest = workflow.match(/^  attest:\n(?:.|\n)*?(?=^  [a-z-]+:)/m)?.[0] ?? "";
+  assert.match(attest, /actions\/attest-build-provenance@[0-9a-f]{40}/, "the attest job must attest entropylab.html");
+  assert.match(attest, /subject-path: candidate\/entropylab\.html/, "the attestation subject is the tested candidate HTML");
+  assert.match(attest, /attestations: write/, "attestation requires the attestations permission");
+  assert.match(attest, /id-token: write/, "attestation requires the OIDC permission");
+  assert.doesNotMatch(build, /id-token: write|attestations: write/, "the PR build must not hold attestation permissions");
   // Only merges to the default branch produce release attestations.
-  assert.match(build, /if: github\.ref == 'refs\/heads\/rock' && github\.event_name == 'push'\n\s*uses: actions\/attest-build-provenance/);
+  assert.match(attest, /if: github\.ref == 'refs\/heads\/rock' && github\.event_name == 'push'/);
   const artifact = workflow.match(/^  artifact:\n(?:.|\n)*?(?=^  [a-z-]+:)/m)?.[0] ?? "";
   assert.match(artifact, /run: sha256sum entropylab\.html > SHA256SUMS\.txt\n/, "artifact must hash only the HTML into SHA256SUMS.txt");
-  assert.match(artifact, wasmSums, "artifact must hash exactly the three WASM modules into WASM-SHA256SUMS.txt");
+  assert.match(artifact, wasmSums, "artifact must hash exactly the four WASM modules into WASM-SHA256SUMS.txt");
   const commitLine = artifact.match(/^\s+git add -f ([^\n]+)$/m)?.[1].split(/\s+/) ?? [];
   for (const file of ["entropylab.html", "SHA256SUMS.txt", "WASM-SHA256SUMS.txt", "CID.txt"]) {
     assert.ok(commitLine.includes(file), `the committed artifact includes ${file}`);
@@ -222,7 +228,21 @@ test("the release build attests the wallet artifact and ships a checksum manifes
   const readme = read("README.md");
   assert.match(readme, /^sha256sum -c SHA256SUMS\.txt$/m, "README verifies the download against the HTML-only manifest");
   assert.match(readme, /^sha256sum -c WASM-SHA256SUMS\.txt/m, "README shows how to check the committed WASM modules");
-  assert.match(readme, /gh attestation verify entropylab\.html -R OogaBoogaX\/entropylab/);
+  // The documented check must pin the signer workflow and the source ref, or
+  // any workflow on any branch could attest arbitrary bytes. The path is the
+  // file this test reads the attest job from and the ref is that job's own
+  // gate, so the guides cannot drift from the workflow.
+  assert.ok(attest, "the attest job must exist to pin the documented check");
+  const attestedRef = attest.match(/if: github\.ref == '([^']+)'/)?.[1] ?? "";
+  assert.equal(attestedRef, "refs/heads/rock", "the attest job must be gated on the rock branch");
+  const attestCommand = `gh attestation verify entropylab.html -R OogaBoogaX/entropylab --signer-workflow OogaBoogaX/entropylab/${ciWorkflow} --source-ref ${attestedRef}`;
+  for (const guide of ["README.md", "docs/Verify_Your_Download.md"]) {
+    const commands = read(guide).split("\n").filter((line) => line.includes("gh attestation verify entropylab.html"));
+    assert.ok(commands.length > 0, `${guide} documents the attestation check`);
+    for (const line of commands) {
+      assert.equal(line.trim(), attestCommand, `${guide} must pin the signer workflow and source ref`);
+    }
+  }
   assert.match(read("README.md"), /ipfs block put --cid-codec=raw --allow-big-block/);
 });
 
@@ -236,7 +256,9 @@ test("OpenTimestamps stamps the tested HTML off the Pages/test critical path", (
   assert.ok(jobNeeds(timestamp).includes("build"), "timestamp needs build (digest)");
   assert.ok(jobNeeds(timestamp).includes("artifact"), "timestamp runs after the HTML commit");
   assert.ok(!jobNeeds(workflowJob(workflow, "artifact")).includes("timestamp"), "calendars must not block the HTML commit");
-  assert.ok(!jobNeeds(workflowJob(workflow, "deploy")).includes("timestamp"), "calendars must not block Pages");
+  const preview = workflowJob(workflow, "preview");
+  assert.ok(preview, "ci-cd.yml deploys the preview site");
+  assert.ok(!jobNeeds(preview).includes("timestamp"), "calendars must not block the preview deploy");
   assert.doesNotMatch(timestamp, /npm run build/, "timestamp must not rebuild the wallet HTML");
   // `ots stamp` creates its output with an exclusive open, so a proof left
   // over from the previous release makes every later stamp fail.
@@ -250,12 +272,36 @@ test("OpenTimestamps stamps the tested HTML off the Pages/test critical path", (
   assert.doesNotMatch(upgrade, /npm run build/);
   assert.doesNotMatch(upgrade, /SHA256SUMS\.txt/);
   assert.match(upgrade, /uses: actions\/checkout@[0-9a-f]{40}/, "upgrade workflow pins checkout");
-  assert.match(read("README.md"), /ots verify entropylab\.html/);
+  // `ots verify` takes the proof file; given entropylab.html it refuses
+  // ("not a timestamp file").
+  assert.match(read("README.md"), /ots verify entropylab\.html\.ots/);
+  assert.match(read("docs/Verify_Your_Download.md"), /ots verify entropylab\.html\.ots/);
   assert.match(read("README.md"), /pending/);
   assert.match(read("llms.txt"), /entropylab\.html\.ots/);
   assert.match(read("SECURITY.md"), /OpenTimestamps/);
-  for (const path of ["src/js/app.js", "src/js/online.js", "src/shell.html"]) {
-    assert.doesNotMatch(read(path), /opentimestamps|\.ots\b/i, `${path} must not talk to OTS calendars`);
+  assert.doesNotMatch(read("src/js/online.js"), /opentimestamps|\.ots\b/i, "src/js/online.js must not talk to OTS calendars");
+  // The preview Verify card checks .ots proofs offline, so the page may name
+  // OpenTimestamps; it must never name a calendar server.
+  for (const path of ["src/js/app.js", "src/shell.html", "src/js/ots-parser.js", "src/js/ots-verifier.js", "src/js/ots-verifier-ui.js"]) {
+    assert.doesNotMatch(read(path), /https?:\/\/[^\s"'`]*(?:calendar|opentimestamps|eternitywall|catallaxy)/i, `${path} must not talk to OTS calendars`);
+  }
+});
+
+test("jobs that read repository secrets run inside a GitHub Environment", () => {
+  // A same-repo pull_request run receives repository secrets and runs the
+  // workflow from the PR's own ref, so any secret-bearing job must be fenced
+  // behind a GitHub Environment (audit SC-1). `GITHUB_TOKEN` is the
+  // workflow's own ephemeral credential, not a stored secret, so it is
+  // exempt. Deployment branches on the environment keep the secrets off
+  // untrusted refs entirely; this guard is the in-repo tripwire for a job
+  // added later without one.
+  for (const name of readdirSync(join(root, ".github/workflows")).filter((file) => file.endsWith(".yml"))) {
+    const workflow = read(join(".github/workflows", name));
+    for (const match of workflow.matchAll(/^ {2}([\w-]+):\n[\s\S]*?(?=^  [\w-]+:|(?![\s\S]))/gm)) {
+      const job = match[0];
+      if (!/\$\{\{\s*secrets\.(?!GITHUB_TOKEN\b)/.test(job)) continue;
+      assert.match(job, /^ {4}environment:/m, `${name}: job "${match[1]}" reads a secret but declares no environment`);
+    }
   }
 });
 
@@ -449,7 +495,7 @@ function workflowJob(workflow, name) {
 }
 const workflowSteps = (job) => job.match(/^      - [\s\S]*?(?=^      - |(?![\s\S]))/gm) ?? [];
 const jobNeeds = (job) => (job.match(/^    needs: \[([^\]\n]*)\]/m)?.[1] ?? "").split(",").map(value => value.trim());
-const wasmModulePaths = ["src/js/entropylab-wasm-b64.js", "src/js/psbt-wasm-b64.js", "src/js/vanity-wasm-b64.js"];
+const wasmModulePaths = ["src/js/entropylab-wasm-b64.js", "src/js/psbt-wasm-b64.js", "src/js/vanity-wasm-b64.js", "src/js/qr-wasm-b64.js"];
 const candidateConsumers = {
   "test-ci": "npm run test:ci",
   "test-browser": "npm run test:browser",
@@ -593,7 +639,9 @@ test("third-party actions are immutable and deployment is test-gated", () => {
   assert.match(rebuild, IN_IMAGE_BUILD, "build-wasm rebuilds the bindings inside the pinned dev image");
   assert.deepEqual(wasmGateProblems(workflow), []);
   for (const dependency of ["build", "verify", "test-ci", "test-browser", "build-wasm", "fuzz-lifehash", "fuzz-lifehash-cpp", "fuzz-msig", "reproduce"]) {
-    assert.ok(jobNeeds(workflowJob(workflow, "deploy")).includes(dependency), `deploy needs ${dependency}`);
+    // #1406: rock no longer deploys production; what rock publishes is the
+    // preview site, and it still waits for every gate.
+    assert.ok(jobNeeds(workflowJob(workflow, "preview")).includes(dependency), `preview needs ${dependency}`);
   }
 });
 
@@ -790,7 +838,9 @@ test("the browser-suite crypto bridge is gated out of the release build", () => 
   // refuse to write a hooks build over the release artifact.
   assert.match(read("src/js/app.js"), /if \(__ENTROPYLAB_TEST_HOOKS__ && globalThis\.__entropyLabTest\) globalThis\.__entropyLabCrypto = /);
   const build = read("scripts/build.mjs");
-  assert.match(build, /define: \{ __ENTROPYLAB_TEST_HOOKS__: testHooks \? "true" : "false" \}/);
+  // The define object may carry other build-time flags (the preview flag);
+  // the test-hooks entry itself must still default off.
+  assert.match(build, /define: \{\s*__ENTROPYLAB_TEST_HOOKS__: testHooks \? "true" : "false"[,\s]/);
   assert.match(build, /--test-hooks requires --out outside the repository root/);
 });
 

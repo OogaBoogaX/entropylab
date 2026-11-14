@@ -62,7 +62,7 @@ const openOverlay = (url, label, opener) => {
   // Built on every opening, long after the boot i18n sweep, so its words go
   // through the translators (under the names the catalog extractor reads).
   card.innerHTML = `
-    <p class="modal-title qr-ref-title">${escapeHtml(label)}</p>
+    <p class="modal-title qr-ref-title" id="qr-ref-title">${escapeHtml(label)}</p>
     <div class="qr-ref-qr" aria-label="${hodlTAttr("QR code for {url}", { url })}">${qrSvg}</div>
     <p class="qr-ref-url mono">${escapeHtml(url)}</p>
     <p class="qr-ref-hint muted">${hodlT("Scan with a phone camera to open this reference on an online device.")}</p>
@@ -86,13 +86,11 @@ export const initQrReferences = (glyphs = {}) => {
   modal = createModal({
     id: "qr-ref-overlay",
     className: "qr-ref-overlay",
-    card: `<div class="modal-card qr-ref-card"></div>`,
+    card: `<div class="modal-card qr-ref-card" aria-labelledby="qr-ref-title"></div>`,
     focusables: () => [...overlayEl.querySelectorAll("button")],
     onDismiss: closeOverlay,
   });
   overlayEl = modal.overlay;
-  overlayEl.setAttribute("role", "dialog");
-  overlayEl.setAttribute("aria-modal", "true");
 
   // Event delegation: handles links present at boot and links created later
   // (e.g. by dynamic re-renders) without any per-link registration.

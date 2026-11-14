@@ -43,24 +43,15 @@ import { sha256 as nobleSha256 } from "@noble/hashes/sha2.js";
 import { psbtInspectDoc } from "../src/js/psbt-wasm.js";
 import { serializeTx } from "../src/js/tx.js";
 import { sha256 } from "../src/js/hashes.js";
+import { fuzzEnv, mulberry32, replayLine, withReplay } from "./fuzz-kit.mjs";
 
 // --- deterministic randomness ------------------------------------------------
 
 const FUZZ_SEED = 0x5eed0174;
 const DEFAULT_ITERATIONS = 100;
-const ITERATIONS = process.env.PSBT_FUZZ_ITERATIONS === undefined ? DEFAULT_ITERATIONS : Number(process.env.PSBT_FUZZ_ITERATIONS);
-const mulberry32 = (seed) => {
-  let a = seed >>> 0;
-  return () => {
-    a = (a + 0x6d2b79f5) | 0;
-    let t = Math.imul(a ^ (a >>> 15), 1 | a);
-    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
-};
-const rand = mulberry32(FUZZ_SEED);
-const rint = (n) => Math.floor(rand() * n);
-const pick = (items) => items[rint(items.length)];
+const PSBT_ENV = fuzzEnv("PSBT_FUZZ", { defaultSeed: FUZZ_SEED, defaultIterations: DEFAULT_ITERATIONS });
+const ITERATIONS = PSBT_ENV.iterations;
+const TEST_NAME = "psbtInspectDoc and @scure/btc-signer agree on mutated PSBTs";
 
 // --- fixtures and their unsigned-transaction layout --------------------------
 
@@ -132,13 +123,14 @@ const writeU32 = (bytes, at, value) => {
 const writeU64 = (bytes, at, value) => {
   for (let k = 0; k < 8; k++) bytes[at + k] = Number((value >> BigInt(8 * k)) & 0xffn);
 };
-const randomU32 = (edges) => (rint(4) === 0 ? pick(edges) : rint(2 ** 32) >>> 0);
-const randomU64 = () =>
-  rint(4) === 0
-    ? pick([0n, 1n, 546n, 2_100_000_000_000_000n, 2_100_000_000_000_001n, 2n ** 63n, 2n ** 64n - 1n])
-    : Array.from({ length: 8 }, () => BigInt(rint(256))).reduce((n, byte) => (n << 8n) | byte, 0n);
-
-const mutate = (fixture) => {
+const mutate = (fixture, rand) => {
+  const rint = (n) => Math.floor(rand() * n);
+  const pick = (items) => items[rint(items.length)];
+  const randomU32 = (edges) => (rint(4) === 0 ? pick(edges) : rint(2 ** 32) >>> 0);
+  const randomU64 = () =>
+    rint(4) === 0
+      ? pick([0n, 1n, 546n, 2_100_000_000_000_000n, 2_100_000_000_000_001n, 2n ** 63n, 2n ** 64n - 1n])
+      : Array.from({ length: 8 }, () => BigInt(rint(256))).reduce((n, byte) => (n << 8n) | byte, 0n);
   const bytes = Uint8Array.from(fixture.bytes);
   const layout = unsignedTxLayout(fixture.name, bytes);
   const kinds = ["version", "locktime"];
@@ -223,26 +215,30 @@ test("the fixtures load and every one decodes identically on both sides before m
   }
 });
 
-test(`psbtInspectDoc and @scure/btc-signer agree on mutated PSBTs (seed 0x${FUZZ_SEED.toString(16)}, ${ITERATIONS} iterations)`, () => {
+test(TEST_NAME, () => {
   assert.ok(Number.isSafeInteger(ITERATIONS) && ITERATIONS > 0, `PSBT_FUZZ_ITERATIONS must be a positive integer, got ${process.env.PSBT_FUZZ_ITERATIONS}`);
-  let ran = 0;
-  for (let i = 0; i < ITERATIONS; i++) {
-    const fixture = pick(fixtures);
-    const { bytes, change } = mutate(fixture);
-    const where = `iteration ${i}, fixture ${fixture.name}, ${change}`;
-    const left = entropyLab(bytes), right = scure(bytes);
-    if (left.error || right.error) {
-      assert.ok(left.error && right.error,
-        `${where}: only ${left.error ? "@scure/btc-signer" : "psbtInspectDoc (rust-bitcoin)"} accepted\n  psbtInspectDoc:    ${left.error ?? "accepted"}\n  @scure/btc-signer: ${right.error ?? "accepted"}`);
-    } else {
-      assert.equal(left.txid, right.txid, `${where}: unsigned txid differs\n  psbtInspectDoc:    ${left.txid}\n  @scure/btc-signer: ${right.txid}`);
-      assert.equal(left.outputs.length, right.outputs.length, `${where}: output count differs`);
-      left.outputs.forEach((output, index) => {
-        assert.equal(output.amount, right.outputs[index].amount, `${where}: output ${index} amount differs\n  psbtInspectDoc:    ${output.amount}\n  @scure/btc-signer: ${right.outputs[index].amount}`);
-        assert.equal(output.script, right.outputs[index].script, `${where}: output ${index} script differs\n  psbtInspectDoc:    ${output.script}\n  @scure/btc-signer: ${right.outputs[index].script}`);
-      });
+  try {
+    const rand = mulberry32(PSBT_ENV.seed);
+    const rint = (n) => Math.floor(rand() * n);
+    const pick = (items) => items[rint(items.length)];
+    for (let i = 0; i < ITERATIONS; i++) {
+      const fixture = pick(fixtures);
+      const { bytes, change } = mutate(fixture, rand);
+      const where = `iteration ${i}, fixture ${fixture.name}, ${change}`;
+      const left = entropyLab(bytes), right = scure(bytes);
+      if (left.error || right.error) {
+        assert.ok(left.error && right.error,
+          `${where}: only ${left.error ? "@scure/btc-signer" : "psbtInspectDoc (rust-bitcoin)"} accepted\n  psbtInspectDoc:    ${left.error ?? "accepted"}\n  @scure/btc-signer: ${right.error ?? "accepted"}`);
+      } else {
+        assert.equal(left.txid, right.txid, `${where}: unsigned txid differs\n  psbtInspectDoc:    ${left.txid}\n  @scure/btc-signer: ${right.txid}`);
+        assert.equal(left.outputs.length, right.outputs.length, `${where}: output count differs`);
+        left.outputs.forEach((output, index) => {
+          assert.equal(output.amount, right.outputs[index].amount, `${where}: output ${index} amount differs\n  psbtInspectDoc:    ${output.amount}\n  @scure/btc-signer: ${right.outputs[index].amount}`);
+          assert.equal(output.script, right.outputs[index].script, `${where}: output ${index} script differs\n  psbtInspectDoc:    ${output.script}\n  @scure/btc-signer: ${right.outputs[index].script}`);
+        });
+      }
     }
-    ran += 1;
+  } catch (error) {
+    throw withReplay(error, replayLine("PSBT_FUZZ", PSBT_ENV.seed, ITERATIONS, TEST_NAME, "test/psbt-differential-fuzz.test.mjs"));
   }
-  assert.equal(ran, ITERATIONS, "every iteration ran to the end");
 });

@@ -25,7 +25,7 @@ import { bytesToHex, hexToBytes, utf8ToBytes } from "@noble/hashes/utils.js";
 import { wasmReady } from "../src/js/entropylab-wasm.js";
 import { HDKey } from "../src/js/hdkey.js";
 import { secp256k1 } from "../src/js/secp256k1.js";
-import { SELF_TESTS, PSBT_SELF_TESTS, PSBT_SELF_TEST_VECTORS, runSelfTests, selfTestGate } from "../src/js/self-test.js";
+import { SELF_TESTS, PSBT_SELF_TESTS, PSBT_SELF_TEST_VECTORS, runSelfTests, selfTestGate, LND_MAINNET_NODE_PUBKEY, LND_TESTNET_NODE_PUBKEY, LDK_NODE_PUBKEY, LDK_PLAIN_NODE_PUBKEY } from "../src/js/self-test.js";
 import { hex as scureHex } from "@scure/base";
 
 await wasmReady;
@@ -110,6 +110,32 @@ test("every expected value matches an independent implementation", () => {
   assert.equal(expected("P2SH-P2WPKH address (BIP49)"), btc.p2sh(btc.p2wpkh(pub(49))).address);
   assert.equal(expected("P2WPKH address (BIP84)"), btc.p2wpkh(pub(84)).address);
   assert.equal(expected("P2TR address (BIP86)"), btc.p2tr(pub(86).slice(1)).address);
+  // The Lightning node-key self-tests pin the published roots the LND/LDK
+  // derivations start from and gate the node pubkey against HARDCODED
+  // constants, so a systematic engine fault cannot make the tool and a
+  // boot-time re-derivation agree on a wrong key. Prove every constant
+  // against @scure here — the constants are sourced from the independent
+  // implementation, never from the app; the tool's own outputs stay
+  // differentials against @scure in test/lightning.test.mjs.
+  assert.equal(expected("LND node key (aezeed, mainnet)"), `m/1017'/0'/6'/0/0 ${v1.privateExtendedKey}`);
+  assert.equal(expected("LND node key (aezeed, testnet)"), `m/1017'/1'/6'/0/0 ${v1.privateExtendedKey}`);
+  assert.equal(expected("LDK node key (ldk-node)"), `m/0' ${root.privateExtendedKey}`);
+  const nodePubKeyConstants = {
+    LND_MAINNET_NODE_PUBKEY,
+    LND_TESTNET_NODE_PUBKEY,
+    LDK_NODE_PUBKEY,
+    LDK_PLAIN_NODE_PUBKEY,
+  };
+  const scureNodePubKeys = {
+    LND_MAINNET_NODE_PUBKEY: bytesToHex(v1.derive("m/1017'/0'/6'/0/0").publicKey),
+    LND_TESTNET_NODE_PUBKEY: bytesToHex(v1.derive("m/1017'/1'/6'/0/0").publicKey),
+    LDK_NODE_PUBKEY: bytesToHex(ScureHDKey.fromMasterSeed(root.privateKey).deriveChild(0x80000000).publicKey),
+    LDK_PLAIN_NODE_PUBKEY: bytesToHex(root.deriveChild(0x80000000).publicKey),
+  };
+  const wrongConstants = Object.keys(scureNodePubKeys)
+    .filter((name) => nodePubKeyConstants[name] !== scureNodePubKeys[name])
+    .map((name) => `${name}="${scureNodePubKeys[name]}"`);
+  assert.deepEqual(wrongConstants, [], "hardcoded node-pubkey constants that differ from @scure (paste these): " + wrongConstants.join(" "));
   const one = new Uint8Array(32);
   one[31] = 1;
   const msghash = nobleSha256(utf8ToBytes("Satoshi Nakamoto"));
@@ -151,7 +177,12 @@ test("a wrong child derivation is caught by exactly the tests that derive", () =
   const real = HDKey.prototype.derive;
   try {
     // Off by one on the last path element: the kind of silent miscomputation
-    // that produces a valid-looking but wrong key.
+    // that produces a valid-looking but wrong key. The LND entries fail too:
+    // their tool path walks derive, and the node pubkey is pinned to a
+    // hardcoded constant, so the wrong child shows up as a pubkey mismatch.
+    // The LDK tool walks deriveChild, which this patch does not touch, so
+    // its entry stays green here; its wrong-key coverage is the re-seed and
+    // shared-fault injections below.
     HDKey.prototype.derive = function (path) {
       return real.call(this, path.replace(/(\d+)('?)$/, (_, index, hardened) => `${Number(index) + 1}${hardened}`));
     };
@@ -162,11 +193,108 @@ test("a wrong child derivation is caught by exactly the tests that derive", () =
       "P2SH-P2WPKH address (BIP49)",
       "P2WPKH address (BIP84)",
       "P2TR address (BIP86)",
+      "LND node key (aezeed, mainnet)",
+      "LND node key (aezeed, testnet)",
     ]);
   } finally {
     HDKey.prototype.derive = real;
   }
   assert.deepEqual(runSelfTests(), [], "restoring derivation restores a clean run");
+});
+
+test("a wrong LND node-key child is caught by the Lightning self-tests", () => {
+  // The red-team scenario: lightning.js derives a different child while the
+  // reported path string stays correct, so only the node pubkey moves. The
+  // patch confines the wrong child to the LND paths, and exactly the two
+  // LND entries must fail — their node pubkey is pinned to a hardcoded
+  // constant the patched engine cannot reach.
+  const real = HDKey.prototype.derive;
+  try {
+    HDKey.prototype.derive = function (path) {
+      return real.call(this, path.startsWith("m/1017'/") ? path.replace(/0$/, "1") : path);
+    };
+    assert.deepEqual(runSelfTests(), ["LND node key (aezeed, mainnet)", "LND node key (aezeed, testnet)"]);
+  } finally {
+    HDKey.prototype.derive = real;
+  }
+  assert.deepEqual(runSelfTests(), [], "restoring derivation restores a clean run");
+});
+
+test("an engine fault shared by both LND walks is caught by the LND self-tests", () => {
+  // The hole the hardcoded constants close: the round-2 gate re-derived its
+  // expected pubkey through the same engine, so a fault in a primitive both
+  // the tool and the cross-check share — here the 1017' child moved
+  // identically in derive and deriveChild — made the tool and the
+  // expectation agree on a wrong key. Patch both primitives the same way
+  // and exactly the two LND entries must fail against the constants.
+  const realDerive = HDKey.prototype.derive;
+  const realDeriveChild = HDKey.prototype.deriveChild;
+  try {
+    HDKey.prototype.derive = function (path) {
+      return realDerive.call(this, path.replace("1017'", "1018'"));
+    };
+    HDKey.prototype.deriveChild = function (index) {
+      return realDeriveChild.call(this, index === 1017 + 0x80000000 ? 1018 + 0x80000000 : index);
+    };
+    assert.deepEqual(runSelfTests(), ["LND node key (aezeed, mainnet)", "LND node key (aezeed, testnet)"]);
+  } finally {
+    HDKey.prototype.derive = realDerive;
+    HDKey.prototype.deriveChild = realDeriveChild;
+  }
+  assert.deepEqual(runSelfTests(), [], "restoring both primitives restores a clean run");
+});
+
+test("a skipped LDK second-stage re-seed is caught by the LDK self-test", () => {
+  // The other red-team scenario: KeysManager's re-seed from the master's
+  // private key is skipped, so the node key becomes the plain m/0' of the
+  // BIP39 seed. Patch fromMasterSeed to re-derive the first stage for the
+  // second (32-byte) call — the same wrong key the tool and a boot-time
+  // re-derivation would both compute — and the entry's hardcoded constant
+  // must still fail the gate.
+  const real = HDKey.fromMasterSeed;
+  let seed64 = null;
+  try {
+    HDKey.fromMasterSeed = (seed) => {
+      if (seed.length === 64) {
+        seed64 = seed;
+        return real.call(HDKey, seed);
+      }
+      if (seed.length === 32 && seed64) return real.call(HDKey, seed64); // the re-seed, skipped
+      return real.call(HDKey, seed);
+    };
+    assert.deepEqual(runSelfTests(), ["LDK node key (ldk-node)"]);
+  } finally {
+    HDKey.fromMasterSeed = real;
+  }
+  assert.deepEqual(runSelfTests(), [], "restoring the re-seed restores a clean run");
+});
+
+test("an engine fault shared by both LDK walks is caught by the LDK self-test", () => {
+  // The LDK side of the same hole: a fault confined to the second-stage
+  // re-seed (fromMasterSeed on the 32-byte master key) moves the tool's
+  // node key and the round-2 expectation together, to a key that is not
+  // the plain m/0' either, so no engine-internal comparison can see it.
+  // The hardcoded constant must refuse it.
+  const real = HDKey.fromMasterSeed;
+  let seed64 = null;
+  try {
+    HDKey.fromMasterSeed = (seed) => {
+      if (seed.length === 64) {
+        seed64 = seed;
+        return real.call(HDKey, seed);
+      }
+      if (seed.length === 32 && seed64) {
+        const wrong = seed.slice();
+        wrong[31] ^= 1; // a wrong, self-consistent second stage
+        return real.call(HDKey, wrong);
+      }
+      return real.call(HDKey, seed);
+    };
+    assert.deepEqual(runSelfTests(), ["LDK node key (ldk-node)"]);
+  } finally {
+    HDKey.fromMasterSeed = real;
+  }
+  assert.deepEqual(runSelfTests(), [], "restoring fromMasterSeed restores a clean run");
 });
 
 test("the boot gate records a clean run and lets boot proceed", () => {

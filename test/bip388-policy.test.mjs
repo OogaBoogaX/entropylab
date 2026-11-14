@@ -44,6 +44,16 @@ test("2-of-3 native sortedmulti becomes @0/** @1/** @2/**", () => {
   assert.equal(policy.keys[2], `[${fingerprint}/48'/0'/2'/2']${nodeC.publicExtendedKey}`);
 });
 
+test("a valid 2-of-3 with distinct keys keeps the exact template and keys", () => {
+  const policy = buildBip388Policy({ receiveDescriptor: receive, changeDescriptor: change });
+  assert.equal(policy.descriptorTemplate, "wsh(sortedmulti(2,@0/**,@1/**,@2/**))");
+  assert.deepEqual(policy.keys, [
+    `[${fingerprint}/48'/0'/0'/2']${nodeA.publicExtendedKey}`,
+    `[${fingerprint}/48'/0'/1'/2']${nodeB.publicExtendedKey}`,
+    `[${fingerprint}/48'/0'/2'/2']${nodeC.publicExtendedKey}`,
+  ]);
+});
+
 test("text export is watch-only and names the template", () => {
   const text = buildBip388PolicyText({ receiveDescriptor: receive, changeDescriptor: change });
   assert.match(text, /descriptor_template: wsh\(sortedmulti\(2,@0\/\*\*,@1\/\*\*,@2\/\*\*\)\)/);
@@ -82,6 +92,44 @@ test("BIP45 two-step tails are refused", () => {
   const inner = `sh(sortedmulti(2,${keyA}/0/0/*,${keyB}/0/0/*))`;
   const descriptor = `${inner}#${descriptorChecksum(inner)}`;
   assert.throws(() => buildBip388Policy({ receiveDescriptor: descriptor }), /no \/0\/\* or \/1\/\*|BIP45/);
+});
+
+test("a key repeated in more than one slot is refused", () => {
+  const body = `wsh(sortedmulti(2,${keyA}/0/*,${keyA}/1/*,${keyC}/0/*))`;
+  const descriptor = `${body}#${descriptorChecksum(body)}`;
+  assert.throws(() => buildBip388Policy({ receiveDescriptor: descriptor }), /more than one slot/);
+});
+
+test("a receive key on the change branch is refused", () => {
+  const body = `wsh(sortedmulti(2,${keyA}/0/*,${keyB}/1/*))`;
+  const descriptor = `${body}#${descriptorChecksum(body)}`;
+  assert.throws(() => buildBip388Policy({ receiveDescriptor: descriptor }), /every receive key must end in \/0\/\*/);
+});
+
+test("receive and change with swapped branches are refused", () => {
+  assert.throws(() => buildBip388Policy({ receiveDescriptor: change, changeDescriptor: receive }), /every receive key must end in \/0\/\*/);
+});
+
+test("a change key on the receive branch is refused", () => {
+  assert.throws(() => buildBip388Policy({ receiveDescriptor: receive, changeDescriptor: receive }), /every receive key must end in \/0\/\*/);
+});
+
+test("the same xpub with a different origin in two slots is refused", () => {
+  const body = `wsh(sortedmulti(2,${keyA}/0/*,[01234567/48h/0h/0h/2h]${nodeA.publicExtendedKey}/1/*,${keyC}/0/*))`;
+  const descriptor = `${body}#${descriptorChecksum(body)}`;
+  assert.throws(() => buildBip388Policy({ receiveDescriptor: descriptor }), /more than one slot/);
+});
+
+test("the same xpub with a missing origin in two slots is refused", () => {
+  const body = `wsh(sortedmulti(2,${nodeA.publicExtendedKey}/0/*,${keyA}/1/*,${keyC}/0/*))`;
+  const descriptor = `${body}#${descriptorChecksum(body)}`;
+  assert.throws(() => buildBip388Policy({ receiveDescriptor: descriptor }), /more than one slot/);
+});
+
+test("the same key twice in one branch is refused", () => {
+  const body = `wsh(sortedmulti(2,${keyA}/0/*,${keyA}/0/*,${keyC}/0/*))`;
+  const descriptor = `${body}#${descriptorChecksum(body)}`;
+  assert.throws(() => buildBip388Policy({ receiveDescriptor: descriptor }), /more than one slot/);
 });
 
 test("filename names the policy", () => {

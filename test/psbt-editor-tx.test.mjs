@@ -159,7 +159,7 @@ test("dropSigningPairs removes exactly the transaction-committing fields (issues
   assert.ok(psbtBuildBytes(psbtEditorBuildDoc(doc)).length > 0);
 });
 
-test("dropSigningPairs removes MuSig2 session material but keeps participant pubkeys (BIP-327, issue #325)", () => {
+test("dropSigningPairs removes MuSig2 session material but keeps participant pubkeys (BIP-373, issue #325)", () => {
   const doc = fixtureDoc();
   doc.inputs[0].push(
     { key: "1a" + "02".repeat(33), value: "02" + "03".repeat(33) }, // participant pubkeys: message-independent, stay
@@ -193,6 +193,25 @@ test("the signing anchor covers UTXO declarations, not just the transaction (iss
     hint.value = hint.value === "01000000" ? "02000000" : "01000000";
     assert.equal(signingAnchor(doc3), anchor);
   }
+});
+
+// The scripts and Taproot data a signature commits to move the anchor too, so
+// an edit to one drops the stale signatures in every mode, and on inputs with
+// no UTXO claim (red-team sweep 0eed735, psbt-editor #1).
+test("the signing anchor covers redeem, witness and Taproot script data", () => {
+  for (const [type, keySuffix] of [["04", ""], ["05", ""], ["15", "c0" + "24".repeat(32)], ["17", ""], ["18", ""]]) {
+    const doc = fixtureDoc();
+    doc.inputs[0].push({ key: type + keySuffix, value: "51" });
+    const anchor = signingAnchor(doc);
+    doc.inputs[0].at(-1).value = "52";
+    assert.notEqual(signingAnchor(doc), anchor, `an edit to a 0x${type} field moves the anchor`);
+  }
+  // A Taproot BIP32 record (0x16) commits to nothing a signature covers.
+  const doc = fixtureDoc();
+  doc.inputs[0].push({ key: "16" + "24".repeat(32), value: "00" });
+  const anchor = signingAnchor(doc);
+  doc.inputs[0].at(-1).value = "01";
+  assert.equal(signingAnchor(doc), anchor, "a 0x16 edit leaves it alone");
 });
 
 test("the signing anchor ignores decorative transaction fields (issue #325)", () => {

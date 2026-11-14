@@ -7,6 +7,8 @@
 // promise reports whether the clipboard really took the text, so a caller
 // never shows "Copied" for a copy that failed. And no other module writes the
 // clipboard itself, so every copy goes through this one path.
+// A caller that invalidates its source prevents any new write or fallback;
+// a native write already submitted cannot be retracted and still reports its result.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync, readdirSync } from "node:fs";
@@ -82,6 +84,45 @@ test("a refused Clipboard API falls back to a hidden field that is emptied and r
   assert.equal(field.attributes.readonly, "", "the fallback field is editable");
   assert.ok(field.removed, "the fallback field stayed in the page");
   assert.equal(field.valueAtRemoval, "", "the fallback field kept the text after the copy");
+});
+
+for (const native of [true, false]) test(`an invalidated copy never starts the ${native ? "Clipboard API" : "fallback"}`, async () => {
+  const written = [];
+  const page = fakePage(native ? { clipboard: { writeText: async (text) => written.push(text) } } : {});
+  const copied = await run(page, PHRASE, { isCurrent: () => false });
+  assert.deepEqual(written, []);
+  assert.equal(page.fields.length, 0);
+  assert.equal(copied, false);
+});
+
+for (const invalidate of [true, false]) test(`a pending native rejection ${invalidate ? "refuses an invalidated" : "allows a current"} fallback copy`, async () => {
+  let reject, current = true;
+  const native = new Promise((_resolve, no) => { reject = no; });
+  const written = [];
+  const page = fakePage({ clipboard: { writeText: (text) => { written.push(text); return native; } } });
+  const pending = run(page, PHRASE, { isCurrent: () => current });
+  current = !invalidate;
+  reject(new Error("NotAllowedError"));
+  const copied = await pending;
+  assert.deepEqual(written, [PHRASE], "the initial native request had already been submitted");
+  assert.equal(page.fields.length, invalidate ? 0 : 1);
+  assert.equal(copied, !invalidate);
+  if (!invalidate) {
+    assert.equal(page.selected(), PHRASE);
+    assert.equal(page.fields[0].removed, true);
+    assert.equal(page.fields[0].valueAtRemoval, "");
+  }
+});
+
+test("invalidation does not misreport a native clipboard write that already succeeded", async () => {
+  let resolve, current = true;
+  const native = new Promise((yes) => { resolve = yes; });
+  const page = fakePage({ clipboard: { writeText: () => native } });
+  const pending = run(page, PHRASE, { isCurrent: () => current });
+  current = false;
+  resolve();
+  assert.equal(await pending, true);
+  assert.equal(page.fields.length, 0);
 });
 
 test("without the Clipboard API the fallback runs and reports a failed copy as failed", async () => {

@@ -173,6 +173,7 @@ export class MiniElement {
       me(parent).kids.splice(at++, 0, child);
     }
   }
+  get firstElementChild() { return this.children[0] ?? null; }
   get previousElementSibling() {
     const parent = me(this).parent;
     if (!parent) return null;
@@ -195,6 +196,11 @@ export class MiniElement {
   setAttribute(name, value) { me(this).attrs.set(String(name), String(value)); }
   removeAttribute(name) { me(this).attrs.delete(name); }
   hasAttribute(name) { return me(this).attrs.has(name); }
+  toggleAttribute(name, force) {
+    const present = force === undefined ? !this.hasAttribute(name) : Boolean(force);
+    if (present) this.setAttribute(name, ""); else this.removeAttribute(name);
+    return present;
+  }
   getAttributeNames() { return [...me(this).attrs.keys()]; }
   get id() { return this.getAttribute("id") ?? ""; }
   set id(value) { this.setAttribute("id", value); }
@@ -336,6 +342,12 @@ export class MiniDocument {
   addEventListener(type, listener) { addListener(this, type, listener); }
   removeEventListener(type, listener) { removeListener(this, type, listener); }
   listenerCount(type) { return countListeners(this, type); }
+  dispatchEvent(event) {
+    const handler = this["on" + event.type];
+    if (typeof handler === "function") handler.call(this, event);
+    for (const listener of [...(listeners.get(this)?.get(event.type) ?? [])]) listener.call(this, event);
+    return true;
+  }
   getElementById(id) { return this.body.querySelector(`#${id}`); }
   querySelector(selector) { return this.body.querySelector(selector); }
   querySelectorAll(selector) { return this.body.querySelectorAll(selector); }

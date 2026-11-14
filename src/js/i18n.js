@@ -54,10 +54,11 @@ export function hodlGetLocale() {
   return hodlLocale;
 }
 
+// Only an own, non-empty string counts as a hit (the rule the page sweeps
+// apply, hodlI18nSweepValue below): a catalog is a plain object, so a
+// polluted Object.prototype would otherwise answer an uncatalogued source.
 function hodlCatalogValue(catalogs, source) {
-  let catalog = catalogs[hodlLocale];
-  let text = catalog ? catalog[source] : undefined;
-  return typeof text === "string" && text ? text : source;
+  return hodlI18nSweepValue(catalogs[hodlLocale], source);
 }
 
 function hodlInterpolate(text, vars, render) {
@@ -78,8 +79,7 @@ export function t(source, vars) {
 // lookup miss returns the committed English source, markup included — the
 // source is reviewed code, trusted at the same level as the templates.
 export function tHtml(source, vars) {
-  let catalog = hodlLocaleHtmlCatalogs[hodlLocale];
-  let text = catalog && typeof catalog[source] === "string" && catalog[source] ? catalog[source] : source;
+  let text = hodlCatalogValue(hodlLocaleHtmlCatalogs, source);
   return hodlInterpolate(text, vars, hodlEscapeHtmlText);
 }
 
@@ -141,8 +141,8 @@ function hodlI18nSourceFor(cache, node, current) {
 // A catalog hit counts as a translation only as an own, non-empty string:
 // a JSON catalog can carry arrays, objects or numbers (an array coerces to
 // its payload at an innerHTML sink), and a plain object still answers
-// prototype lookups. Anything else falls back to the English source, the
-// same refusal t()/tHtml() already make.
+// prototype lookups. Anything else falls back to the English source; t()
+// and tHtml() look up through this too (hodlCatalogValue).
 function hodlI18nSweepValue(catalog, source) {
   let hit = catalog && Object.hasOwn(catalog, source) ? catalog[source] : undefined;
   return typeof hit === "string" && hit ? hit : source;

@@ -13,7 +13,9 @@ const SCRIPT_TYPES = [
 ];
 
 function coinType(network) {
-  return network === "testnet" ? 1 : 0;
+  // BIP-44 coin type: mainnet is 0, every test chain (testnet, signet,
+  // regtest) is 1. Keep this in step with hodlCoinTypeFromNetwork.
+  return network === "mainnet" || network == null ? 0 : 1;
 }
 
 // Accepts raw bytes or a hex string; always returns canonical lowercase hex.
@@ -114,6 +116,9 @@ export function indexHdKey(root, network, options = {}) {
   const gap = Number.isFinite(options.gap) ? options.gap : OWNERSHIP_GAP;
   const accounts = Number.isFinite(options.accounts) ? options.accounts : OWNERSHIP_ACCOUNTS;
   const coin = coinType(network);
+  // Every derived node holds a live private key; the map only records public
+  // strings (a fresh pubkey copy — record() never touches the node), so wipe
+  // each child the moment its public data is recorded, on every path.
   const scanAccountNode = (node, pathPrefix, account) => {
     for (const definition of SCRIPT_TYPES) {
       for (const [chain, role] of [[0, "receive"], [1, "change"]]) {
@@ -124,15 +129,19 @@ export function indexHdKey(root, network, options = {}) {
           } catch {
             continue;
           }
-          const pubkey = child.publicKey;
-          if (!pubkey) continue;
-          record(map, definition, pubkey, network, {
-            role,
-            chain: role,
-            index,
-            account,
-            path: `${pathPrefix}/${chain}/${index}`,
-          });
+          try {
+            const pubkey = child.publicKey;
+            if (!pubkey) continue;
+            record(map, definition, pubkey, network, {
+              role,
+              chain: role,
+              index,
+              account,
+              path: `${pathPrefix}/${chain}/${index}`,
+            });
+          } finally {
+            child.wipePrivateData();
+          }
         }
       }
     }
@@ -149,24 +158,34 @@ export function indexHdKey(root, network, options = {}) {
       } catch {
         continue;
       }
-      for (const [chain, role] of [[0, "receive"], [1, "change"]]) {
-        for (let index = 0; index < gap; index++) {
-          let child;
-          try {
-            child = node.derive(`m/${chain}/${index}`);
-          } catch {
-            continue;
+      // The account node is reassigned next pass; it, and every leaf taken
+      // from it, must not outlive its use here.
+      try {
+        for (const [chain, role] of [[0, "receive"], [1, "change"]]) {
+          for (let index = 0; index < gap; index++) {
+            let child;
+            try {
+              child = node.derive(`m/${chain}/${index}`);
+            } catch {
+              continue;
+            }
+            try {
+              const pubkey = child.publicKey;
+              if (!pubkey) continue;
+              record(map, definition, pubkey, network, {
+                role,
+                chain: role,
+                index,
+                account,
+                path: `m/${definition.purpose}h/${coin}h/${account}h/${chain}/${index}`,
+              });
+            } finally {
+              child.wipePrivateData();
+            }
           }
-          const pubkey = child.publicKey;
-          if (!pubkey) continue;
-          record(map, definition, pubkey, network, {
-            role,
-            chain: role,
-            index,
-            account,
-            path: `m/${definition.purpose}h/${coin}h/${account}h/${chain}/${index}`,
-          });
         }
+      } finally {
+        node.wipePrivateData();
       }
     }
   }

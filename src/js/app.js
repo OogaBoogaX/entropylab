@@ -1,8 +1,12 @@
-import { sha256 as hodlSha256 } from "./hashes.js";
+import { sha256 as hodlSha256, hash160 as hodlHash160 } from "./hashes.js";
+import { workspaceItemCounts, syncWorkspaceCounts } from "./workspace-counts.js";
 // secp256k1 operations run in the libsecp256k1 WebAssembly module; the facade
 // is a drop-in for the noble/curves surface this file uses (see
 // src/js/secp256k1.js). App boot waits for the module to be ready.
 import { secp256k1 as hodlSecp256k1, secp256k1Ready } from "./secp256k1.js";
+// The ECDSA sign-to-contract (anti-exfil) relation, shared with the AEXB-v1
+// verifier (aexb.js).
+import { s2cSignatureMatches } from "./s2c.js";
 import {
   createLabeledSilentPaymentAddress,
   createSilentPaymentOutputs,
@@ -21,6 +25,8 @@ import {
   scanSilentPaymentOutputs,
   spendPrivForOutput,
   taprootOutputPrivateKey,
+  vinHasSpendData,
+  normalizeVinWitness,
   vinPrevoutScript,
   bytesToHex as hodlSpBytesToHex,
 } from "./bip352.js";
@@ -43,20 +49,37 @@ import { hex as hodlHex } from "./coders.js";
 import { addressFor, addressFromScript, descriptorDerive, p2pkhScript, p2shP2wpkhScript, p2shScript, p2trKeyScript, p2wpkhScript, p2wshScript } from "./addresses.js";
 import { base58checkDecode, base58checkEncode } from "./base58.js";
 import { HDKey as hodlHDKey } from "./hdkey.js";
-import { entropyToMnemonic as hodlEntropyToMnemonic, mnemonicToEntropy as hodlMnemonicToEntropy, mnemonicToSeedSync as hodlMnemonicToSeed, validateMnemonic as hodlIsValidMnemonic } from "./bip39.js";
+// The unified anti-exfil reader (preview builds) and the AEXB-v1 verifier.
+import { readAntiExfil } from "./anti-exfil.js";
+import { aexbVerify } from "./aexb.js";
+import { entropyToMnemonic as hodlEntropyToMnemonic, mnemonicToEntropy as hodlMnemonicToEntropy, mnemonicToSeedSync as hodlMnemonicToSeed, seedFromEntropy as hodlSeedFromEntropy, seedFromIndices as hodlSeedFromIndices, entropyFromWordIndices as hodlEntropyFromWordIndices, validateMnemonic as hodlIsValidMnemonic, indicesFromEntropy as hodlIndicesFromEntropy } from "./bip39.js";
 import { wordlist as bip39English } from "./bip39-english.js";
 // The PSBT editor (its own workspace tab) drives the rust-bitcoin WASM
 // bindings in psbt-wasm.js; heavy lifting lives in psbt-editor.js.
 import { initPsbtEditor, psbtBytesFromText as hodlPsbtBytesFromText, psbtBytesFromUpload, psbtQrPlan as hodlPsbtQrPlan } from "./psbt-editor.js";
+import { watchOnlyQrFrames as hodlWatchOnlyQrFrames } from "./psbt-ur.js";
+import { initCoreWallet } from "./core-wallet-ui.js";
+import { initDescriptorReuseCheck } from "./descriptor-reuse-ui.js";
+import { initOtsVerifier } from "./ots-verifier-ui.js";
+
+import { auditSigner as hodlAuditSigner } from "./psbt-signer-audit.js";
+import { psbtSignerAuditVerification as hodlPsbtSignerAuditVerify } from "./psbt-signer-audit-verify.js";
+import { psbtSignerAuditErrorHtml as hodlPsbtSignerAuditErrorHtml, psbtSignerAuditHtml as hodlPsbtSignerAuditHtml } from "./psbt-signer-audit-view.js";
+import { checkRbfReplacement as hodlCheckRbfReplacement } from "./psbt-rbf-check.js";
 // The Lightning node key tool (its own workspace tab): aezeed deciphering
 // and the LND/LDK node identity derivations live in lightning.js/aezeed.js.
 import { hodlInitLn, hodlLnWipeMem } from "./lightning.js";
-import { hodlTapKeySigs, hodlTapScriptSigs, hodlTapSighashProblems } from "./psbt-schnorr.js";
+import { hodlCompareSchnorrNonces, hodlParseSchnorr, hodlTapKeySigs, hodlTapScriptPathSigs, hodlTapScriptSigs, hodlTapSighashProblems, hodlTapWitnessShape } from "./psbt-schnorr.js";
 import {
+  buildDeriveAddressesCommands,
   buildImportDescriptorsJson,
   canonicalizeWatchDescriptor,
   coreImportDescriptorsFilename,
 } from "./core-importdescriptors.js";
+import {
+  buildVerificationPackage,
+  verificationPackageFilename,
+} from "./verification-package.js";
 import {
   canPrintPolicySheet,
   policySheetFilename,
@@ -68,25 +91,37 @@ import {
   buildBip388PolicyText,
 } from "./bip388-policy.js";
 import { initQrReferences } from "./qr-references.js";
-import { addressQrButtonHtml as hodlAddressQrButton, initAddressQr as hodlInitAddressQr } from "./address-qr.js";
+import { addressQrButtonHtml as hodlAddressQrButton, initAddressQr as hodlInitAddressQr, watchOnlyQrButtonHtml as hodlWatchOnlyQrButton } from "./address-qr.js";
 import { initLowEntropyConfirm } from "./low-entropy-confirm.js";
 import { initFingerprintCollisionConfirm } from "./fingerprint-collision-confirm.js";
-import { NONCE_HISTORY_MAX_TEXT, compareNonceHistory, mergeNonceHistory, nonceHistoryRecord, parseNonceHistory, serializeNonceHistory } from "./nonce-history.js";
+import { initJournalClearConfirm } from "./journal-clear-confirm.js";
+import { initJournalPageDeleteConfirm } from "./journal-page-delete-confirm.js";
+import { initJournalKeyImportConfirm } from "./journal-key-import-confirm.js";
+import { initJournalReportViewer } from "./journal-report-viewer.js";
+import { NONCE_HISTORY_ENCRYPTED_MAX_TEXT, compareNonceHistory, decryptNonceHistory, encryptNonceHistory, isEncryptedNonceHistory, mergeNonceHistory, nonceHistoryRecord, parseNonceHistory } from "./nonce-history.js";
+import { initNonceHistoryConfirm } from "./nonce-history-confirm.js";
 import { renderSVG as hodlUqrRenderSvg } from "uqr";
 import { BIP39_LANGUAGE_ENGLISH, BIP85_APPS, bip85Path, bip85SecretLength, deriveApplication, parseChildIndex, wipeBip85Result, wipeBytes as hodlWipeBytes } from "./bip85.js";
 import { VANITY_HARDENED, VANITY_MAX_INDEX, VANITY_METHODS, VANITY_SCRIPTS, VanityGrinder, estimateVanityWork, validateVanityIndexRange, validateVanityMnemonic, validateVanityPassphrase, validateVanityPrefix, validateVanityRange, vanityBenchmark, vanityPathIndexes, vanityPathString } from "./vanity.js";
 import { tHtml as hodlT, t as hodlTText, tAttr as hodlTAttr, hodlInitLocale, hodlFillLocaleSelect, hodlGetLocale } from "./i18n.js";
 import { hodlSanitizeCatalogHtml } from "./i18n-sanitize.js";
 import hodlShellHtml from "../shell.html";
-import { hodlKeyModeLabels, hodlMsigSpecLabels, hodlNetworkNames, hodlHexFormatLabels, hodlScriptBeginnerTexts, hodlFairnessVerdictLabels } from "./i18n-labels.js";
+import { hodlKeyModeLabels, hodlKeySummarySubmethodLabels, hodlMsigSpecLabels, hodlNetworkNames, hodlHexFormatLabels, hodlScriptBeginnerTexts, hodlFairnessVerdictLabels } from "./i18n-labels.js";
 import {
   entryMethodLabel as hodlJournalEntryMethodLabel,
-  addEntry as hodlJournalAddEntry,
   appendLog as hodlJournalAppend,
   createDocument as hodlJournalCreateDocument,
+  combineSnapshots as hodlJournalCombineSnapshots,
   createJournal,
+  JOURNAL_MAX_FILE_LENGTH as hodlJournalMaxFileLength,
+  JOURNAL_LOG_LIMIT as hodlJournalLogLimit,
+  JOURNAL_LOG_MAX_BYTES as hodlJournalLogMaxBytes,
+  logUsage as hodlJournalLogUsage,
+  mergeLogHistory as hodlJournalMergeLogHistory,
+  NOTEBOOK_MAX_PAGES as hodlJournalMaxPages,
   defaultJournalPageStyle as hodlJournalDefaultPageStyle,
   formatLog as hodlJournalFormatLog,
+  formatLogField as hodlJournalFormatLogField,
   formatNotebook as hodlJournalFormatNotebook,
   formatStamp as hodlJournalStamp,
   openDocument as hodlJournalOpenDocument,
@@ -94,33 +129,43 @@ import {
   removeEntry as hodlJournalRemoveEntry,
   replaceEntry as hodlJournalReplaceEntry,
   searchEntries as hodlJournalSearch,
-  sealDocument as hodlJournalSealDocument,
+  sealBackup as hodlJournalSealBackup,
   sealExport as hodlJournalSealExport,
-  syncKeySnapshots as hodlJournalSyncKeySnapshots,
-  snapshotFromKeyState as hodlJournalKeySnapshot,
   snapshotSession as hodlJournalSnapshot,
-  wipeBytes as hodlJournalWipeBytes,
+  snapshotPrivateSpans as hodlJournalSnapshotPrivateSpans,
   wipeDocument as hodlJournalWipeDocument,
   journalFromPlainText as hodlJournalFromPlainText,
   journalBip85ReferenceToken as hodlJournalBip85ReferenceToken,
   journalKeyReferenceRanges as hodlJournalKeyReferenceRanges,
   journalKeyReferenceToken as hodlJournalKeyReferenceToken,
+  journalMultisigReferenceToken as hodlJournalMultisigReferenceToken,
   journalNotebookRuns as hodlJournalNotebookRuns,
+  journalPageNotesText as hodlJournalPageNotesText,
   mergeNotebookImport as hodlMergeNotebookImport,
   normalizeJournalPageStyle as hodlNormalizeJournalPageStyle,
   parseNotebook as hodlParseNotebook,
   serializeNotebook as hodlSerializeNotebook,
   wipeJournal,
 } from "./journal.js";
-import { keyVaultIdentity, parseKeyVault, serializeKeyVault } from "./keymanager.js";
+import { KEY_VAULT_MAX_KEYS as hodlKeyVaultMaxKeys, keyVaultIdentity, keyResultSetup as hodlKeyResultSetup, parseKeyVault, serializeKeyVault, setKeyVaultModes } from "./keymanager.js";
 import { clearClipboard as hodlClearClipboard, showCopiedIcon as hodlShowCopiedIcon, copyText } from "./clipboard.js";
-import { privateCopyButtonHtml as hodlPrivateCopyButtonHtml, initPrivateCopy as hodlInitPrivateCopy, isReadoutShown as hodlReadoutIsShown } from "./private-data.js";
+import { privateCopyButtonHtml as hodlPrivateCopyButtonHtml, initPrivateCopy as hodlInitPrivateCopy, isReadoutShown as hodlReadoutIsShown, renderAnnotatedPrivateText as hodlRenderAnnotatedPrivateText } from "./private-data.js";
+import { appClipboardBytes, appClipboardPut, appClipboardText, initAppClipboard } from "./app-clipboard.js";
+import { decorateAppPaste, syncAppPaste, initAppPaste } from "./app-paste.js";
 import { publicFieldHtml as hodlPublicFieldMarkup, publicValueHtml as hodlPublicValueHtml } from "./public-data.js";
-import { PassphraseVault, bindVaultField } from "./passphrase-vault.js";
+import { bip47AccountNode as hodlBip47AccountNode, bip47AccountPath as hodlBip47AccountPath, bip47NotificationAddress as hodlBip47NotificationAddress, decodePaymentCode as hodlBip47DecodePaymentCode, encodePaymentCode as hodlBip47EncodePaymentCode, Bip47Error as hodlBip47Error, bip47PairRows as hodlBip47PairRows, bip47ReceiveRow as hodlBip47ReceiveRow, bip47DecodeNotificationTx as hodlBip47DecodeNotificationTx, hexToBytes as hodlBip47HexToBytes } from "./bip47.js";
+import { bip47OwnHtml as hodlBip47OwnHtml, bip47ContactHtml as hodlBip47ContactHtml, bip47ErrorHtml as hodlBip47ErrorHtml, bip47RowsHtml as hodlBip47RowsHtml, bip47NotifyInputsHtml as hodlBip47NotifyInputsHtml, bip47NotifyHtml as hodlBip47NotifyHtml, bip47NotifyErrorHtml as hodlBip47NotifyErrorHtml } from "./bip47-ui.js";
+import { PassphraseVault, bindVaultField, singleLineText as hodlSingleLineText } from "./passphrase-vault.js";
+import { parsePrivateKeyBytes, KeyBytesError } from "./key-bytes.js";
 import { endSession as hodlEndSession, initEndSessionConfirm } from "./end-session.js";
+import { createSecureSession, sessionWipe, sessionDeleteKey, sessionGet, sessionSet, seedEntry, seedSet, seedIndices, seedUndo, keyEntry, planTurnOn, commitTurnOn, planTurnOff, commitTurnOff, discardPlan, SUPPORTED_METHODS as hodlSecureSupported, rollsEntry, rollsPush, rollsUndo, rollAt, rollsCopy } from "./secure-entry.js";
 import { initTextServiceOptOuts, initTranslationWarning } from "./text-services.js";
 import { initSecurityLog } from "./security-log.js";
 import { initConcealOnLeave } from "./conceal-on-leave.js";
+// One cap for every PSBT view: a crafted PSBT passes the load gates with more
+// elements than the DOM survives (red-team F7).
+import { PSBT_INSPECTOR_LIMIT, PSBT_RENDER_LIMIT, cappedHtml, renderBudget } from "./psbt-viz.js";
+import { psbtPrivacySignals } from "./psbt-privacy-signals.js";
 const hodlBip39Wordlist = Object.freeze(bip39English);
 function hodlNote(key, vars) {
   return vars == null ? { key } : { key, vars };
@@ -171,6 +216,7 @@ function hodlRefreshWorkspaceErrors() {
   hodlSetWorkspaceError("msig", hodlMsigErrorSpec);
 }
 function hodlDiceEntropyBits(e) {
+  // Capacity assuming independent fair rolls, not measured unpredictability.
   return e <= 0 ? 0 : e * Math.log2(6);
 }
 function hodlSplitDiceString(e) {
@@ -187,12 +233,17 @@ function hodlNormalizeMnemonicText(e) {
   return e.trim().toLowerCase().replace(/[^a-z\s]/g, " ").split(/\s+/).filter(Boolean).join(" ");
 }
 function hodlValidateMnemonic(e) {
+  // The normalizer turns every non-letter into a separator, so a digit or a
+  // non-ASCII letter glued to a word silently rewrites the phrase (and can
+  // still validate). Refuse it here too, where the PSBT, Silent Payments and
+  // Lightning stations read a pasted seed (audit follow-up).
+  if (/[0-9]|[^\x00-\x7F]/.test(String(e ?? ""))) return { ok: false, words: [], unknown: [], error: hodlNote("Seed words are the BIP39 English list: remove digits and non-ASCII characters.") };
   let t = hodlNormalizeMnemonicText(e).split(" ").filter(Boolean), r = t.map((o, i) => ({ index: i, word: o })).filter(({ word: o }) => !hodlBip39Wordlist.includes(o));
-  if (t.length === 0) return { ok: false, words: t, error: { key: "Type or paste your seed phrase." }, unknown: r };
-  if (![12, 15, 18, 21, 24].includes(t.length)) return { ok: false, words: t, unknown: r, error: { key: "A seed phrase is 12, 15, 18, 21, or 24 words. You entered {n}.", vars: { n: t.length } } };
-  if (r.length > 0) return { ok: false, words: t, unknown: r, error: { key: "Word {n} (“{word}”) is not on the BIP39 English list.", vars: { n: r[0].index + 1, word: r[0].word } } };
+  if (t.length === 0) return { ok: false, words: t, error: hodlNote("Type or paste your seed phrase."), unknown: r };
+  if (![12, 15, 18, 21, 24].includes(t.length)) return { ok: false, words: t, unknown: r, error: hodlNote("A seed phrase is 12, 15, 18, 21, or 24 words. You entered {n}.", { n: t.length }) };
+  if (r.length > 0) return { ok: false, words: t, unknown: r, error: hodlNote("Word {n} (“{word}”) is not on the BIP39 English list.", { n: r[0].index + 1, word: r[0].word }) };
   let n = t.join(" ");
-  return hodlIsValidMnemonic(n, hodlBip39Wordlist) ? { ok: true, words: t, unknown: r } : { ok: false, words: t, unknown: r, error: { key: "Words are on the list, but the checksum does not match. One of the words is wrong, or this is not a BIP39 phrase." } };
+  return hodlIsValidMnemonic(n, hodlBip39Wordlist) ? { ok: true, words: t, unknown: r } : { ok: false, words: t, unknown: r, error: hodlNote("Words are on the list, but the checksum does not match. One of the words is wrong, or this is not a BIP39 phrase.") };
 }
 function hodlLastWordCandidates(e) {
   let t = hodlNormalizeMnemonicText(e).split(" ").filter(Boolean), n = { 11: 12, 14: 15, 17: 18, 20: 21, 23: 24 }[t.length];
@@ -216,6 +267,12 @@ function hodlWifVersionByte(e) {
 // of the family: the address layer takes the chain itself.)
 function hodlNetworkFamily(network) {
   return network === "mainnet" ? "mainnet" : "testnet";
+}
+// Inspectors render addresses for the chain the picker names: signet shares
+// testnet's tb1 prefix, regtest needs bcrt1. Everything else (key versions,
+// coin type) still normalizes through hodlNetworkFamily.
+function hodlInspectorNetwork() {
+  return hodlNetworkChoice === "regtest" ? "regtest" : hodlNetworkDefault;
 }
 function hodlCoinTypeFromNetwork(e) {
   let index = Number(e);
@@ -341,8 +398,8 @@ function hodlDerivationPathDisplay(accountPath, branchWindow, addressWindow, har
   return `${accountPath}/${branch}/${address}`;
 }
 function hodlDerivationPathRangeMessage(branchWindow, addressWindow) {
-  if (branchWindow.range > 1 || addressWindow.range > 1) return "BIP-88 full path template · edit directly to use a custom path";
-  return "Exact BIP32 address path · edit directly to use a custom path";
+  if (branchWindow.range > 1 || addressWindow.range > 1) return hodlTText("BIP-88 full path template · edit directly to use a custom path");
+  return hodlTText("Exact BIP32 address path · edit directly to use a custom path");
 }
 function hodlReadVisibleDerivationPath(mark = true) {
   let input = document.getElementById("derivation-path"), parsed;
@@ -524,7 +581,9 @@ function hodlResultSecretBytes(result) {
 // (#546 B2): the BIP39 passphrase and a Casascius mini key, which nothing can
 // rebuild from the keys they make. The text is built only to show or export
 // it, exactly as typed: a leading U+FEFF is part of a passphrase (BIP39 hashes
-// it), not a byte-order mark to drop.
+// it), not a byte-order mark to drop — this decoder and the salt decode in
+// bip39.js both keep it, so the bytes, their text and external NFKD
+// implementers all derive the same wallet.
 function hodlTypedText(bytes) {
   return new TextDecoder("utf-8", { ignoreBOM: true }).decode(bytes);
 }
@@ -560,7 +619,7 @@ function hodlWipeWalletKeys(result) {
 // Key Manager keeps its own: zeroing a result one of them still shows would
 // leave it rendering zeroed keys.
 function hodlLiveWalletResults() {
-  return new Set([hodlWalletResult, ...hodlKeys.map((state) => state.result)].filter(Boolean));
+  return new Set([hodlWalletResult, hodlJournalKeyDerivation?.draft?.result, ...hodlKeys.map((state) => state.result)].filter(Boolean));
 }
 function hodlWipeUnsharedWalletRows(result) {
   if (!result || hodlLiveWalletResults().has(result) || hodlKeyManagerPending.some((state) => state.result === result)) return;
@@ -577,6 +636,7 @@ function hodlDisposeDroppedWallets() {
   // The stations offer only the keys the Key Station still has (#546 B3).
   hodlRefreshStationKeyPickers();
   hodlRefreshMsigSessionPickers();
+  hodlSyncWorkspaceCounts();
 }
 // Wipes the private keys a derivation made that no station shows (its row
 // keys, its result's secret bytes, and the root and account nodes its result
@@ -664,14 +724,14 @@ function hodlBrainWalletPrivateKey(value, trimBoundaryWhitespace = false) {
 }
 function hodlBrainLabEntropy(value, trimmed = false) {
   let text = String(value ?? ""), notes = [], warnings = [];
-  if (!text.length) return { ok: false, error: { key: "Enter the brain-wallet lab text." }, notes, warnings };
-  let bytes = hodlSha256(new TextEncoder().encode(text)), hex = hodlHex.encode(bytes);
+  if (!text.length) return { ok: false, error: hodlNote("Enter the brain-wallet lab text."), notes, warnings };
+  let bytes = hodlSha256(new TextEncoder().encode(text));
   notes.push(hodlNote(trimmed ? "SHA-256 of the UTF-8 text with boundary whitespace trimmed is 32 bytes of BIP39 entropy (256 bits → 24 words)." : "SHA-256 of the exact UTF-8 text is 32 bytes of BIP39 entropy (256 bits → 24 words)."));
   warnings.push(hodlNote("Lab only. Strength is the entropy of this text, not the 24-word count."));
   warnings.push(hodlNote("SHA-256(text) is unsalted and fast. Anyone who can guess the text recovers the wallet."));
   warnings.push(hodlNote("This is not a BIP39 passphrase, and it is not a Bitcoin Core hdseed or address-key backup."));
   warnings.push(hodlNote("A valid mnemonic does not mean it is the same wallet as hashing the text as a Core private key."));
-  return { ok: true, bytes, hex, bits: 256, sourceBits: 256, method: "brain-lab", notes, warnings };
+  return { ok: true, bytes, bits: 256, sourceBits: 256, method: "brain-lab", notes, warnings };
 }
 function hodlSingleKeyWallet(e, t, r, trimBrainWallet = false) {
   let n = [], o = [], i, s = null, c = t, a = r === "brain" ? hodlBrainWalletPassphrase(e, trimBrainWallet) : e.trim();
@@ -682,24 +742,31 @@ function hodlSingleKeyWallet(e, t, r, trimBrainWallet = false) {
   else if (/^[5KL9c][1-9A-HJ-NP-Za-km-z]{50,51}$/.test(a)) {
     let E = hodlDecodeWif(a);
     // A WIF only settles the encoding family; when it matches the selected
-    // chain's family, keep the chain so regtest still renders bcrt1….
-    i = E.priv, source = "wif", compressed = E.compressed, c = hodlNetworkFamily(t) === E.network ? t : E.network, n.push(hodlNote(E.compressed ? "Decoded a compressed WIF private key (starts with K or L on mainnet)." : "Decoded an uncompressed WIF private key (starts with 5 on mainnet)."));
+    // chain's family, keep the chain so regtest still renders bcrt1…. A
+    // mismatch throws: the derive path asserts the family before calling, and
+    // a future caller that skips that check must not get a wallet silently
+    // re-homed onto the WIF's network.
+    if (hodlNetworkFamily(t) !== E.network) throw hodlError("This WIF is for {have}; Network is set to {want}.", { have: E.network, want: t });
+    i = E.priv, source = "wif", compressed = E.compressed, c = t, n.push(hodlNote(E.compressed ? "Decoded a compressed WIF private key (starts with K or L on mainnet)." : "Decoded an uncompressed WIF private key (starts with 5 on mainnet)."));
   } else {
     let E = a.replace(/\s/g, "").replace(/^0x/i, "");
     if (!/^[0-9a-fA-F]{64}$/.test(E)) throw hodlError("Enter a WIF key (5/K/L…), a 64-character hex private key, or a Casascius mini key (S…).");
     i = hodlHex.decode(E.toLowerCase()), n.push(hodlNote("Decoded a 32-byte hex private key."));
   }
+  return hodlSingleKeyWalletFromKey(i, c, n, o, s === null ? null : new TextEncoder().encode(s), source, compressed);
+}
+
+function hodlSingleKeyWalletFromKey(i, network, notes, warnings, minikey, source, compressed) {
   hodlAssertPrivateKey(i);
-  let f = hodlSecp256k1.getPublicKey(i, true), d = hodlSecp256k1.getPublicKey(i, false), l = addressFor("p2pkh", d, c), u = addressFor("p2pkh", f, c), p = addressFor("p2sh-p2wpkh", f, c), b = addressFor("p2wpkh", f, c), w = addressFor("p2tr", f, c);
+  let f = hodlSecp256k1.getPublicKey(i, true), d = hodlSecp256k1.getPublicKey(i, false), l = addressFor("p2pkh", d, network), u = addressFor("p2pkh", f, network), p = addressFor("p2sh-p2wpkh", f, network), b = addressFor("p2wpkh", f, network), w = addressFor("p2tr", f, network);
   // The result keeps its own copy of the key as bytes that can be zeroed,
   // never its WIFs or hex (hodlSingleWif, hodlSinglePrivateHex; #546 B2). The
   // derivation records it with its row keys, so one that never commits zeroes it.
   let privateKey = Uint8Array.from(i);
   hodlActiveDerivation?.rowKeys?.push(privateKey);
   // A typed mini key is kept as its bytes, recorded the same way.
-  let minikey = s === null ? null : new TextEncoder().encode(s);
   if (minikey) hodlActiveDerivation?.rowKeys?.push(minikey);
-  let wallet = { kind: "single", network: c, warnings: o, notes: n, privateKey, pubkeyCompressed: hodlHex.encode(f), pubkeyUncompressed: hodlHex.encode(d), p2pkhUncompressed: l, p2pkhCompressed: u, p2shP2wpkh: p, p2wpkh: b, p2tr: w, minikey, source, compressed };
+  let wallet = { kind: "single", network, warnings, notes, privateKey, pubkeyCompressed: hodlHex.encode(f), pubkeyUncompressed: hodlHex.encode(d), p2pkhUncompressed: l, p2pkhCompressed: u, p2shP2wpkh: p, p2wpkh: b, p2tr: w, minikey, source, compressed };
   i.fill(0); // the decoded private key bytes; the result keeps its own copy
   return wallet;
 }
@@ -713,9 +780,16 @@ function hodlQrSvg(e, t = "#111111", r = "#ffffff") {
 // the browser harness stages a --test-hooks variant instead.
 if (__ENTROPYLAB_TEST_HOOKS__ && globalThis.__entropyLabTest) globalThis.__entropyLabCrypto = { entropyToMnemonic: (hex) => hodlEntropyToMnemonic(hodlHex.decode(hex), hodlBip39Wordlist), mnemonicToEntropy: (mnemonic) => hodlHex.encode(hodlMnemonicToEntropy(mnemonic, hodlBip39Wordlist)), mnemonicToSeed: (mnemonic, passphrase) => hodlHex.encode(hodlMnemonicToSeed(mnemonic, passphrase)), validateMnemonic: (mnemonic) => hodlValidateMnemonic(mnemonic).ok, masterXprv: (mnemonic, passphrase) => hodlHDKey.fromMasterSeed(hodlMnemonicToSeed(mnemonic, passphrase)).privateExtendedKey, privateKeyInputIsValid: () => hodlPrivateKeyInputIsValid(), computeTargetLastWords: (words, targetWords) => hodlComputeTargetLastWords(words, targetWords), clearLastWordCache: () => hodlLastWordCache.clear(), validateTargetMnemonic: (value, targetWords) => hodlValidateTargetMnemonic(value, targetWords), bruteTargetLastWords: (value) => hodlLastWordCandidates(value) };
 if (__ENTROPYLAB_TEST_HOOKS__ && globalThis.__entropyLabTest) globalThis.__entropyLabPassphrase = () => hodlPassphraseText(hodlPassphraseFieldBytes());
+if (__ENTROPYLAB_TEST_HOOKS__ && globalThis.__entropyLabTest) globalThis.__entropyLabShowStoredPassphrase = (text) => { const bytes = new TextEncoder().encode(text); try { hodlShowStoredPassphrase(bytes); } finally { bytes.fill(0); } };
 if (__ENTROPYLAB_TEST_HOOKS__ && globalThis.__entropyLabTest) globalThis.__entropyLabWasmMemory = () => [hodlWasm().memory.buffer, hodlPsbtLoaderHeap().buffer];
 if (__ENTROPYLAB_TEST_HOOKS__ && globalThis.__entropyLabTest) globalThis.__entropyLabStationRoot = () => hodlStationSessionXprv();
+if (__ENTROPYLAB_TEST_HOOKS__ && globalThis.__entropyLabTest) globalThis.__entropyLabAppClipboard = () => appClipboardText();
+if (__ENTROPYLAB_TEST_HOOKS__ && globalThis.__entropyLabTest) globalThis.__entropyLabAppClipboardPut = (text) => appClipboardPut(text);
 if (__ENTROPYLAB_TEST_HOOKS__ && globalThis.__entropyLabTest) globalThis.__entropyLabI18n = { sanitizeCatalogHtml: hodlSanitizeCatalogHtml, tHtml: hodlT, tAttr: hodlTAttr };
+function hodlJournalTestHooks() {
+  return { openExport: (file) => hodlJournalOpenExport(file, hodlJournalKeys), passwordProtected: () => Boolean(hodlJournalKeys?.passwordProtected) };
+}
+if (__ENTROPYLAB_TEST_HOOKS__ && globalThis.__entropyLabTest) globalThis.__entropyLabJournal = hodlJournalTestHooks();
 var hodlRootEl = document.getElementById("btc-calc");
 if (!hodlRootEl) throw new Error("#app missing");
 hodlRootEl.innerHTML = hodlShellHtml;if (/^(www\.)?entropylab\.online$/i.test(location.hostname)) document.getElementById("online-warning")?.removeAttribute("hidden");
@@ -776,6 +850,21 @@ function hodlCreateKeyMethodIcon(mode) {
   span.appendChild(svg);
   return span;
 }
+// Core wallet.dat + dice/cards (issue #552): the wallet's spend secrets are
+// mixed with a dice or card transcript. The wallet alone never makes a phrase,
+// and the secrets live only in this holder, wiped on every exit path.
+
+// Key files and journal backups may only bring in the methods offered here.
+setKeyVaultModes(hodlKeyModes);
+
+
+
+
+// The parsed document keeps its own copy of every record's bytes, and the
+// secrets were taken from them: zero every buffer it still holds, whether the
+// mix succeeded or threw.
+
+
 // The method picker is a dropdown at every width, wearing the Script type
 // control's chrome: enhanced-inputs.js upgrades it and asks
 // entropylabOptionIcon for each method's mark.
@@ -791,7 +880,15 @@ hodlKeyModes.forEach((mode) => {
 });
 hodlKeyModeSelectEl.entropylabOptionIcon = (value) => hodlCreateKeyMethodIcon(value);
 hodlKeyModeSelectEl.onchange = () => {
-  if (hodlKeyModeSelectEl.value !== hodlKeyMode) hodlSetMode(hodlKeyModeSelectEl.value);
+  if (hodlKeyModeSelectEl.value === hodlKeyMode) return;
+  // A derivation that is still running read its inputs under the old
+  // method, and its commit captures the form as it stands: left alone, the
+  // key would store this method with a wallet derived from the other one,
+  // and a key file or backup of it would restore a different wallet. The
+  // dropdown stops its own click, so the form's click handler (which stops
+  // a derivation on other edits) never sees this one.
+  hodlStopDerivation("key");
+  hodlSetMode(hodlKeyModeSelectEl.value);
 };
 hodlModesEl.appendChild(hodlKeyModeSelectEl);
 // Every path that changes the method moves the control with it. Sync, not
@@ -954,6 +1051,22 @@ function hodlResultHasSeed(result) {
 function hodlResultMnemonic(result) {
   return result?.entropy ? hodlEntropyToMnemonic(result.entropy, hodlBip39Wordlist) : null;
 }
+
+// Validated words -> wordlist indices (hodlBip39WordIndex, built once from
+// the frozen wordlist), so they derive their seed as bytes without a joined
+// phrase string.
+function hodlWordIndices(words) {
+  let indices = new Uint16Array(words.length);
+  words.forEach((word, i) => {
+    let index = hodlBip39WordIndex.get(word);
+    if (index === undefined) {
+      indices.fill(0);
+      throw new Error("Invalid mnemonic");
+    }
+    indices[i] = index;
+  });
+  return indices;
+}
 function hodlResultEntropyHex(result) {
   return result?.entropy ? hodlHex.encode(result.entropy) : null;
 }
@@ -965,7 +1078,7 @@ function hodlResultSeedHex(result) {
 // derived with produced, or a BIP-85 child's words with the given passphrase.
 function hodlSeedSessionRoot(result, passphrase = "") {
   if (result?.rootNode) return hodlResultRootNode(result);
-  let seed = hodlMnemonicToSeed(hodlResultMnemonic(result), passphrase);
+  let seed = hodlSeedFromEntropy(result.entropy, passphrase);
   try {
     return hodlHDKey.fromMasterSeed(seed);
   } finally {
@@ -1051,9 +1164,11 @@ function hodlWatchOnlyMultipathDescriptor(receiveDescriptor, branches = [0, 1]) 
 }
 // A PSBT past a single code's capacity is scanned as a ur:crypto-psbt
 // sequence — the same plan the editor used inline before the overlay took
-// the job. Anything else (an address, an xpub, a descriptor) has no frames
-// and stays one static code.
-function hodlPsbtQrFrames(value) {
+// the job. A watch-only descriptor or BIP-388 policy past one QR uses that
+// same UR family (ur:bytes, fixed-rate parts). An address or an xpub has no
+// frames and stays one static code.
+function hodlPsbtQrFrames(value, kind) {
+  if (kind === "watch") return hodlWatchOnlyQrFrames(value);
   try {
     let plan = hodlPsbtQrPlan(hodlPsbtBytesFromText(value));
     return plan.mode === "ur" ? plan.parts : null;
@@ -1067,7 +1182,7 @@ function hodlDescriptorQrSvg(payload) {
 // Public material copies from the displayed value or its label's clipboard.
 // QR-backed values confirm beside the QR without a duplicate clipboard.
 // A shortened public preview keeps its complete copy in data-copy-value.
-function hodlInitDescriptorCopy() {
+function hodlInitDescriptorCopy({ onCopyStart = () => {} } = {}) {
   document.addEventListener("click", (event) => {
     let button = event.target.closest?.("[data-copy-field], [data-public-copy]");
     if (!button || button.disabled || !hodlReadoutIsShown(button)) return;
@@ -1078,6 +1193,7 @@ function hodlInitDescriptorCopy() {
       icon = group?.querySelector("[data-public-copy]"),
       note = group?.querySelector("[data-copy-status]");
     if (!value || value === "\u2014") return;
+    let complete = onCopyStart(button);
     let done = () => {
       if (!hodlReadoutIsShown(button) || !hodlReadoutIsShown(source)) return;
       if (icon) {
@@ -1091,14 +1207,20 @@ function hodlInitDescriptorCopy() {
         if (note.isConnected) note.textContent = "";
       }, 1600);
     };
-    copyText(value, { host: group || button.parentElement }).then((copied) => { if (copied) done(); });
+    copyText(value, { host: group || button.parentElement }).then((copied) => { complete?.(copied); if (copied) done(); });
   });
 }
 // A long value the user is meant to move somewhere else — a descriptor, an
 // extended key — reads as one row: the label carries its QR button and the
 // copy confirmation, and the value itself is the copy target.
-function hodlCopyFieldHtml(labelText, value, labelClass = "label", showQr = true) {
-  let qr = showQr && value && value !== "\u2014" && value.length <= 1e3 ? hodlAddressQrButton(value, labelText) : "";
+function hodlCopyFieldHtml(labelText, value, labelClass = "label", options = {}) {
+  let shown = options !== false && value && value !== "\u2014";
+  let qr = "";
+  // Watch-only descriptors and BIP-388 policies: a short value keeps today's
+  // single text QR. Past one QR, the shared overlay animates the same UR
+  // family crypto-psbt uses. Private key material gets no code; psbt-ur.js
+  // makes that decision for the field and the encoder alike.
+  if (shown && options.watchOnly) qr = hodlWatchOnlyQrButton(value, labelText); else if (shown && String(value).length <= 1e3) qr = hodlAddressQrButton(value, labelText);
   return hodlPublicFieldMarkup(hodlEscapeHtml(labelText), value, { copyIcon: hodlClipboardIconMarkup, qrHtml: qr, labelClass });
 }
 function hodlWatchOnlyDescriptorExport(receiveDescriptor, changeDescriptor, addressBranches = null, { labelClass = "label", collapsible = true } = {}) {
@@ -1108,10 +1230,11 @@ function hodlWatchOnlyDescriptorExport(receiveDescriptor, changeDescriptor, addr
   ]).filter((entry) => entry.publicDescriptor), first = branches[0], multipath = first ? branches.length === 1 ? first.publicDescriptor : hodlWatchOnlyMultipathDescriptor(first.publicDescriptor, branches.map((entry) => entry.branch)) : "";
   // Each descriptor is titled with a QR button beside it, the same control an
   // address row carries: the code opens in the shared overlay instead of one
-  // being drawn inline. A payload too long to encode simply offers no button.
-  let field = (label, value) => hodlCopyFieldHtml(hodlTText(label), value, labelClass);
-  let details = branches.map((entry) => field(`Watch-only ${hodlAddressBranchLabel(entry.branch).toLowerCase()} descriptor`, entry.publicDescriptor)).join("");
-  return `${field("Watch-only wallet descriptor", multipath || "\u2014")}${collapsible ? `<details class="wallet-advanced"><summary>Address branch descriptors</summary>${details}</details>` : details}`;
+  // being drawn inline. A payload past one QR animates as UR; an xprv does not.
+  let field = (labelText, value) => hodlCopyFieldHtml(labelText, value, labelClass, { watchOnly: true });
+  let details = branches.map((entry) => field(hodlTText(entry.branch === 0 ? "Watch-only receive descriptor" : entry.branch === 1 ? "Watch-only change descriptor" : "Watch-only custom branch {n} descriptor", { n: entry.branch }), entry.publicDescriptor)).join("");
+  let wallet = field(hodlTText("Watch-only wallet descriptor"), multipath || "\u2014");
+  return `${wallet}${collapsible ? `<details class="wallet-advanced"><summary>${hodlT("Address branch descriptors")}</summary>${details}</details>` : details}`;
 }
 function hodlAccountResult(node, definition, network, count, options = {}) {
   // The private key stays a node (hodlAccountPrivateKey serializes it).
@@ -1324,7 +1447,6 @@ async function hodlApplyPurposeMatch(state, enabled, progress) {
     state.errorSpec = null;
     state.error = "";
     hodlRestoreKey();
-    hodlJournalCaptureDerivedKey(state);
     hodlDisposeDroppedWallets();
     return true;
   } catch (error) {
@@ -1348,13 +1470,36 @@ async function hodlTogglePurposeMatch(enabled) {
   }
 }
 async function hodlMnemonicWalletWithProgress(value, passphrase, network, count, source, accountIndex, addressStart, tracker, purposeIndex, coinType = hodlCoinTypeFromNetwork(network), hardening = hodlDefaultHardening(), branchStart = 0, branchRange = 2, derivationPlan = null) {
-  let validation = hodlValidateMnemonic(value);
-  if (!validation.ok) throw validation.error?.key ? hodlError(validation.error.key, validation.error.vars) : hodlError("Invalid seed phrase");
+  // Secure entry hands over { indices }: a copy this function owns, checked
+  // here and zeroed below like the text path's own indices. Text is validated
+  // into indices as before.
+  let indices;
+  if (value?.indices instanceof Uint16Array) {
+    indices = value.indices;
+    try {
+      hodlEntropyFromWordIndices(indices).fill(0);
+    } catch {
+      indices.fill(0);
+      throw hodlError("Invalid seed phrase");
+    }
+  } else {
+    let validation = hodlValidateMnemonic(value);
+    if (!validation.ok) throw validation.error?.key ? hodlError(validation.error.key, validation.error.vars) : hodlError("Invalid seed phrase");
+    indices = hodlWordIndices(validation.words);
+  }
   // The wallet keeps its BIP39 entropy and seed as bytes that can be zeroed,
   // never as text (#546 B2).
   // The derivation records them with its row keys, so one that never commits
   // zeroes them.
-  let mnemonic = validation.words.join(" "), seed = hodlMnemonicToSeed(mnemonic, passphrase), entropy = hodlMnemonicToEntropy(mnemonic, hodlBip39Wordlist), root;
+  // Both the seed and the entropy come from the word indices as bytes, never
+  // a joined phrase string.
+  let seed, entropy, root;
+  try {
+    seed = hodlSeedFromIndices(indices, passphrase);
+    entropy = hodlEntropyFromWordIndices(indices);
+  } finally {
+    indices.fill(0);
+  }
   for (let bytes of [entropy, seed]) hodlActiveDerivation?.rowKeys?.push(bytes);
   try {
     root = hodlHDKey.fromMasterSeed(seed);
@@ -1382,28 +1527,30 @@ async function hodlEntropyWalletWithProgress(entropy, passphrase, network, count
 }
 async function hodlImportedWalletWithProgress(value, network, count, accountIndex, addressStart, tracker, purposeIndex, coinType = hodlCoinTypeFromNetwork(network), hardening = hodlDefaultHardening(), branchStart = 0, branchRange = 2, derivationPlan = null) {
   let importedValue = String(value ?? "").trim(), parsed = hodlParseExtendedKey(importedValue);
+  // The parse built the key's node, and every way out wipes it: a refusal
+  // (red-team sweep 0eed735, part01 #5), a stopped import, which throws from
+  // the tracker before the derivation starts (#1480 r5 gate, MiniMax), and a
+  // result, which holds its own copy of the imported root or account node.
+  try {
+    return await hodlImportedWalletFromParsed(parsed, importedValue, network, count, accountIndex, addressStart, tracker, purposeIndex, coinType, hardening, branchStart, branchRange, derivationPlan);
+  } finally {
+    parsed.node?.wipePrivateData?.();
+  }
+}
+async function hodlImportedWalletFromParsed(parsed, importedValue, network, count, accountIndex, addressStart, tracker, purposeIndex, coinType, hardening, branchStart, branchRange, derivationPlan) {
   if (parsed.scope !== "singlesig") throw hodlError("{prefix} is a multisig extended key. Use it in Multi Signature, not Key Derivation.", { prefix: parsed.prefix });
   if (parsed.network !== hodlNetworkFamily(network)) throw hodlError("This {prefix} belongs to Bitcoin {network}. Change Network to {network} before deriving it.", { prefix: parsed.prefix, network: parsed.network });
   let node = parsed.node, mismatch = hodlSinglesigScriptMismatch(parsed, hodlSelectedScriptType()), notes = [hodlNote(parsed.isPrivate ? "Imported an extended private key. Addresses and WIF keys are derived from it." : "Imported an extended public key. This is watch-only: it can derive addresses but cannot spend.")];
   if (node.depth === 0) {
     if (!parsed.isPrivate && (derivationPlan ? derivationPlan.hasHardenedPrefix || hardening.branch || hardening.address : Object.values(hardening).some(Boolean))) throw hodlError("A root extended public key cannot derive the selected hardened path. Turn every Harden option off, import an account-level public key, or use the root xprv/tprv offline.");
     if (parsed.family !== "x") throw hodlError("A BIP32 root private key must use the generic xprv/tprv prefix.");
-    try {
-      return await hodlRootWalletWithProgress(node, network, count, { entropy: null, passphraseUsed: false, passphrase: null, seed: null, notes, warnings: [] }, accountIndex, addressStart, tracker, purposeIndex, coinType, hardening, branchStart, branchRange, derivationPlan);
-    } finally {
-      node.wipePrivateData(); // the result holds its own copy of the imported root
-    }
+    return await hodlRootWalletWithProgress(node, network, count, { entropy: null, passphraseUsed: false, passphrase: null, seed: null, notes, warnings: [] }, accountIndex, addressStart, tracker, purposeIndex, coinType, hardening, branchStart, branchRange, derivationPlan);
   }
   if (node.depth !== 3) throw hodlError("This extended key is depth {depth}. Key Derivation accepts a BIP32 root private key (depth 0) or an account-level extended key (depth 3).", { depth: node.depth });
   if ((hardening.branch || hardening.address) && !parsed.isPrivate) throw hodlError(hardening.branch ? "Hardened address branches cannot be derived from an account extended public key. Turn off Harden or import the matching extended private key offline." : "Hardened address indexes cannot be derived from an account extended public key. Turn off Harden or import the matching extended private key offline.");
   let definition = hodlImportedScriptDefinition(parsed), addressCount = Math.min(Math.max(count, 1), hodlMaxAddressRange), parentFingerprint = hodlFingerprintHex(node.parentFingerprint), nodeFingerprint = hodlFingerprintHex(node.fingerprint);
   tracker.setTotal(addressCount * branchRange);
-  let account;
-  try {
-    account = await hodlAccountResultWithProgress(node, definition, network, addressCount, { accountPath: "Imported account key", accountIndex: null, imported: true, importedFamily: parsed.family, parentFingerprint, nodeFingerprint, addressStart, branchHardened: hardening.branch, addressHardened: hardening.address, branchStart, branchRange }, tracker);
-  } finally {
-    node.wipePrivateData(); // the account holds its own copy of the imported node; a stopped import wipes that copy too
-  }
+  let account = await hodlAccountResultWithProgress(node, definition, network, addressCount, { accountPath: "Imported account key", accountIndex: null, imported: true, importedFamily: parsed.family, parentFingerprint, nodeFingerprint, addressStart, branchHardened: hardening.branch, addressHardened: hardening.address, branchStart, branchRange }, tracker);
   return {
     kind: "hd",
     network,
@@ -1438,9 +1585,9 @@ function hodlAccountAddressBranches(account) {
 // Spending descriptors come from the account's key node (pass the account).
 function hodlAddressBranchDescriptorFields(branches, isPrivate = false, labelClass = "label", account = null) {
   return branches.map((branch) => {
-    let label = `${isPrivate ? "Spending" : "Watch-only"} ${hodlAddressBranchLabel(branch.branch).toLowerCase()} descriptor`;
-    if (isPrivate) return account?.privateNode ? hodlPrivateKeyFieldHtml(label, hodlBranchPrivateDescriptorLength(account, branch.branch), () => hodlBranchPrivateDescriptor(account, branch.branch), void 0, labelClass) : "";
-    return branch.publicDescriptor ? hodlPublicFieldHtml(label, branch.publicDescriptor, void 0, labelClass) : "";
+    let receive = branch.branch === 0, change = branch.branch === 1, vars = { n: branch.branch };
+    if (isPrivate) return account?.privateNode ? hodlPrivateKeyFieldHtml(receive ? "Spending receive descriptor" : change ? "Spending change descriptor" : "Spending custom branch {n} descriptor", hodlBranchPrivateDescriptorLength(account, branch.branch), () => hodlBranchPrivateDescriptor(account, branch.branch), vars, labelClass) : "";
+    return branch.publicDescriptor ? hodlPublicFieldHtml(receive ? "Watch-only receive descriptor" : change ? "Watch-only change descriptor" : "Watch-only custom branch {n} descriptor", branch.publicDescriptor, vars, labelClass) : "";
   }).join("");
 }
 function hodlAddressBranchKey(prefix, branch) {
@@ -1448,8 +1595,8 @@ function hodlAddressBranchKey(prefix, branch) {
 }
 function hodlAddressBranchTables(branches, includeWif, prefix) {
   return branches.map((branch) => {
-    let label = hodlAddressBranchLabel(branch.branch), key = hodlAddressBranchKey(prefix, branch.branch);
-    return `<p class="label">${hodlEscapeHtml(`${label} addresses`)}</p>${hodlAddressTable(branch.rows, `${label} addresses`, includeWif, key)}`;
+    let key = hodlAddressBranchKey(prefix, branch.branch), heading = hodlTText(branch.branch === 0 ? "Receive addresses" : branch.branch === 1 ? "Change addresses" : "Custom branch {n} addresses", { n: branch.branch });
+    return `<p class="label">${hodlEscapeHtml(heading)}</p>${hodlAddressTable(branch.rows, heading, includeWif, key)}`;
   }).join("");
 }
 function hodlAddressBranchVirtualConfigs(branches, includeWif, prefix) {
@@ -1473,7 +1620,17 @@ function hodlImportedCoreRecoveryExport(wallet, account) {
 }
 function hodlRenderMultisigCosignerExport(exports, accountId) {
   let items = Array.isArray(exports) ? exports.filter((candidate) => candidate.accountId === accountId) : [];
-  return items.map((item) => hodlPublicFieldHtml("Multisig co-signer {prefix} · {label}", item.value, { prefix: item.prefix, label: item.label }, "label", true)).join("");
+  return items.map((item) => hodlPublicFieldHtml("Multisig co-signer {prefix} · {label}", item.value, { prefix: item.prefix, label: hodlMsigCosignerExportLabel(item) }, "label", true)).join("");
+}
+// The result keeps each export's English label for the recovery sheet; the
+// page names it in the page language when it paints, so a switch follows.
+function hodlMsigCosignerExportLabel(item) {
+  if (item.kind === "p2sh" && item.standard === "bip45") return hodlTText("Legacy · BIP45 · No account");
+  if (item.kind === "p2sh") return hodlTText("Legacy · BIP87 · Account {account}", { account: String(item.originPath || "").split("/")[2]?.replace(/h$/, "") ?? "" });
+  if (item.kind === "p2sh-p2wsh") return hodlTText("Nested SegWit · BIP48");
+  if (item.kind === "p2wsh") return hodlTText("Native SegWit · BIP48");
+  if (item.kind === "p2tr") return hodlTText("Taproot · BIP86");
+  return item.label;
 }
 function hodlNormalizeAddressCheck(value){
   let text=String(value??"").trim();
@@ -1514,9 +1671,9 @@ function hodlAddressCheckRows(){
   return{receive:[],change:[],branches:[]}
 }
 function hodlAddressMatchMarkup(){
-  return `<div class="address-match-field"><p class="label" id="address-match-label">Check an address</p>
-    <p class="muted label-description address-match-note" id="address-match-note">Paste an address shown by another wallet. A match means that wallet computed the same selected branch and derivation, even if the index is beyond the table above.</p>
-    <input id="address-match" aria-labelledby="address-match-label" aria-describedby="address-match-note" autocomplete="off" spellcheck="false" placeholder="Paste bc1\u2026 or a 1\u2026 / 3\u2026 address">
+  return `<div class="address-match-field"><p class="label" id="address-match-label">${hodlT("Check an address")}</p>
+    <p class="muted label-description address-match-note" id="address-match-note">${hodlT("Paste an address shown by another wallet. A match means that wallet computed the same selected branch and derivation, even if the index is beyond the table above.")}</p>
+    <input id="address-match" aria-labelledby="address-match-label" aria-describedby="address-match-note" autocomplete="off" spellcheck="false" placeholder="${hodlTAttr("Paste bc1\u2026 or a 1\u2026 / 3\u2026 address")}">
     <span class="hint" id="address-match-status" role="status"></span>
   </div>`
 }
@@ -1651,7 +1808,7 @@ function hodlAddressIndexHtml(index) {
 }
 function hodlAddressTableRows(rows, includeWif = false, rowOffset = 0) {
   return rows.map((row, offset) => {
-    let copyLabel = hodlTText("Copy WIF for address #{n}", { n: row.index });
+    let copyLabel = hodlTText("Copy WIF for address #{n} to EntropyLab's clipboard", { n: row.index });
     return `<tr aria-rowindex="${rowOffset + offset + 2}"><th scope="row">${hodlAddressIndexHtml(row.index)}</th><td>${hodlPublicInlineHtml(hodlDisplayDerivationPath(row.path), { clipboard: false, className: "" })}</td><td data-copy-group><button type="button" class="addr-text" data-copy-field data-public-value data-i18n-skip translate="no" title="${hodlTAttr("Copy")}">${hodlEscapeHtml(row.address)}</button>${hodlAddressQrButton(row.address, hodlT("Address #{n}", { n: row.index }))}<span class="copy-field-status is-icon-only" data-copy-status aria-live="polite"></span></td>${includeWif ? `<td data-private-field>${hodlPrivateValue(hodlRowWifCell(row), "mono table-private-field-value")}${hodlRevealPrivate && row.privateKey ? hodlPrivateCopyButton({ label: copyLabel }) : ""}</td>` : ""}</tr>`;
   }).join("");
 }
@@ -1697,12 +1854,12 @@ function hodlSlip132Fields(account, wallet, isPrivate = false, labelClass = "lab
   let coreLabel = account.genericPublicLabel;
   let slip = account.hasAlternateExport ? account.primaryPublic : "";
   let slipLabel = account.primaryPublicLabel;
-  let field = (name, value, vars, cls) => hodlPublicFieldHtml(name, value, vars, cls, true), parts = [];
-  if (pasted) parts.push(field("As pasted", pasted, void 0, labelClass));
-  if (core && core !== pasted) parts.push(field(`Account ${coreLabel}`, core, void 0, labelClass));
-  if (slip && slip !== pasted && slip !== core) parts.push(field(`SLIP-132 ${slipLabel}`, slip, void 0, labelClass));
-  if (!parts.length && core) parts.push(field(`Account ${coreLabel}`, core, void 0, labelClass));
-  parts.push(`<p class="muted slip132-note">Prefix swap only (same payload, new version bytes and checksum). Script lives in the descriptor, not the prefix. x = legacy, y = nested BIP49, z = native BIP84, Y = nested BIP48 nested-msig, Z = native BIP48 native-msig. Testnet: t / u / v / U / V. No Taproot SLIP prefix.</p>`);
+  let parts = [];
+  if (pasted) parts.push(hodlPublicFieldHtml("As pasted", pasted, void 0, labelClass, true));
+  if (core && core !== pasted) parts.push(hodlPublicFieldHtml("Account {label}", core, { label: coreLabel }, labelClass, true));
+  if (slip && slip !== pasted && slip !== core) parts.push(hodlPublicFieldHtml("SLIP-132 {label}", slip, { label: slipLabel }, labelClass, true));
+  if (!parts.length && core) parts.push(hodlPublicFieldHtml("Account {label}", core, { label: coreLabel }, labelClass, true));
+  parts.push(`<p class="muted slip132-note">${hodlT("Prefix swap only (same payload, new version bytes and checksum). Script lives in the descriptor, not the prefix. x = legacy, y = nested BIP49, z = native BIP84, Y = nested BIP48 nested-msig, Z = native BIP48 native-msig. Testnet: t / u / v / U / V. No Taproot SLIP prefix.")}</p>`);
   return parts.join("");
 }
 // The private exports exist as the account's key node, not text, so whether
@@ -1711,10 +1868,9 @@ function hodlSlip132Fields(account, wallet, isPrivate = false, labelClass = "lab
 // carried that family.
 function hodlSlip132PrivateFields(account, wallet, labelClass) {
   let pasted = hodlResultHasImportedPrivate(wallet), pastedFamily = pasted ? account.importedFamily : null, parts = [];
-  let field = (label, family) => hodlPrivateKeyFieldHtml(label, hodlExtendedKeyLength, () => hodlAccountPrivateKey(account, family), void 0, labelClass);
   if (pasted) parts.push(hodlPrivateKeyFieldHtml("As pasted", hodlExtendedKeyLength, () => hodlAccountPrivateKey(account, pastedFamily), void 0, labelClass));
-  if (account.privateNode && pastedFamily !== "x") parts.push(field(`Account ${account.genericPrivateLabel}`, "x"));
-  if (account.privateNode && account.hasAlternateExport && pastedFamily !== account.primaryFamily) parts.push(field(`SLIP-132 ${account.primaryPrivateLabel}`, account.primaryFamily));
+  if (account.privateNode && pastedFamily !== "x") parts.push(hodlPrivateKeyFieldHtml("Account {label}", hodlExtendedKeyLength, () => hodlAccountPrivateKey(account, "x"), { label: account.genericPrivateLabel }, labelClass));
+  if (account.privateNode && account.hasAlternateExport && pastedFamily !== account.primaryFamily) parts.push(hodlPrivateKeyFieldHtml("SLIP-132 {label}", hodlExtendedKeyLength, () => hodlAccountPrivateKey(account, account.primaryFamily), { label: account.primaryPrivateLabel }, labelClass));
   return parts.join("");
 }
 function hodlSlip132WatchFields(account, wallet) {
@@ -1742,7 +1898,8 @@ function hodlShowAccount(id) {
         ${hodlSlip132WatchFields(account, hodlWalletResult)}
         ${hodlImportedCoreRecoveryExport(hodlWalletResult, account)}
         ${hodlRenderMultisigCosignerExport(hodlWalletResult.multisigCosignerExports, account.def.id)}
-        ${hodlWatchOnlyDescriptorExport(account.receiveDescriptor, account.changeDescriptor, branches, { collapsible: false })}`, "account-watch-section")}`;
+        ${hodlWatchOnlyDescriptorExport(account.receiveDescriptor, account.changeDescriptor, branches, { collapsible: false })}
+        ${hodlKeyCoreImportDescriptorsMarkup(account)}`, "account-watch-section")}`;
   hodlBindAddressVirtualization(hodlAddressBranchVirtualConfigs(branches, hasPrivate, "hd"));
   hodlBindAddressMatch();
   hodlBindWalletResultActions();
@@ -1773,11 +1930,11 @@ function hodlPrivateCopyButton(options = {}) {
 }
 // Private readouts share one label-row clipboard control. Only the shown
 // value carries data-private-value; concealed placeholders are never a source.
-function hodlPrivateFieldMarkup(labelHtml, valueHtml, { id = "", labelClass = "label", revealed = hodlRevealPrivate, copyId = "", copyAttribute = "data-private-copy", copyLabel = "Copy" } = {}) {
+function hodlPrivateFieldMarkup(labelHtml, valueHtml, { id = "", labelClass = "label", revealed = hodlRevealPrivate, copyId = "", copyAttribute = "data-private-copy", copyLabel = "Copy to EntropyLab's clipboard" } = {}) {
   return `<p class="private-field${revealed ? " is-revealed" : ""}" data-private-field${id ? ` id="${id}"` : ""}><span class="${labelClass} copy-field-label">${labelHtml}${revealed ? hodlPrivateCopyButton({ id: copyId, attribute: copyAttribute, label: copyLabel }) : ""}</span>${valueHtml}</p>`;
 }
 function hodlPrivateFieldHtml(label, value, vars, labelClass = "label", revealed = hodlRevealPrivate, copyId = "") {
-  let text = hodlTText(label, vars), labelHtml = hodlEscapeHtml(text), copyLabel = hodlTText("Copy {label}", { label: text });
+  let text = hodlTText(label, vars), labelHtml = hodlEscapeHtml(text), copyLabel = hodlTText("Copy {label} to EntropyLab's clipboard", { label: text });
   return hodlPrivateFieldMarkup(labelHtml, hodlPrivateValue(value, undefined, revealed), { labelClass, revealed, copyId, copyLabel });
 }
 // A private value held as key material, not text: hidden, it masks at its
@@ -1809,12 +1966,20 @@ function hodlWalletExportView(wallet) {
   if (wallet?.kind !== "hd") return wallet;
   return { ...wallet, accounts: wallet.accounts.map((account) => {
     if (!account.privateNode) return account;
+    // Every exported branch needs its own private descriptor: a window can
+    // start at 1 or 2, and selecting only branches 0/1 left those branches
+    // with no key record (AR-03). The receive/change pair stays for the
+    // legacy rows-only shape.
+    let addressBranches = account.addressBranches?.map((entry) => ({ ...entry, privateDescriptor: hodlBranchPrivateDescriptor(account, entry.branch) }));
     let descriptor = (branch) => account.addressBranches?.some((entry) => entry.branch === branch) ? hodlBranchPrivateDescriptor(account, branch) : null;
-    return { ...account, receiveDescriptorPriv: descriptor(0), changeDescriptorPriv: descriptor(1) };
+    return { ...account, addressBranches, receiveDescriptorPriv: descriptor(0), changeDescriptorPriv: descriptor(1) };
   }) };
 }
 function hodlWalletDatControl(includePrivate) {
   if (!hodlWalletExport.hasDescriptors(hodlWalletResult)) return "";
+  // A BIP 45 tail ("…/0/0/*") has no place in a descriptor record; hide the
+  // control rather than let the click throw.
+  if (!hodlWalletExport.walletDatSupported(hodlWalletResult)) return "";
   // The secrets variant follows the material that actually exists, not just
   // the reveal toggle, so the label and filename never lie for an imported
   // watch-only wallet (issue #366).
@@ -1826,6 +1991,7 @@ function hodlWalletDatControl(includePrivate) {
 // Key Station titles a field: label, what the choice does, then the picker.
 function hodlWalletDatBirthdayField() {
   if (!hodlWalletExport.hasDescriptors(hodlWalletResult)) return "";
+  if (!hodlWalletExport.walletDatSupported(hodlWalletResult)) return "";
   // Bitcoin Core starts its automatic scan at the wallet birthday stored in
   // the descriptor records. Recovery needs genesis (creation time 0) so
   // transactions predating this export are found; "now" is only safe for
@@ -1851,19 +2017,30 @@ function hodlWalletMessages(wallet, idPrefix) {
     let lines = [...warnings.map((message) => hodlFormatNote(message)), notes.map((message) => hodlFormatNote(message)).join(" ")].filter(Boolean).map((text) => `<p>${hodlEscapeHtml(text)}</p>`).join("");
     return `<section class="edge-note is-public wallet-result-messages" aria-label="${hodlTAttr("Safety notes")}">${lines}</section>`;
   }
-  return `<section class="edge-note-titled" aria-labelledby="${idPrefix}-safety-heading"><h3 class="edge-note-title is-private" id="${idPrefix}-safety-heading">Safety notes</h3><div class="edge-note is-private wallet-result-messages"><ul>${items}</ul></div></section>`;
+  return `<section class="edge-note-titled" aria-labelledby="${idPrefix}-safety-heading"><h3 class="edge-note-title is-private" id="${idPrefix}-safety-heading">${hodlT("Safety notes")}</h3><div class="edge-note is-private wallet-result-messages"><ul>${items}</ul></div></section>`;
 }
 // The privacy bar: one switch for every masked value in the key view, kept in
 // sight while the reader scrolls. A checkbox underneath, announced as a
 // switch, so the existing reveal wiring and its tests keep working.
 // Other views with their own reveal state (an SP address tab) pass it in with
 // their own switch id and description.
-function hodlPrivacyBarMarkup({ id = "reveal", revealed = hodlRevealPrivate, describedBy = "recovery-sheet-disclosure" } = {}) {
-  return `<label class="privacy-bar${revealed ? " is-revealed" : ""}">
-    <input type="checkbox" role="switch" id="${id}" data-private-reveal ${revealed ? "checked" : ""}${describedBy ? ` aria-describedby="${describedBy}"` : ""} />
-    <span class="privacy-bar-state">${revealed ? hodlT("Private data visible") : hodlT("Private data hidden")}</span>
-    <span class="privacy-bar-hint">${revealed ? hodlT("Hide it before sharing your screen or stepping away") : hodlT("Reveal only offline, on an air-gapped computer")}</span>
+function hodlSwitchBarMarkup({ id, checked, describedBy, state, hint, attributes = "", className = "" }) {
+  return `<label class="privacy-bar${className ? ` ${className}` : ""}">
+    <input type="checkbox" role="switch" id="${id}"${attributes ? ` ${attributes}` : ""} ${checked ? "checked" : ""}${describedBy ? ` aria-describedby="${describedBy}"` : ""} />
+    <span class="privacy-bar-state">${state}</span>
+    <span class="privacy-bar-hint">${hint}</span>
   </label>`;
+}
+function hodlPrivacyBarMarkup({ id = "reveal", revealed = hodlRevealPrivate, describedBy = "recovery-sheet-disclosure" } = {}) {
+  return hodlSwitchBarMarkup({
+    id,
+    checked: revealed,
+    describedBy,
+    state: revealed ? hodlT("Private data visible") : hodlT("Private data hidden"),
+    hint: revealed ? hodlT("Hide it before sharing your screen or stepping away") : hodlT("Reveal only offline, on an air-gapped computer"),
+    attributes: "data-private-reveal",
+    className: revealed ? "is-revealed" : "",
+  });
 }
 // The eye beside the Private key group title repeats the privacy state where
 // the private values are: crossed out while hidden, open once revealed.
@@ -1975,7 +2152,7 @@ function hodlSeedRecoveryFields(wallet) {
   if (!hodlResultHasSeed(wallet)) return [];
   let count = wallet.entropy.length * 3 / 4;
   let words = hodlRevealPrivate ? hodlResultMnemonic(wallet) : Array(count).fill("\u2022").join(" "), fields = [];
-  fields.push(hodlSeedPhraseField(`Your seed phrase \xB7 ${count} words`, words), hodlRevealPrivate ? hodlSeedQrExport(words, { passphraseUsed: wallet.passphraseUsed, entropyHex: hodlResultEntropyHex(wallet) }) : "");
+  fields.push(hodlSeedPhraseField(hodlTText("Your seed phrase · {count} words", { count }), words), hodlRevealPrivate ? hodlSeedQrExport(words, { passphraseUsed: wallet.passphraseUsed, entropyHex: hodlResultEntropyHex(wallet) }) : "");
   // The passphrase sits right under the words it belongs to: without it the
   // words recover a different wallet, so it is recovery material too.
   // Hidden, it shows the fixed placeholder whatever its length, since a
@@ -2033,6 +2210,8 @@ function hodlWalletDatDeps() {
     sha256: (bytes) => hodlSha256(bytes),
     checksum: hodlDescriptorChecksum,
     base58Decode: (text) => hodlBase58Check.decode(text),
+    base58Encode: (bytes) => hodlBase58Check.encode(bytes),
+    hash160: (bytes) => hodlHash160(bytes),
     deriveBranchBody: (extendedKeyText, branch) => {
       // Any SLIP-132 prefix is accepted; it is re-versioned to plain xpub here.
       let node = hodlHDKey.fromExtendedKey(hodlReversionExtendedKey(extendedKeyText, hodlExtendedKeyVersions.mainnet.x.pub)).deriveChild(branch), body = new Uint8Array(74), view = new DataView(body.buffer);
@@ -2044,14 +2223,74 @@ function hodlWalletDatDeps() {
       return body;
     },
     // Hardened-branch private key records are derived from the account xprv.
-    deriveExtendedPrivateChild: (extendedKeyText, index) =>
-      hodlHDKey.fromExtendedKey(hodlReversionExtendedKey(extendedKeyText, hodlExtendedKeyVersions.mainnet.x.prv)).deriveChild(index).privateExtendedKey,
+    deriveExtendedPrivateChild: (extendedKeyText, index) => {
+      let parent, child;
+      try {
+        parent = hodlHDKey.fromExtendedKey(hodlReversionExtendedKey(extendedKeyText, hodlExtendedKeyVersions.mainnet.x.prv));
+        child = parent.deriveChild(index);
+        return child.privateExtendedKey;
+      } finally {
+        // Both nodes are built here from text, so both are ours to wipe.
+        child?.wipePrivateData();
+        parent?.wipePrivateData();
+      }
+    },
     publicKeyForPrivate: (secret) => hodlSecp256k1.getPublicKey(secret, true),
     canonicalizeDescriptor: (descriptor) => canonicalizeWatchDescriptor(descriptor, {
       decode: (key) => hodlBase58Check.decode(key),
       encode: (bytes) => hodlBase58Check.encode(bytes)
-    })
+    }),
+    // Neutering keeps the chain family: tprv/uprv/vprv become tpub.
+    neuterExtendedKey: (extendedKeyText) => {
+      let text = extendedKeyText.trim(), testnet = /^(?:tprv|uprv|vprv)/.test(text);
+      let node = hodlHDKey.fromExtendedKey(hodlReversionExtendedKey(text, hodlExtendedKeyVersions.mainnet.x.prv)).neutered();
+      return hodlReversionExtendedKey(node.publicExtendedKey, testnet ? hodlExtendedKeyVersions.testnet.x.pub : hodlExtendedKeyVersions.mainnet.x.pub);
+    }
   };
+}
+// A proven key from a Core wallet.dat moves into the Key Station as reviewable
+// inputs — never a finished key. The lab is filled with the reconstructed
+// extended key and the wallet's own network family; deriving happens only when
+// the user presses Derive Key, the same contract as the journal's key manager
+// "Load inputs to derive" flow (hodlKeyManagerUseInStation).
+function hodlCoreImportIntoStation(item) {
+  if (!item?.xprv || typeof item.xprv !== "string") return;
+  // The import replaces the Key Station's inputs. A key derivation still
+  // running from the earlier inputs would otherwise commit into them: a tab
+  // holding this wallet's key with another wallet's addresses.
+  hodlStopDerivation("key");
+  let family = /^xprv/.test(item.xprv) ? "mainnet" : "testnet";
+  // The wallet's own chain goes to the header picker, the same call a picker
+  // click makes, so a regtest wallet derives bcrt1… rather than tb1…. A chain
+  // outside the key's family is never applied.
+  if (["mainnet", "testnet", "signet", "regtest"].includes(item.network) && hodlNetworkFamily(item.network) === family && item.network !== hodlNetworkChoice) {
+    hodlApplyNetworkDefault(item.network);
+    hodlJournalLog("network", hodlNetworkChoice, "core");
+    hodlNetworkPickerRender?.();
+  }
+  let source = hodlNewKeyState();
+  source.mode = "seed";
+  source.fields.seed = item.xprv;
+  source.fields.network = family;
+  source.fields.coinType = source.fields.network === "testnet" ? "1'" : "0'";
+  if (item.kind === "account" && item.script) {
+    source.fields.script = item.script;
+    source.accountId = item.script;
+    // Keep the form's public path text in step with the script the account
+    // import chose — the derivation of an account key ignores it, but the
+    // key card's summary would otherwise read the m/84' default.
+    // The account comes from the descriptor's origin (0' without one).
+    let purpose = { bip44: 44, bip49: 49, bip84: 84, bip86: 86 }[item.script], coinType = source.fields.network === "testnet" ? 1 : 0, account = Number.isSafeInteger(item.account) && item.account >= 0 && item.account < 2 ** 31 ? item.account : 0;
+    source.fields.purpose = `${purpose}'`;
+    source.fields.account = `${account}'`;
+    source.fields.derivationAccountPath = `m/${purpose}'/${coinType}'/${account}'`;
+    source.fields.derivationPath = `m/${purpose}'/${coinType}'/${account}'/{0-1}/{0-9}`;
+  }
+  let labIndex = hodlFillLabFromKey(source);
+  hodlActiveKey = labIndex;
+  hodlRenderKeyTabs();
+  hodlShowWorkspace("calc");
+  hodlJournalLog("core-import", item.fingerprint || "wallet-dat", "core");
 }
 function hodlDownloadWalletDat() {
   if (!hodlWalletResult || !hodlWalletExport.hasDescriptors(hodlWalletResult)) return;
@@ -2062,7 +2301,17 @@ function hodlDownloadWalletDat() {
   let exported = hodlWalletResult.kind !== "msig" && hodlRevealPrivate ? hodlWalletExportView(hodlWalletResult) : hodlWalletResult;
   let withSecrets = hodlWalletResult.kind !== "msig" && hodlRevealPrivate && hodlWalletExport.hasPrivateDescriptors(exported);
   try {
-    let bytes = hodlWalletExport.buildWalletDat(exported, withSecrets, hodlWalletDatDeps(), creationTime), blob = new Blob([bytes], { type: "application/octet-stream" }), url = URL.createObjectURL(blob), link = document.createElement("a");
+    let bytes = hodlWalletExport.buildWalletDat(exported, withSecrets, hodlWalletDatDeps(), creationTime), blob, url, link;
+    // The Blob holds its own copy; these bytes carry the spend descriptors
+    // when secrets are shown, and go on every path (red-team sweep 0eed735,
+    // part02 #9; #1480 gate, DeepSeek).
+    try {
+      blob = new Blob([bytes], { type: "application/octet-stream" });
+      url = URL.createObjectURL(blob);
+      link = document.createElement("a");
+    } finally {
+      bytes.fill(0);
+    }
     link.href = url;
     link.download = hodlWalletExport.walletDatFilename(hodlWalletResult, withSecrets);
     link.click();
@@ -2130,46 +2379,172 @@ function hodlMsigCoreImportCodec() {
     encode: (bytes) => hodlBase58Check.encode(bytes)
   };
 }
-function hodlMsigCoreImportDescriptorsJson() {
-  if (!hodlWalletResult || hodlWalletResult.kind !== "msig") return "";
-  if (!hodlWalletResult.receiveDescriptor && !hodlWalletResult.changeDescriptor) return "";
+// Read public descriptors directly; the private wallet export view is never used.
+function hodlCoreImportDescriptorsWallet(scope) {
+  if (scope === "msig") return hodlWalletResult?.kind === "msig" ? hodlWalletResult : null;
+  if (hodlWalletResult?.kind !== "hd") return null;
+  const accounts = hodlWalletResult.accounts;
+  const account = accounts.find((account) => account.def?.id === hodlAccountId);
+  if (!account) throw hodlError("The selected account is unavailable. Select a script type and export again.");
+  return account;
+}
+// Never spread the source account, branches, or rows: they may own private
+// getters. Copy only the fields needed by the shared branch/active mapping.
+function hodlCoreImportDescriptorsPublicWallet(wallet, scope) {
+  const indexes = rows => Array.isArray(rows) ? rows.map(row => ({ index: row?.index })) : [];
+  const publicAccount = {
+    def: wallet.def, script: wallet.script, branchStart: wallet.branchStart,
+    receiveDescriptor: wallet.receiveDescriptor, changeDescriptor: wallet.changeDescriptor,
+    receive: indexes(wallet.receive), change: indexes(wallet.change),
+    addressBranches: wallet.addressBranches?.map(entry => ({
+      branch: entry.branch, publicDescriptor: entry.publicDescriptor,
+      rows: Array.isArray(entry.rows) ? indexes(entry.rows) : indexes(entry.branch === 0 ? wallet.receive : entry.branch === 1 ? wallet.change : [])
+    }))
+  };
+  // A displayed branch without a public representation cannot be silently
+  // dropped. Legacy receive/change descriptors may supply rows-only entries.
+  for (const entry of publicAccount.addressBranches ?? []) {
+    const descriptor = entry.publicDescriptor ?? (entry.branch === 0 ? wallet.receiveDescriptor : entry.branch === 1 ? wallet.changeDescriptor : null);
+    if (!descriptor) throw new Error("A displayed branch has no public descriptor. Core watch-only export refused.");
+  }
+  return scope === "msig" ? { ...publicAccount, kind: "msig" } : { kind: "hd", accounts: [publicAccount] };
+}
+// The public branch units both Core exports read, each checked as a
+// watch-only descriptor before anything leaves; null when there are none.
+function hodlCoreDescriptorUnits(scope) {
+  const wallet = hodlCoreImportDescriptorsWallet(scope);
+  if (!wallet) return null;
   const codec = hodlMsigCoreImportCodec();
+  const publicWallet = hodlCoreImportDescriptorsPublicWallet(wallet, scope);
+  const units = hodlWalletExport.walletDescriptorUnits(publicWallet, false);
+  if (!units.length) return null;
+  for (const unit of units) {
+    hodlWalletExport.assertDescriptorShape(unit.descriptor, "watch-only", {
+      checksum: hodlDescriptorChecksum, base58Decode: codec.decode
+    }, unit.type, Boolean(unit.multiKey));
+  }
+  return { wallet, publicWallet, units, codec };
+}
+function hodlCoreImportDescriptorsJson(scope = "msig") {
+  const core = hodlCoreDescriptorUnits(scope);
+  if (!core) return "";
+  const { wallet, publicWallet, units, codec } = core;
   return buildImportDescriptorsJson({
-    receiveDescriptor: hodlWalletResult.receiveDescriptor,
-    changeDescriptor: hodlWalletResult.changeDescriptor,
-    timestamp: hodlWalletDatBirthday === "now" ? "now" : 0,
+    descriptorUnits: units,
+    branchHardened: wallet.branchHardened === true,
+    // Recovery-only multisig shapes still scan from genesis even when the
+    // shared birthday picker says "now". Key Station uses its chosen birthday.
+    timestamp: hodlWalletDatBirthday === "now" && (scope !== "msig" || hodlWalletExport.walletDatSupported(publicWallet)) ? "now" : 0,
     decode: codec.decode,
     encode: codec.encode
   });
 }
+// One deriveaddresses line per exported branch, over exactly the window the
+// page shows (no lookahead), so Core's output can be compared row by row.
+function hodlCoreDeriveAddressesText(scope = "msig") {
+  const core = hodlCoreDescriptorUnits(scope);
+  if (!core) return "";
+  return buildDeriveAddressesCommands({
+    descriptorUnits: core.units,
+    branchHardened: core.wallet.branchHardened === true,
+    decode: core.codec.decode,
+    encode: core.codec.encode
+  });
+}
+// The Core exports: importdescriptors save/copy, the verification package and
+// the deriveaddresses copy (released 2026-10-26).
+function hodlCoreImportDescriptorsButtons(prefix) {
+  return `<button class="btn secondary green" id="${prefix}-save-importdescriptors" type="button" aria-describedby="${prefix}-core-importdescriptors-help">${hodlT("Save Core Watch-only JSON")}</button>
+    <button class="btn secondary green" id="${prefix}-save-verification-package" type="button" aria-describedby="${prefix}-verification-package-help">${hodlT("Download verification package")}</button>
+    <button class="btn secondary" id="${prefix}-copy-importdescriptors" type="button" aria-describedby="${prefix}-core-importdescriptors-help">${hodlT("Copy Core importdescriptors")}</button>
+    <button class="btn secondary" id="${prefix}-copy-deriveaddresses" type="button" aria-describedby="${prefix}-core-deriveaddresses-help">${hodlT("Copy Core deriveaddresses")}</button>`;
+}
+function hodlCoreDeriveAddressesNote(prefix) {
+  return `<p class="edge-note is-public" id="${prefix}-core-deriveaddresses-help">${hodlT("Paste into Bitcoin Core's console (Window → Console), or after bitcoin-cli. Core prints the addresses; they must match the ones shown here. Use a node on the same network.")}</p>`;
+}
+// The verification package note (released 2026-10-26).
+function hodlVerificationPackageNote(prefix) {
+  return `<p class="edge-note is-public" id="${prefix}-verification-package-help">${hodlT("Public data only (descriptors, xpubs, addresses) for checking this wallet with an independent Bitcoin Core tool.")}</p>`;
+}
+function hodlCoreImportDescriptorsNote(wallet) {
+  if (wallet.branchStart > 0) return hodlT("Imports the displayed public branches. Bitcoin Core uses branch {branch} for new receiving addresses, starting at address index 0. Verify that address on another trusted wallet or signer before funding.", { branch: wallet.branchStart });
+  // Core starts at index 0 even when the displayed address window starts later.
+  const receiveRows = wallet.addressBranches?.find((entry) => entry.branch === 0)?.rows ?? wallet.receive ?? [];
+  return receiveRows.some((row) => row.index === 0)
+    ? hodlT("Online node: createwallet disable_private_keys=true blank=true, then importdescriptors. First getnewaddress must match receive index 0 here.")
+    : hodlT("Online node: createwallet disable_private_keys=true blank=true, then importdescriptors. First getnewaddress is this wallet's receive index 0, which is not in the address window shown above — display from index 0 or verify it on a signer before funding.");
+}
+function hodlKeyCoreImportDescriptorsMarkup(account) {
+  if (!account?.receiveDescriptor && !account?.changeDescriptor && !account?.addressBranches?.some(entry => entry.publicDescriptor)) return "";
+  return `<div class="wallet-data-actions no-print" id="key-core-importdescriptors">
+    <p class="edge-note is-public" id="key-core-importdescriptors-help">${hodlCoreImportDescriptorsNote(account)} ${hodlT("Exports the selected script type's displayed branches, using the wallet birthday under Downloads below.")}</p>
+    ${hodlCoreImportDescriptorsButtons("key")}
+    ${hodlCoreDeriveAddressesNote("key")}
+    ${typeof hodlVerificationPackageNote !== "undefined" ? hodlVerificationPackageNote("key") : ""}
+    <p class="edge-note is-private" id="key-core-importdescriptors-error" role="alert"></p>
+  </div>`;
+}
 function hodlMsigCoreImportDescriptorsMarkup() {
   if (!hodlWalletResult || hodlWalletResult.kind !== "msig") return "";
-  if (!hodlWalletResult.receiveDescriptor && !hodlWalletResult.changeDescriptor) return "";
+  if (!hodlWalletResult.receiveDescriptor && !hodlWalletResult.changeDescriptor && !hodlWalletResult.addressBranches?.some(entry => entry.publicDescriptor)) return "";
+  const coreNote = hodlCoreImportDescriptorsNote(hodlWalletResult);
+  const walletDat = hodlWalletExport.walletDatSupported(hodlWalletResult);
   // The footer the key view uses: the Downloads title, what the export is, the
   // birthday titled the way a field is, then the two saves splitting the row.
   // The ids stay msig’s own, so both views wear the same shape without two
-  // elements answering to one label.
+  // elements answering to one label. The birthday stays for every Core JSON
+  // export — its timestamp is the same setting — while a BIP 45 tail
+  // ("…/0/0/*"), which cannot become a descriptor record, drops only the
+  // wallet.dat download.
   return `<div class="wallet-data-actions msig-data-actions no-print" id="msig-core-importdescriptors">
     <div class="msig-downloads-head"><p class="label">${hodlT("Downloads")}</p><p class="muted label-description">${hodlT("Import the watch-only wallet descriptor into Sparrow or another wallet.")}</p></div>
-    <p class="edge-note is-public" id="msig-core-importdescriptors-help">${hodlT("Online node: createwallet disable_private_keys=true blank=true, then importdescriptors. First getnewaddress must match receive index 0 here.")}</p>
+    <p class="edge-note is-public" id="msig-core-importdescriptors-help">${coreNote}</p>
     <div class="wallet-birthday-field"><p class="label" id="msig-birthday-label">${hodlT("Wallet birthday")}</p><p class="muted label-description wallet-dat-birthday-help" id="msig-birthday-help">${hodlT("Bitcoin Core only auto-scans history back to the birthday. Choose “New keys” only for entropy created right now; recovering older keys with today's birthday can look empty until you run <code>rescanblockchain 0</code> in Bitcoin Core.")}</p><select data-wallet-dat-birthday aria-labelledby="msig-birthday-label" aria-describedby="msig-birthday-help msig-core-importdescriptors-help"><option value="genesis"${hodlWalletDatBirthday === "genesis" ? " selected" : ""}>${hodlT("Recovering keys · scan from genesis")}</option><option value="now"${hodlWalletDatBirthday === "now" ? " selected" : ""}>${hodlT("New keys · created today")}</option></select></div>
-    <button class="btn secondary green" id="msig-save-importdescriptors" type="button">${hodlT("Save Core Watch-only JSON")}</button>
-    <button class="btn secondary" id="msig-copy-importdescriptors" type="button">${hodlT("Copy Core importdescriptors")}</button>
+    ${hodlCoreImportDescriptorsButtons("msig")}
+    ${walletDat ? `<button class="btn secondary green save-wallet-dat" id="msig-download-wallet-dat" type="button" aria-describedby="msig-core-importdescriptors-help msig-birthday-help">${hodlWalletExport.walletDatButtonLabel(false)}</button>` : ""}
+    ${hodlCoreDeriveAddressesNote("msig")}
+    ${typeof hodlVerificationPackageNote !== "undefined" ? hodlVerificationPackageNote("msig") : ""}
   </div>`;
 }
-function hodlCopyMsigCoreImportDescriptors() {
-  let json = "";
+// The BIP 388 wallet policy export (template + co-signer xpubs), one block
+// shaped like the policy-sheet block. Registration-capable wallets and
+// signers read it; the policy semantics check happens in bip388-policy.js.
+function hodlMsigBip388Markup() {
+  if (!hodlWalletResult || hodlWalletResult.kind !== "msig") return "";
+  if (!hodlWalletResult.receiveDescriptor) return "";
+  if (!hodlWalletExport.bip388Supported(hodlWalletResult)) return "";
+  return `<div class="wallet-data-actions no-print" id="msig-bip388">
+    <button class="btn secondary green" id="msig-save-bip388" type="button">${hodlT("Save BIP 388 wallet policy")}</button>
+    <button class="btn secondary" id="msig-copy-bip388" type="button">${hodlT("Copy BIP 388 wallet policy")}</button>
+    <p class="muted" id="msig-bip388-help">${hodlT("BIP 388 wallet policy (template and co-signer xpubs) for wallets that register policies. Watch-only; no private keys.")}</p>
+  </div>`;
+}
+function hodlCoreImportDescriptorsError(scope, spec) {
+  if (scope === "msig") return hodlSetWorkspaceError(scope, spec);
+  const error = document.getElementById("key-core-importdescriptors-error");
+  if (error) error.textContent = hodlFormatErrorSpec(spec);
+}
+function hodlCopyCoreImportDescriptors(scope = "msig") {
+  hodlCopyCoreText(scope, hodlCoreImportDescriptorsJson, "copy-importdescriptors", hodlTText("Copy Core importdescriptors"));
+}
+function hodlCopyCoreDeriveAddresses(scope = "msig") {
+  hodlCopyCoreText(scope, hodlCoreDeriveAddressesText, "copy-deriveaddresses", hodlTText("Copy Core deriveaddresses"));
+}
+// Copies one Core export: a failure reaches the scope's error slot and copies
+// nothing; a copy shows "Copied" on its button, then restores the label.
+function hodlCopyCoreText(scope, build, action, label) {
+  hodlCoreImportDescriptorsError(scope, null);
+  let text = "";
   try {
-    json = hodlMsigCoreImportDescriptorsJson();
+    text = build(scope);
   } catch (error) {
-    hodlSetWorkspaceError("msig", hodlErrorSpecFrom(error));
+    hodlCoreImportDescriptorsError(scope, hodlErrorSpecFrom(error));
     return;
   }
-  if (!json) return;
-  let button = document.getElementById("msig-copy-importdescriptors");
-  let label = hodlTText("Copy Core importdescriptors");
+  if (!text) return;
+  let button = document.getElementById(`${scope === "calc" ? "key" : "msig"}-${action}`);
   let done = (copied) => {
-    json = "";
+    text = "";
     if (!copied || !button) return;
     button.classList.add("is-copied");
     button.textContent = hodlTText("Copied");
@@ -2180,14 +2555,15 @@ function hodlCopyMsigCoreImportDescriptors() {
       button.textContent = label;
     }, 1600);
   };
-  copyText(json).then(done);
+  copyText(text).then(done);
 }
-function hodlDownloadMsigCoreImportDescriptors() {
+function hodlDownloadCoreImportDescriptors(scope = "msig") {
+  hodlCoreImportDescriptorsError(scope, null);
   let json = "";
   try {
-    json = hodlMsigCoreImportDescriptorsJson();
+    json = hodlCoreImportDescriptorsJson(scope);
   } catch (error) {
-    hodlSetWorkspaceError("msig", hodlErrorSpecFrom(error));
+    hodlCoreImportDescriptorsError(scope, hodlErrorSpecFrom(error));
     return;
   }
   if (!json) return;
@@ -2197,6 +2573,58 @@ function hodlDownloadMsigCoreImportDescriptors() {
   link.download = coreImportDescriptorsFilename(hodlWalletResult);
   link.click();
   setTimeout(() => URL.revokeObjectURL(url), 1e3);
+}
+// The public-only package an independent Bitcoin Core tool checks: the same
+// watch-only units the Core JSON exports, plus the displayed addresses. Rows
+// are read as { index, address } only; their private getters stay untouched.
+function hodlVerificationPackageJson(scope = "msig") {
+  const core = hodlCoreDescriptorUnits(scope);
+  if (!core) return "";
+  const network = scope === "calc" ? core.wallet.network ?? hodlWalletResult.network : hodlWalletResult.network;
+  const masterFingerprint = scope === "calc" ? core.wallet.masterFingerprint ?? hodlWalletResult.masterFingerprint ?? null : null;
+  const rows = (branch) => core.wallet.addressBranches?.find((entry) => entry.branch === branch)?.rows ?? (branch === 0 ? core.wallet.receive : core.wallet.change) ?? [];
+  const addresses = (branch) => rows(branch).map((row) => ({ index: row.index, address: row.address })).sort((a, b) => a.index - b.index);
+  return buildVerificationPackage({
+    network,
+    masterFingerprint,
+    descriptors: core.units.map((unit) => unit.descriptor),
+    xpubs: scope === "calc" ? [core.wallet.xpub].filter((xpub) => typeof xpub === "string" && xpub) : hodlWalletResult.xpubs,
+    receiveAddresses: addresses(0),
+    changeAddresses: addresses(1),
+  });
+}
+function hodlDownloadVerificationPackage(scope = "msig") {
+  hodlCoreImportDescriptorsError(scope, null);
+  let json = "";
+  let filename = "";
+  try {
+    json = hodlVerificationPackageJson(scope);
+    if (!json) return;
+    const core = hodlCoreDescriptorUnits(scope);
+    if (!core) return;
+    const network = scope === "calc" ? core.wallet.network ?? hodlWalletResult.network : hodlWalletResult.network;
+    const masterFingerprint = scope === "calc" ? core.wallet.masterFingerprint ?? hodlWalletResult.masterFingerprint ?? null : null;
+    filename = verificationPackageFilename({ network, masterFingerprint });
+  } catch (error) {
+    hodlCoreImportDescriptorsError(scope, hodlErrorSpecFrom(error));
+    return;
+  }
+  let blob = new Blob([json], { type: "application/json" }), url = URL.createObjectURL(blob), link = document.createElement("a");
+  json = "";
+  link.href = url;
+  link.download = filename;
+  link.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1e3);
+}
+function hodlMsigBip388Field() {
+  let text = "";
+  try {
+    text = hodlMsigBip388PolicyText();
+  } catch {
+    return "";
+  }
+  if (!text) return "";
+  return hodlCopyFieldHtml(hodlTText("BIP 388 wallet policy"), text, "label", { watchOnly: true });
 }
 function hodlMsigBip388PolicyText() {
   if (!hodlWalletResult || hodlWalletResult.kind !== "msig") return "";
@@ -2236,6 +2664,16 @@ function hodlDownloadMsigBip388Policy() {
   link.click();
   setTimeout(() => URL.revokeObjectURL(url), 1e3);
 }
+function hodlBindCoreImportDescriptors(scope) {
+  const prefix = scope === "calc" ? "key" : "msig";
+  for (const [action, handler] of [["copy-importdescriptors", hodlCopyCoreImportDescriptors], ["save-importdescriptors", hodlDownloadCoreImportDescriptors], ["save-verification-package", hodlDownloadVerificationPackage], ["copy-deriveaddresses", hodlCopyCoreDeriveAddresses]]) {
+    const button = document.getElementById(`${prefix}-${action}`);
+    if (!button) continue;
+    const clean = button.cloneNode(true);
+    button.replaceWith(clean);
+    clean.addEventListener("click", () => handler(scope));
+  }
+}
 function hodlBindMsigCoreImportDescriptors() {
   document.querySelectorAll("#msig-out [data-wallet-dat-birthday]").forEach((select) => {
     select.value = hodlWalletDatBirthday;
@@ -2243,18 +2681,7 @@ function hodlBindMsigCoreImportDescriptors() {
       hodlWalletDatBirthday = select.value === "now" ? "now" : "genesis";
     };
   });
-  let copy = document.getElementById("msig-copy-importdescriptors");
-  if (copy) {
-    let clean = copy.cloneNode(true);
-    copy.replaceWith(clean);
-    clean.addEventListener("click", hodlCopyMsigCoreImportDescriptors);
-  }
-  let save = document.getElementById("msig-save-importdescriptors");
-  if (save) {
-    let clean = save.cloneNode(true);
-    save.replaceWith(clean);
-    clean.addEventListener("click", hodlDownloadMsigCoreImportDescriptors);
-  }
+  hodlBindCoreImportDescriptors("msig");
   let walletDat = document.getElementById("msig-download-wallet-dat");
   if (walletDat) {
     let clean = walletDat.cloneNode(true);
@@ -2287,6 +2714,7 @@ function hodlBindMsigCoreImportDescriptors() {
   }
 }
 function hodlBindWalletResultActions() {
+  hodlBindCoreImportDescriptors("calc");
   let reveal = document.getElementById("reveal");
   if (reveal) reveal.onchange = () => {
     hodlRevealPrivate = reveal.checked;
@@ -2330,49 +2758,77 @@ function hodlSheetAddressRows(lines, label, rows) {
   lines.push(label.toUpperCase());
   for (let row of rows) lines.push(`  ${row.index}  ${hodlDisplayDerivationPath(row.path)}  ${row.address}`);
 }
-function hodlSheetWifRows(lines, label, rows) {
+// These marks come from fields as they are emitted, never from matching text.
+function hodlSheetPrivateLine(lines, marks, label, value = null, separator = "\n") {
+  if (marks) {
+    if (label) marks.push({ line: lines.length, start: 0, end: label.length, kind: "label" });
+    if (value) marks.push({ line: lines.length, start: label.length + separator.length, end: label.length + separator.length + value.length, kind: "value" });
+  }
+  lines.push(label + (value === null ? "" : separator + value));
+}
+function hodlSheetWifRows(lines, label, rows, marks = null) {
   let privateRows = rows.filter((row) => row.privateKey);
   if (!privateRows.length) return;
-  lines.push(label.toUpperCase());
-  for (let row of privateRows) lines.push(`  ${row.index}  ${hodlDisplayDerivationPath(row.path)}  ${hodlRowWif(row)}`);
+  hodlSheetPrivateLine(lines, marks, label.toUpperCase());
+  for (let row of privateRows) hodlSheetPrivateLine(lines, marks, "", hodlRowWif(row), `  ${row.index}  ${hodlDisplayDerivationPath(row.path)}  `);
 }
-var hodlRecoverySheetText = function(wallet, revealPrivate) {
+var hodlRecoverySheetText = function(wallet, revealPrivate, privateSpans = null, compact = false) {
   let lines = ["ENTROPYLAB \u2014 RECOVERY SHEET", "This file was computed locally. The calculator never generated wallet entropy.", ""];
+  let marks = privateSpans ? [] : null;
+  const privateLine = (label, value = null, separator = "\n") => hodlSheetPrivateLine(lines, marks, label, value, separator);
+  const finish = () => {
+    if (privateSpans) {
+      let offset = 0, next = 0;
+      for (let [line, text] of lines.entries()) {
+        while (marks[next]?.line === line) {
+          let mark = marks[next++];
+          privateSpans.push({ start: offset + mark.start, end: offset + mark.end, kind: mark.kind });
+        }
+        offset += String(text ?? "").length + 1;
+      }
+    }
+    return lines.join("\n");
+  };
   lines.push(`Network: ${wallet.network}`);
   if (wallet.passphraseUsed) lines.push("Passphrase: YES (not printed)");
   hodlSheetWarnings(lines, wallet);
   lines.push("");
   if (wallet.kind === "single") {
     if (revealPrivate) {
-      lines.push("PRIVATE RECOVERY MATERIAL", `WIF compressed:   ${hodlSingleWif(wallet, true) ?? ""}`, `WIF uncompressed: ${hodlSingleWif(wallet, false) ?? ""}`, `Hex private key:  ${hodlSinglePrivateHex(wallet) ?? ""}`);
-      if (wallet.minikey) lines.push(`Mini key: ${hodlResultMinikey(wallet)}`);
+      privateLine("PRIVATE RECOVERY MATERIAL");
+      privateLine("WIF compressed:", hodlSingleWif(wallet, true) ?? "", "   ");
+      privateLine("WIF uncompressed:", hodlSingleWif(wallet, false) ?? "", " ");
+      privateLine("Hex private key:", hodlSinglePrivateHex(wallet) ?? "", "  ");
+      if (wallet.minikey) privateLine("Mini key:", hodlResultMinikey(wallet), " ");
     } else lines.push("PRIVATE RECOVERY MATERIAL OMITTED", "Private values were not saved because Show private recovery material was off.");
     lines.push("", "PUBLIC KEYS AND ADDRESSES", `Compressed public key:   ${wallet.pubkeyCompressed}`, `Uncompressed public key: ${wallet.pubkeyUncompressed}`, `Legacy uncompressed: ${wallet.p2pkhUncompressed}`, `Legacy compressed:   ${wallet.p2pkhCompressed}`, `Nested SegWit:       ${wallet.p2shP2wpkh}`, `Native SegWit:       ${wallet.p2wpkh}`, `Taproot:             ${wallet.p2tr}`);
-    return lines.join("\n");
+    return finish();
   }
   let hasPrivate = Boolean(hodlResultHasSeed(wallet) || wallet.seed || hodlResultHasRoot(wallet) || hodlResultHasImportedPrivate(wallet) || wallet.accounts.some(hodlAccountHasPrivate));
   if (hasPrivate && revealPrivate) {
-    lines.push("PRIVATE RECOVERY MATERIAL");
+    privateLine("PRIVATE RECOVERY MATERIAL");
     if (hodlResultHasSeed(wallet)) {
       let mnemonic = hodlResultMnemonic(wallet);
-      lines.push("", "YOUR SEED PHRASE", mnemonic);
+      lines.push("");
+      privateLine("YOUR SEED PHRASE", mnemonic);
       let seedQrDigits = hodlSeedQrDigits(mnemonic);
-      if (seedQrDigits) lines.push("", "SEEDQR DIGITS", seedQrDigits);
+      if (seedQrDigits) { lines.push(""); privateLine("SEEDQR DIGITS", seedQrDigits); }
     }
-    if (wallet.entropy) lines.push("", "BIP39 ENTROPY HEX", hodlResultEntropyHex(wallet));
-    if (wallet.seed) lines.push("", "MASTER SEED HEX (BIP39 PBKDF2, 512 bits)", hodlResultSeedHex(wallet));
-    if (hodlResultHasRoot(wallet)) lines.push("", `MASTER ${(wallet.rootPrivateLabel || hodlExtendedKeyVersions[hodlNetworkFamily(wallet.network)].x.prvName).toUpperCase()}`, hodlResultRootXprv(wallet));
-    if (hodlResultHasImportedPrivate(wallet)) lines.push("", `IMPORTED ${(wallet.importedPrivateLabel || "EXTENDED PRIVATE KEY").toUpperCase()}`, hodlImportedPrivateKey(wallet));
+    if (wallet.entropy) { lines.push(""); privateLine("BIP39 ENTROPY HEX", hodlResultEntropyHex(wallet)); }
+    if (wallet.seed) { lines.push(""); privateLine("MASTER SEED HEX (BIP39 PBKDF2, 512 bits)", hodlResultSeedHex(wallet)); }
+    if (hodlResultHasRoot(wallet)) { lines.push(""); privateLine(`MASTER ${(wallet.rootPrivateLabel || hodlExtendedKeyVersions[hodlNetworkFamily(wallet.network)].x.prvName).toUpperCase()}`, hodlResultRootXprv(wallet)); }
+    if (hodlResultHasImportedPrivate(wallet)) { lines.push(""); privateLine(`IMPORTED ${(wallet.importedPrivateLabel || "EXTENDED PRIVATE KEY").toUpperCase()}`, hodlImportedPrivateKey(wallet)); }
     for (let account of wallet.accounts) {
       if (!hodlAccountHasPrivate(account)) continue;
-      lines.push("", `-- ${account.def.label} (${account.imported ? account.def.bip : `Purpose ${hodlPathComponent(account.def.purpose, account.def.purposeHardened !== false)}`}) PRIVATE ACCOUNT MATERIAL --`);
+      lines.push("");
+      privateLine(`-- ${account.def.label} (${account.imported ? account.def.bip : `Purpose ${hodlPathComponent(account.def.purpose, account.def.purposeHardened !== false)}`}) PRIVATE ACCOUNT MATERIAL --`);
       if (account.privateNode) {
-        lines.push(`${account.hasAlternateExport ? `SLIP-132 ${account.primaryPrivateLabel}` : `Account ${account.primaryPrivateLabel}`}: ${hodlAccountPrivateKey(account, account.primaryFamily)}`);
-        if (account.hasAlternateExport) lines.push(`Account ${account.genericPrivateLabel}: ${hodlAccountPrivateKey(account, "x")}`);
-        for (let branch of hodlAccountAddressBranches(account)) lines.push(`Spending ${hodlAddressBranchLabel(branch.branch).toLowerCase()} descriptor: ${hodlBranchPrivateDescriptor(account, branch.branch)}`);
+        privateLine(`${account.hasAlternateExport ? `SLIP-132 ${account.primaryPrivateLabel}` : `Account ${account.primaryPrivateLabel}`}:`, hodlAccountPrivateKey(account, account.primaryFamily), " ");
+        if (account.hasAlternateExport) privateLine(`Account ${account.genericPrivateLabel}:`, hodlAccountPrivateKey(account, "x"), " ");
+        for (let branch of hodlAccountAddressBranches(account)) privateLine(`Spending ${hodlAddressBranchLabel(branch.branch).toLowerCase()} descriptor:`, hodlBranchPrivateDescriptor(account, branch.branch), " ");
       }
       lines.push("Warning: An account extended public key plus a non-hardened descendant private key can reconstruct the account extended private key.");
-      for (let branch of hodlAccountAddressBranches(account)) hodlSheetWifRows(lines, `${hodlAddressBranchLabel(branch.branch)}-address private keys (WIF)`, branch.rows);
+      if (!compact) for (let branch of hodlAccountAddressBranches(account)) hodlSheetWifRows(lines, `${hodlAddressBranchLabel(branch.branch)}-address private keys (WIF)`, branch.rows, marks);
     }
   } else if (hasPrivate) {
     lines.push("PRIVATE RECOVERY MATERIAL OMITTED", "Private values were not saved because Show private recovery material was off.");
@@ -2397,10 +2853,13 @@ var hodlRecoverySheetText = function(wallet, revealPrivate) {
     lines.push("WATCH-ONLY EXPORTS", `${account.hasAlternateExport ? `SLIP-132 ${account.primaryPublicLabel}` : `Account ${account.primaryPublicLabel}`}: ${account.primaryPublic}`, ...account.walletDescriptor ? [`Watch-only wallet descriptor: ${account.walletDescriptor}`] : []);
     for (let branch of hodlAccountAddressBranches(account)) if (branch.publicDescriptor) lines.push(`Watch-only ${hodlAddressBranchLabel(branch.branch).toLowerCase()} descriptor: ${branch.publicDescriptor}`);
     if (account.hasAlternateExport) lines.push(`Account ${account.genericPublicLabel}: ${account.genericPublic}`);
-    lines.push("ADDRESSES");
-    for (let branch of hodlAccountAddressBranches(account)) hodlSheetAddressRows(lines, hodlAddressBranchLabel(branch.branch), branch.rows);
+    if (compact) lines.push("Derived address and WIF rows omitted from this backup snapshot; derive them again from the saved key inputs or recovery material.");
+    else {
+      lines.push("ADDRESSES");
+      for (let branch of hodlAccountAddressBranches(account)) hodlSheetAddressRows(lines, hodlAddressBranchLabel(branch.branch), branch.rows);
+    }
   }
-  return lines.join("\n");
+  return finish();
 };
 var hodlMaxPurpose = 2147483647, hodlMaxCoinType = 2147483647, hodlMaxAccount = 2147483647;
 function hodlScriptDefinition(id) {
@@ -2457,10 +2916,11 @@ function hodlUpdateCoinTypeHelp(input = document.getElementById("network"), help
 }
 function hodlUpdateHardeningHelp(prefix = "") {
   let hardening = hodlReadHardening(prefix), purpose = document.getElementById(`${prefix}purpose-help`), account = document.getElementById(`${prefix}account-help`), branch = document.getElementById(`${prefix}branch-start-help`), start = document.getElementById(`${prefix}address-start-help`);
-  if (purpose) purpose.textContent = `Purpose index · ${hardening.purpose ? "Hardened" : "Unhardened"} · 0 to 2,147,483,647`;
-  if (account && !(prefix && document.getElementById(`${prefix}account`)?.dataset.state === "not-applicable")) account.textContent = prefix ? `Account index · ${hardening.account ? "Hardened" : "Unhardened"} · Derived from co-signer key origins.` : `Account index · ${hardening.account ? "Hardened" : "Unhardened"} · 0 to 2,147,483,647`;
-  if (branch) branch.textContent = `First address branch to derive · 0 is Receive · 1 is Change · ${hardening.branch ? "Hardened" : "Unhardened"} · 0 to 2,147,483,647`;
-  if (start) start.textContent = `First address index to derive · ${hardening.address ? "Hardened" : "Unhardened"} · 0 to 2,147,483,647`;
+  let mode = (hardened) => (hardened ? hodlTText("Hardened") : hodlTText("Unhardened"));
+  if (purpose) purpose.textContent = hodlTText("Purpose index · {hardening} · 0 to 2,147,483,647", { hardening: mode(hardening.purpose) });
+  if (account && !(prefix && document.getElementById(`${prefix}account`)?.dataset.state === "not-applicable")) account.textContent = prefix ? hodlTText("Account index · {hardening} · Derived from co-signer key origins.", { hardening: mode(hardening.account) }) : hodlTText("Account index · {hardening} · 0 to 2,147,483,647", { hardening: mode(hardening.account) });
+  if (branch) branch.textContent = hodlTText("First address branch to derive · 0 is Receive · 1 is Change · {hardening} · 0 to 2,147,483,647", { hardening: mode(hardening.branch) });
+  if (start) start.textContent = hodlTText("First address index to derive · {hardening} · 0 to 2,147,483,647", { hardening: mode(hardening.address) });
   hodlUpdateCoinTypeHelp(document.getElementById(`${prefix}network`), document.getElementById(`${prefix}network-help`));
 }
 function hodlSelectedScriptType() {
@@ -2616,18 +3076,44 @@ function hodlFormatAddressEstimate(milliseconds) {
 function hodlUpdateAddressEstimate(prefix = "") {
   let estimate = document.getElementById(`${prefix}address-estimate`), help = document.getElementById(`${prefix}address-range-help`), startHelp = document.getElementById(`${prefix}address-start-help`), branchHelp = document.getElementById(`${prefix}branch-range-help`);
   if (!estimate || !help || !startHelp || !branchHelp) return;
+  let gapNote = document.getElementById(`${prefix}address-start-gap-note`);
   let maximum = hodlSyncAddressRangeLimit(prefix), branchMaximum = hodlSyncBranchRangeLimit(prefix);
   try {
-    let { range } = hodlReadAddressWindow(prefix, false), { branches } = hodlReadBranchWindow(prefix, false), hardening = hodlReadHardening(prefix), keyCount = prefix ? Math.max(1, Number(document.getElementById("msig-n")?.value) || 1) : (hodlImportedExtendedKeyDepth() ?? 0) > 0 ? 1 : 4;
-    let branchLabels = hodlAddressBranchSummary(branches), addressCopies = branches.map((branch) => `${range.toLocaleString()} ${hodlAddressBranchLabel(branch).toLowerCase()}`).join(" and ");
-    branchHelp.textContent = `Derives ${branchLabels} ${hardening.branch ? "hardened " : ""}${branches.length === 1 ? "branch" : "branches"} · Max ${branchMaximum}`;
-    startHelp.textContent = `First ${branchLabels.toLowerCase()} index to derive · ${hardening.address ? "Hardened" : "Unhardened"} · 0 to 2,147,483,647`;
-    help.textContent = `Derives ${addressCopies} ${range * branches.length === 1 ? "address" : "addresses"} · Max ${maximum.toLocaleString()}`;
-    estimate.textContent = hodlAddressBenchmarkMs == null ? "Measuring this device\u2026" : `Estimated derivation time on this device: ${hodlFormatAddressEstimate(hodlAddressBenchmarkMs * range * branches.length * keyCount)}.`;
+    let { start, range } = hodlReadAddressWindow(prefix, false), { branches } = hodlReadBranchWindow(prefix, false), hardening = hodlReadHardening(prefix), keyCount = prefix ? Math.max(1, Number(document.getElementById("msig-n")?.value) || 1) : (hodlImportedExtendedKeyDepth() ?? 0) > 0 ? 1 : 4;
+    // Whole sentences for the Receive branch, the Change branch, and both, so
+    // a translation can inflect them; a custom branch window is named in the
+    // English the branch labels use.
+    let both = branches.length === 2 && branches[0] === 0 && branches[1] === 1, receive = branches.length === 1 && branches[0] === 0, change = branches.length === 1 && branches[0] === 1;
+    let hardened = hardening.branch, one = range * branches.length === 1, count = range.toLocaleString(), max = maximum.toLocaleString();
+    let vars = { max: branchMaximum, hardening: hardening.address ? hodlTText("Hardened") : hodlTText("Unhardened"), branches: hodlAddressBranchSummary(branches) };
+    branchHelp.textContent = both ? hodlTText(hardened ? "Derives Receive and Change hardened branches · Max {max}" : "Derives Receive and Change branches · Max {max}", vars)
+      : receive ? hodlTText(hardened ? "Derives Receive hardened branch · Max {max}" : "Derives Receive branch · Max {max}", vars)
+      : change ? hodlTText(hardened ? "Derives Change hardened branch · Max {max}" : "Derives Change branch · Max {max}", vars)
+      : hodlTText(branches.length === 1 ? (hardened ? "Derives {branches} hardened branch · Max {max}" : "Derives {branches} branch · Max {max}") : (hardened ? "Derives {branches} hardened branches · Max {max}" : "Derives {branches} branches · Max {max}"), vars);
+    startHelp.textContent = both ? hodlTText("First receive and change index to derive · {hardening} · 0 to 2,147,483,647", vars)
+      : receive ? hodlTText("First receive index to derive · {hardening} · 0 to 2,147,483,647", vars)
+      : change ? hodlTText("First change index to derive · {hardening} · 0 to 2,147,483,647", vars)
+      : hodlTText("First {branches} index to derive · {hardening} · 0 to 2,147,483,647", { ...vars, branches: vars.branches.toLowerCase() });
+    // Wallets such as Sparrow and Electrum scan about 20 unused addresses
+    // ahead (indexes 0-19 in a fresh wallet), so coins received at index 20
+    // or deeper show as a zero balance there until the gap limit is raised.
+    if (gapNote) {
+      gapNote.hidden = start < 20;
+      gapNote.textContent = start >= 20 ? hodlTText("Wallets only look about 20 unused addresses ahead. If coins arrive at index {n}, raise your wallet's gap limit above that, or the balance will show as zero (Sparrow: Settings → Advanced → Gap limit). EntropyLab's Bitcoin Core export already covers this window.", { n: start.toLocaleString() }) : "";
+    }
+    help.textContent = both ? hodlTText("Derives {count} receive and {count} change addresses · Max {max}", { count, max })
+      : receive ? hodlTText(one ? "Derives {count} receive address · Max {max}" : "Derives {count} receive addresses · Max {max}", { count, max })
+      : change ? hodlTText(one ? "Derives {count} change address · Max {max}" : "Derives {count} change addresses · Max {max}", { count, max })
+      : hodlTText(one ? "Derives {list} address · Max {max}" : "Derives {list} addresses · Max {max}", { list: branches.map((branch) => `${count} ${hodlAddressBranchLabel(branch).toLowerCase()}`).join(" and "), max });
+    estimate.textContent = hodlAddressBenchmarkMs == null ? hodlTText("Measuring this device\u2026") : hodlTText("Estimated derivation time on this device: {time}.", { time: hodlFormatAddressEstimate(hodlAddressBenchmarkMs * range * branches.length * keyCount) });
   } catch (error) {
-    branchHelp.textContent = "Choose one or two valid address branches.";
-    help.textContent = "Choose a valid address range.";
+    branchHelp.textContent = hodlTText("Choose one or two valid address branches.");
+    help.textContent = hodlTText("Choose a valid address range.");
     estimate.textContent = error.message;
+    if (gapNote) {
+      gapNote.hidden = true;
+      gapNote.textContent = "";
+    }
   }
 }
 function hodlInitAddressBenchmark() {
@@ -2695,7 +3181,7 @@ function hodlSetDerivationButtonState(kind, state, button = hodlDerivationButton
     button.setAttribute("aria-label", kind === "msig" ? hodlTText("Stopping multisig derivation") : hodlTText("Stopping key derivation"));
     button.dataset.derivationState = "stopping";
   } else {
-    let label = kind === "msig"
+    let label = button.id === "journal-keymanager-derive" ? hodlTText("Derive all pending") : kind === "msig"
       ? button.id === "msig-update" ? hodlTText("Update Existing Multisig") : hodlMsigs[hodlActiveMsig]?.editSourceId != null ? hodlTText("Derive New Multisig") : hodlTText("Derive Multisig")
       : button.id === "key-update" ? hodlTText("Update Existing Key") : hodlKeys[hodlActiveKey]?.editSourceId != null ? hodlTText("Derive New Key") : hodlTText("Derive Key");
     button.textContent = label;
@@ -2797,6 +3283,7 @@ function hodlHandleDerivationButton(kind, derive, buttonId) {
 }
 async function hodlDeriveWithProgress(kind, derive, buttonId) {
   if (hodlActiveDerivation) return;
+  let logGeneration = hodlJournalGeneration, logTool = buttonId === "journal-keymanager-derive" ? "journal" : kind === "msig" ? "msig" : "calc";
   let multisig = kind === "msig", progress = document.getElementById(multisig ? "msig-derive-progress" : "derive-progress");
   let control = { kind, buttonId, cancelled: false, rowKeys: [], nodes: [] };
   hodlActiveDerivation = control;
@@ -2804,6 +3291,8 @@ async function hodlDeriveWithProgress(kind, derive, buttonId) {
   hodlSetDerivationButtonState(kind, "running");
   hodlSyncDeriveButton();
   hodlSyncMsigDeriveButton();
+  hodlKeyManagerSyncDerivationUI();
+  hodlJournalLog("derive-start", "", logTool);
   try {
     await hodlDerivationPause();
     await hodlDerivationPause();
@@ -2820,12 +3309,14 @@ async function hodlDeriveWithProgress(kind, derive, buttonId) {
     if (error instanceof HodlDerivationCancelledError) hodlResetDerivationProgress(kind);
     else throw error;
   } finally {
+    if (control.cancelled && logGeneration === hodlJournalGeneration) hodlJournalLog("derive-cancel", "", logTool);
     hodlSettleDerivationKeys(control);
     hodlSetDerivationButtonState(kind, "idle");
     if (hodlActiveDerivation === control) hodlActiveDerivation = null;
     hodlSyncDeriveButton();
     hodlSyncMsigDeriveButton();
     hodlSyncPurposeMatchControls();
+    hodlKeyManagerSyncDerivationUI();
   }
 }
 function hodlImportedExtendedKeyDepth() {
@@ -2984,7 +3475,7 @@ function hodlSeedPhraseField(label, value) {
   let text = String(value ?? "\u2014"), shown = hodlRevealPrivate
     ? `<span class="secret private-field-value seed-phrase-value" data-private-value data-i18n-skip translate="no">${hodlSeedPhraseTokens(text)}</span>`
     : `<span class="secret private-field-value secret-placeholder seed-phrase-value"><span class="secret-placeholder-mask" aria-hidden="true">${hodlSeedPhraseTokens(text, true)}</span><span class="secret-placeholder-message" aria-hidden="true">************</span><span class="secret-placeholder-label">${hodlT("Private value hidden")}</span></span>`;
-  return hodlPrivateFieldMarkup(hodlEscapeHtml(label), shown, { copyLabel: "Copy seed phrase" });
+  return hodlPrivateFieldMarkup(hodlEscapeHtml(label), shown, { copyLabel: hodlTText("Copy seed phrase to EntropyLab's clipboard") });
 }
 function hodlSeedQrDigits(mnemonic) {
   let words = String(mnemonic ?? "").trim().split(/\s+/).filter(Boolean);
@@ -3263,7 +3754,10 @@ function hodlDPlusRolls(value, targetWords = hodlTargetWordCount) {
     warnings = [];
   notes.push(hodlNote("D++ D16 results use the hexadecimal faces 0 through F exactly as shown on the dice."));
   if (complete && finalWord) {
-    let details = finalInfo.map((info) => info.step === "coin" ? hodlNote(Number(info.value) >= 5 ? "D8 result {value} read as Heads" : "D8 result {value} read as Tails", { value: info.value }) : hodlNote("{die} result {value}", { die: hodlDPlusStepLabel(info.step), value: info.value }));
+    // The coin note names the side hodlDPlusStepValue read: bit 0 is Heads
+    // (faces 1-4) and bit 1 Tails (5-8). The note computed its own side,
+    // reversed (red-team sweep 0eed735, part03 #3).
+    let details = finalInfo.map((info) => info.step === "coin" ? hodlNote(hodlDPlusStepValue("coin", info.value) ? "D8 result {value} read as Tails" : "D8 result {value} read as Heads", { value: info.value }) : hodlNote("{die} result {value}", { die: hodlDPlusStepLabel(info.step), value: info.value }));
     notes.push(details.length === 1 ? hodlNote("Final {detail} selected checksum option {n} of {total}: {word}.", { detail: details[0], n: finalIndex + 1, total: candidates.length, word: finalWord }) : hodlNote("Final {a} and {b} selected checksum option {n} of {total}: {word}.", { a: details[0], b: details[1], n: finalIndex + 1, total: candidates.length, word: finalWord }));
   }
   if (waiting === "last-word") notes.push(hodlNote("Choose 1 of {n} checksum-valid final words to complete the {words}-word seed.", { n: config.candidates, words: config.words }));
@@ -3406,6 +3900,8 @@ function hodlDiceFairnessFaceLabel(label) {
   return String(label ?? "");
 }
 function hodlDiceFairnessAssess(rolls, labels, title) {
+  // Face counts discard ordering: a predictable cycle can score chi = 0.
+  // The CDF is a reference percentile, never the probability the die is fair.
   let faces = Array.isArray(labels) && labels.length ? labels.map((label) => String(label)) : [], n = (rolls || []).length, sides = faces.length, minimum = hodlDiceMinimumRolls(sides);
   let counts = faces.map((label) => ({ label, count: 0 })), indexByLabel = new Map(faces.map((label, index) => [label, index]));
   for (let roll of rolls || []) {
@@ -3459,8 +3955,8 @@ function hodlDiceFairnessNote(report) {
   if (!report.n) return "";
   let title = report.title === "Coin" ? hodlTText("Coin") : report.title;
   if (!report.enough) return hodlTText("{n} of {minimum} minimum {title} rolls for Pearson’s χ² test · {remaining} more needed.", { n: report.n, minimum: report.minimum, title, remaining: report.remaining });
-  let robust = report.minimum * 2, quality = report.n >= robust ? hodlTText("Enough rolls to reasonably assess fairness.") : hodlTText("Minimum reached. {n} more would make the estimate more robust.", { n: robust - report.n });
-  return hodlTText("A fair {title} would score χ² below {chi} in {percent}% of tests. {quality}", { title, chi: hodlFormatFairnessNumber(report.chi), percent: hodlFormatFairnessNumber(report.cdf * 100), quality });
+  let robust = report.minimum * 2, quality = report.n >= robust ? hodlTText("Sample exceeds the minimum count for this frequency test.") : hodlTText("Minimum count reached. Another {n} rolls would double that minimum.", { n: robust - report.n });
+  return hodlTText("χ² {chi} is at approximately the {percent}% reference percentile, assuming independent fair {title} rolls. {quality}", { title, chi: hodlFormatFairnessNumber(report.chi), percent: hodlFormatFairnessNumber(report.cdf * 100), quality });
 }
 function hodlDiceFairnessMarkup(reports) {
   return (reports || []).filter((report) => report.n > 0).map((report) => {
@@ -3500,7 +3996,7 @@ function hodlSetDiceFairnessOpen(open) {
 function hodlRenderDiceFairness(value, method, targetWords = hodlTargetWordCount) {
   let panel = document.getElementById("dice-fairness");
   if (!panel) return;
-  let reports = hodlDiceFairnessReports(value, method, targetWords), markup = hodlDiceFairnessMarkup(reports), open = hodlDiceFairnessIsOpen();
+  let reports = hodlSecureDiceApplies() ? hodlSecureDiceFairnessReportsOf(hodlSecureDiceEntry()) : hodlDiceFairnessReports(value, method, targetWords), markup = hodlDiceFairnessMarkup(reports), open = hodlDiceFairnessIsOpen();
   // There is nothing to analyse until rolls arrive, so the control comes and
   // goes with the analysis rather than offering to open an empty panel. The
   // panel goes with it, or clearing the rolls would strand it open with no
@@ -3509,7 +4005,7 @@ function hodlRenderDiceFairness(value, method, targetWords = hodlTargetWordCount
   if (row?.classList.contains("dice-fairness-row")) row.hidden = !markup;
   panel.hidden = !open || !markup;
   panel.dataset.tone = open ? hodlDiceFairnessTone(reports) : "muted";
-  panel.innerHTML = open ? (markup ? `${markup}<p class="dice-fairness-caveat">${hodlT("Pearson’s χ² goodness-of-fit. A lucky streak can look biased, and a biased die can look fair until more rolls arrive. This check does not block derivation.")}</p>` : `<p class="dice-fairness-note">${hodlT("Enter rolls to run Pearson’s χ² test.")}</p>`) : "";
+  panel.innerHTML = open ? (markup ? `${markup}<p class="dice-fairness-caveat">${hodlT("This checks face counts only. It cannot establish independence, unpredictability, or entropy. Repeating 123456 can give balanced counts. The percentile is not the probability that the die is fair. This check does not block derivation.")}</p>` : `<p class="dice-fairness-note">${hodlT("Enter rolls to run Pearson’s χ² test.")}</p>`) : "";
   panel.setAttribute("aria-label", hodlTText("Die Distribution / Fairness Analysis"));
 }
 function hodlDiceControlValue(button) {
@@ -3875,11 +4371,11 @@ function hodlIanColemanDiceString(rolls) {
 }
 function hodlDiceEntropy(value, method, targetWords = hodlTargetWordCount) {
   let config = hodlSeedConfig(targetWords), notes = [], warnings = [];
-    if (method === "dplus") return { ok: false, error: { key: "D++ directly selects {partial} BIP39 words; {final} to finish with the final checksum word.", vars: { partial: config.partialWords, final: hodlDPlusFinalDescription(config.words) } }, notes, warnings };
+    if (method === "dplus") return { ok: false, error: hodlNote("D++ directly selects {partial} BIP39 words; {final} to finish with the final checksum word.", { partial: config.partialWords, final: hodlDPlusFinalDescription(config.words) }), notes, warnings };
   let parsed = hodlSplitDiceString(value), rolls = parsed.rolls;
-  if (method === "bitbox") return { ok: false, error: { key: "BitBox diceware uses {partial} lookup-table words and a final checksum pick for a {words}-word seed.", vars: { partial: config.partialWords, words: config.words } }, notes, warnings };
-  if (parsed.leftover.length) return { ok: false, error: { key: "Dice must be faces 1–6. Ignored characters: {chars}", vars: { chars: JSON.stringify(parsed.leftover.slice(0, 24)) } }, notes, warnings };
-  if (!rolls.length) return { ok: false, error: { key: "Enter at least one dice roll (faces 1–6)." }, notes, warnings };
+  if (method === "bitbox") return { ok: false, error: hodlNote("BitBox diceware uses {partial} lookup-table words and a final checksum pick for a {words}-word seed.", { partial: config.partialWords, words: config.words }), notes, warnings };
+  if (parsed.leftover.length) return { ok: false, error: hodlNote("Dice must be faces 1–6. Ignored characters: {chars}", { chars: JSON.stringify(parsed.leftover.slice(0, 24)) }), notes, warnings };
+  if (!rolls.length) return { ok: false, error: hodlNote("Enter at least one dice roll (faces 1–6)."), notes, warnings };
   let sourceBits = hodlDiceEntropyBits(rolls.length);
   notes.push(hodlNote("{n} rolls of a fair six-sided die ≈ {bits} bits.", { n: rolls.length, bits: sourceBits.toFixed(1) }));
   if (rolls.length < config.hashRolls) warnings.push(hodlNote("Only {have} of {need} recommended fair-die rolls were entered. The {words}-word phrase is deterministic, but its security cannot exceed the approximately {bits} bits supplied. Use only for testing until the recommendation is met.", { have: rolls.length, need: config.hashRolls, words: config.words, bits: sourceBits.toFixed(1) }));
@@ -3887,20 +4383,20 @@ function hodlDiceEntropy(value, method, targetWords = hodlTargetWordCount) {
   let hashInput = method === "coleman" ? hodlIanColemanDiceString(rolls) : rolls.join(""), digest = hodlSha256(new TextEncoder().encode(hashInput)), bytes = digest.slice(0, config.bytes);
   if (method === "coleman") notes.push(hodlNote("Hashed rolls / Base 6 [0-5]: convert every 6 to 0, SHA-256 hash the complete mapped digit string, then use the first {bits} bits for the selected {words}-word seed. This matches the method used by Keystone.", { bits: config.bits, words: config.words }));
   else notes.push(hodlNote("Hashed rolls / Base 10 [1-6]: SHA-256 hash the complete original dice digit string, then use the first {bits} bits for the selected {words}-word seed. This matches COLDCARD and SeedSigner.", { bits: config.bits, words: config.words }));
-  return { ok: true, bytes, hex: hodlHex.encode(bytes), bits: config.bits, sourceBits, method: method === "coleman" ? "ian-coleman-dice-sha256" : "coldcard-sha256", notes, warnings };
+  return { ok: true, bytes, bits: config.bits, sourceBits, method: method === "coleman" ? "ian-coleman-dice-sha256" : "coldcard-sha256", notes, warnings };
 }
 function hodlNumberBaseEntropy(value, format, targetWords = hodlTargetWordCount) {
   let meta = hodlEntropyFormatConfig(format, targetWords), analysis = hodlAnalyzeEntropyInput(value, meta.id, meta.seed.words), notes = [], warnings = [];
-  if (!analysis.count) return { ok: false, error: { key: "Enter exactly {digits} {unit} for a {words}-word seed.", vars: { digits: meta.digits, unit: hodlT(meta.unit), words: meta.seed.words } }, notes, warnings };
-  if (analysis.invalidCharacterCount) return { ok: false, error: { key: analysis.invalidCharacterCount === 1 ? "{label} entropy contains {n} invalid character." : "{label} entropy contains {n} invalid characters.", vars: { label: hodlT(meta.shortLabel), n: analysis.invalidCharacterCount } }, notes, warnings };
-  if (analysis.finalInvalid) return { ok: false, error: meta.binaryRemainder ? { key: meta.remainderBits === 1 ? "The final {n} {label} entropy bit must each be 0 or 1." : "The final {n} {label} entropy bits must each be 0 or 1.", vars: { n: meta.remainderBits, label: hodlT(meta.shortLabel) } } : { key: meta.remainderBits === 1 ? "The final {label} character contributes only {n} bit and must be one of {chars}." : "The final {label} character contributes only {n} bits and must be one of {chars}.", vars: { label: hodlT(meta.shortLabel), n: meta.remainderBits, chars: [...meta.finalCharacters].join(", ") } }, notes, warnings };
-  if (analysis.count !== meta.digits) return { ok: false, error: { key: "The selected {words}-word seed needs exactly {digits} {unit} ({bits} bits). You entered {have}.", vars: { words: meta.seed.words, digits: meta.digits, unit: hodlT(meta.unit), bits: meta.seed.bits, have: analysis.count } }, notes, warnings };
+  if (!analysis.count) return { ok: false, error: hodlNote("Enter exactly {digits} {unit} for a {words}-word seed.", { digits: meta.digits, unit: hodlT(meta.unit), words: meta.seed.words }), notes, warnings };
+  if (analysis.invalidCharacterCount) return { ok: false, error: hodlNote(analysis.invalidCharacterCount === 1 ? "{label} entropy contains {n} invalid character." : "{label} entropy contains {n} invalid characters.", { label: hodlT(meta.shortLabel), n: analysis.invalidCharacterCount }), notes, warnings };
+  if (analysis.finalInvalid) return { ok: false, error: meta.binaryRemainder ? hodlNote(meta.remainderBits === 1 ? "The final {n} {label} entropy bit must each be 0 or 1." : "The final {n} {label} entropy bits must each be 0 or 1.", { n: meta.remainderBits, label: hodlT(meta.shortLabel) }) : hodlNote(meta.remainderBits === 1 ? "The final {label} character contributes only {n} bit and must be one of {chars}." : "The final {label} character contributes only {n} bits and must be one of {chars}.", { label: hodlT(meta.shortLabel), n: meta.remainderBits, chars: [...meta.finalCharacters].join(", ") }), notes, warnings };
+  if (analysis.count !== meta.digits) return { ok: false, error: hodlNote("The selected {words}-word seed needs exactly {digits} {unit} ({bits} bits). You entered {have}.", { words: meta.seed.words, digits: meta.digits, unit: hodlT(meta.unit), bits: meta.seed.bits, have: analysis.count }), notes, warnings };
   let bits = hodlNumberBaseBits(value, meta.id, meta.seed.words), bytes = new Uint8Array(meta.seed.bytes);
   for (let index = 0; index < bytes.length; index++) bytes[index] = Number.parseInt(bits.slice(index * 8, index * 8 + 8), 2);
-  notes.push(hodlNote("{digits} {unit} = {bits} bits of {label} entropy.", { digits: meta.digits, unit: hodlNote(meta.unit), bits: meta.seed.bits, label: hodlNote(`hex.short.${meta.id}`) }));
-  if (meta.remainderBits) notes.push(meta.binaryRemainder ? hodlNote(meta.remainderBits === 1 ? "{full} complete {label} characters are followed by {n} individual coin-flip entropy bit." : "{full} complete {label} characters are followed by {n} individual coin-flip entropy bits.", { full: meta.fullDigits, label: hodlNote(`hex.short.${meta.id}`), n: meta.remainderBits }) : hodlNote(meta.remainderBits === 1 ? "The final character is mixed-radix: it contributes the remaining {n} entropy bit and must be one of {chars}." : "The final character is mixed-radix: it contributes the remaining {n} entropy bits and must be one of {chars}.", { n: meta.remainderBits, chars: [...meta.finalCharacters].join(", ") }));
+  notes.push(hodlNote("{digits} {unit} = {bits} bits of {label} entropy.", { digits: meta.digits, unit: hodlNote(meta.unit), bits: meta.seed.bits, label: hodlNote(meta.shortLabel) }));
+  if (meta.remainderBits) notes.push(meta.binaryRemainder ? hodlNote(meta.remainderBits === 1 ? "{full} complete {label} characters are followed by {n} individual coin-flip entropy bit." : "{full} complete {label} characters are followed by {n} individual coin-flip entropy bits.", { full: meta.fullDigits, label: hodlNote(meta.shortLabel), n: meta.remainderBits }) : hodlNote(meta.remainderBits === 1 ? "The final character is mixed-radix: it contributes the remaining {n} entropy bit and must be one of {chars}." : "The final character is mixed-radix: it contributes the remaining {n} entropy bits and must be one of {chars}.", { n: meta.remainderBits, chars: [...meta.finalCharacters].join(", ") }));
   notes.push(hodlNote("BIP39 entropy length: {bits} bits → {words}-word seed.", { bits: meta.seed.bits, words: meta.seed.words }));
-  return { ok: true, bytes, hex: hodlHex.encode(bytes), bits: meta.seed.bits, sourceBits: meta.seed.bits, method: meta.method, notes, warnings };
+  return { ok: true, bytes, bits: meta.seed.bits, sourceBits: meta.seed.bits, method: meta.method, notes, warnings };
 }
 function hodlCardNeeded(targetWords = hodlTargetWordCount) {
   // Derived from the selected BIP39 entropy target, not policy constants:
@@ -3913,6 +4409,8 @@ function hodlCardNeeded(targetWords = hodlTargetWordCount) {
   return { first: 52, extra: 52 };
 }
 function hodlCardWithoutReplacementBits(count) {
+  // Capacity of a uniformly shuffled deck; the transcript cannot prove that
+  // the real shuffle was uniform or that a second shuffle was independent.
   let bits = 0, n = Math.min(Math.max(0, Number(count) || 0), 52);
   for (let i = 0; i < n; i++) bits += Math.log2(52 - i);
   return bits;
@@ -3933,7 +4431,10 @@ function hodlParseCards(raw, targetWords = hodlTargetWordCount) {
       invalidEntries.push(entry);
       continue;
     }
-    let pool = cards.length < needed.first ? cards : cards.slice(needed.first);
+    // A one-deck target (needed.extra is 0 — no second shuffle is ever
+    // instructed) repeats against every card dealt so far; a two-deck target
+    // (24 words) starts a fresh pool past the first shuffle (audit L1).
+    let pool = needed.extra ? (cards.length < needed.first ? cards : cards.slice(needed.first)) : cards;
     if (pool.includes(card)) {
       entry.duplicate = true;
       duplicates.push(card);
@@ -3941,8 +4442,15 @@ function hodlParseCards(raw, targetWords = hodlTargetWordCount) {
     } else cards.push(card);
   }
   let firstCount = Math.min(cards.length, needed.first), extraCount = Math.max(0, cards.length - needed.first);
-  let bits = hodlCardWithoutReplacementBits(firstCount);
-  for (let i = 0; i < extraCount; i++) bits += Math.log2(52 - i);
+  let bits;
+  if (needed.extra) {
+    bits = hodlCardWithoutReplacementBits(firstCount);
+    for (let i = 0; i < extraCount; i++) bits += Math.log2(52 - i);
+  } else {
+    // One deal, one deck: the ceiling is the deal's own without-replacement
+    // entropy, log2(52!/(52-n)!), never a fresh-deck credit (audit L1).
+    bits = hodlCardWithoutReplacementBits(cards.length);
+  }
   return { cards, invalid, duplicates, entries, invalidEntries, duplicateEntries, bits, needed, hashInput: hodlCardsHashInput(cards) };
 }
 function hodlCardsHashInput(cards, coleman = false) {
@@ -3988,19 +4496,21 @@ function hodlDealtCardMarkup(card) {
 }
 function hodlCardsEntropy(value, targetWords = hodlTargetWordCount, coleman = false) {
   let config = hodlSeedConfig(targetWords), notes = [], warnings = [], parsed = hodlParseCards(value, config.words);
-  if (parsed.invalid.length) return { ok: false, error: { key: "Cards use rank then suit, like AS, 10H, or TD. Ignored: {ignored}", vars: { ignored: parsed.invalid.slice(0, 8).join(" ") } }, notes, warnings, parsed };
-  if (parsed.duplicates.length) return { ok: false, error: { key: "Do not repeat a card in the same shuffle. Repeated: {card}.", vars: { card: parsed.duplicates[0] } }, notes, warnings, parsed };
-  if (!parsed.cards.length) return { ok: false, error: { key: "Deal at least one card from a shuffled deck." }, notes, warnings, parsed };
+  if (parsed.invalid.length) return { ok: false, error: hodlNote("Cards use rank then suit, like AS, 10H, or TD. Ignored: {ignored}", { ignored: parsed.invalid.slice(0, 8).join(" ") }), notes, warnings, parsed };
+  if (parsed.duplicates.length) return { ok: false, error: hodlNote("Do not repeat a card in the same shuffle. Repeated: {card}.", { card: parsed.duplicates[0] }), notes, warnings, parsed };
+  if (!parsed.cards.length) return { ok: false, error: hodlNote("Deal at least one card from a shuffled deck."), notes, warnings, parsed };
   let required = parsed.needed.first + parsed.needed.extra, hashInput = hodlCardsHashInput(parsed.cards, coleman);
   notes.push(hodlNote(parsed.cards.length === 1 ? "{n} card ≈ {bits} bits." : "{n} cards ≈ {bits} bits.", { n: parsed.cards.length, bits: parsed.bits.toFixed(1) }));
   notes.push(hodlNote(coleman ? "SHA-256 hashes Ian Coleman's suit-symbol transcript (A♠ 2♣ T♦), then the first {bits} bits become the selected {words}-word seed. One shuffled deck is about 225.6 bits." : "SHA-256 hashes the ASCII transcript (AS 2C TD), then the first {bits} bits become the selected {words}-word seed. One shuffled deck is about 225.6 bits.", { bits: config.bits, words: config.words }));
   if (parsed.cards.length < required) warnings.push(hodlNote("Only {have} of {need} recommended cards were entered. The {words}-word phrase is deterministic, but its security cannot exceed the approximately {bits} bits supplied. Use only for testing until the recommendation is met.", { have: parsed.cards.length, need: required, words: config.words, bits: parsed.bits.toFixed(1) }));
   if (parsed.cards.length > required) notes.push(hodlNote("All {n} cards, including extras, are included in the hash.", { n: parsed.cards.length }));
   let digest = hodlSha256(new TextEncoder().encode(hashInput)), bytes = digest.slice(0, config.bytes);
-  return { ok: true, bytes, hex: hodlHex.encode(bytes), bits: config.bits, sourceBits: parsed.bits, method: coleman ? "ian-coleman-cards-sha256" : "cards-sha256", notes, warnings, parsed, hashInput };
+  return { ok: true, bytes, bits: config.bits, sourceBits: parsed.bits, method: coleman ? "ian-coleman-cards-sha256" : "cards-sha256", notes, warnings, parsed, hashInput };
 }
 function hodlCardSelectionState(cards, needed, selectedSuit = "", selectedRank = "") {
-  let currentShuffle = cards.length < needed.first ? cards : cards.slice(needed.first), used = new Set(currentShuffle), available = [];
+  // Same deck rule as hodlParseCards (audit L1): a one-deck target deals from
+  // the same shuffle throughout; only a two-deck target resets past the first.
+  let currentShuffle = needed.extra && cards.length >= needed.first ? cards.slice(needed.first) : cards, used = new Set(currentShuffle), available = [];
   for (let suit of hodlCardSuits) for (let rank of hodlCardRanks) {
     let card = rank + suit.code;
     if (!used.has(card)) available.push(card);
@@ -4088,15 +4598,15 @@ function hodlParseDirectCards(raw, targetWords = hodlTargetWordCount) {
 }
 function hodlDirectCardsEntropy(value, targetWords = hodlTargetWordCount) {
   let parsed = hodlParseDirectCards(value, targetWords), config = parsed.config, notes = [], warnings = [];
-  if (parsed.invalidEntries.length) return { ok: false, error: { key: "Correct the highlighted rank. This draw allows only Ace through {max}.", vars: { max: parsed.invalidEntries[0].max } }, notes, warnings, parsed };
-  if (parsed.extraEntries.length) return { ok: false, error: { key: parsed.extraEntries.length === 1 ? "The {words}-word seed is complete. Remove {n} extra card." : "The {words}-word seed is complete. Remove {n} extra cards.", vars: { words: config.words, n: parsed.extraEntries.length } }, notes, warnings, parsed };
-  if (!parsed.complete) return { ok: false, error: { key: parsed.steps.length - parsed.entries.length === 1 ? "Enter {n} more rank-only draw." : "Enter {n} more rank-only draws.", vars: { n: parsed.steps.length - parsed.entries.length } }, notes, warnings, parsed };
+  if (parsed.invalidEntries.length) return { ok: false, error: hodlNote("Correct the highlighted rank. This draw allows only Ace through {max}.", { max: parsed.invalidEntries[0].max }), notes, warnings, parsed };
+  if (parsed.extraEntries.length) return { ok: false, error: hodlNote(parsed.extraEntries.length === 1 ? "The {words}-word seed is complete. Remove {n} extra card." : "The {words}-word seed is complete. Remove {n} extra cards.", { words: config.words, n: parsed.extraEntries.length }), notes, warnings, parsed };
+  if (!parsed.complete) return { ok: false, error: hodlNote(parsed.steps.length - parsed.entries.length === 1 ? "Enter {n} more rank-only draw." : "Enter {n} more rank-only draws.", { n: parsed.steps.length - parsed.entries.length }), notes, warnings, parsed };
   let mnemonic = [...parsed.wordSlots, parsed.finalWord].join(" ");
-  if (!hodlIsValidMnemonic(mnemonic, hodlBip39Wordlist)) return { ok: false, error: { key: "The direct card sequence did not produce a valid BIP39 checksum." }, notes, warnings, parsed };
+  if (!hodlIsValidMnemonic(mnemonic, hodlBip39Wordlist)) return { ok: false, error: hodlNote("The direct card sequence did not produce a valid BIP39 checksum."), notes, warnings, parsed };
   let bytes = hodlMnemonicToEntropy(mnemonic, hodlBip39Wordlist);
   notes.push(hodlNote("{draws} independent rank-only card draws directly selected {partial} BIP39 words and 1 of {candidates} checksum-valid final words.", { draws: parsed.steps.length, partial: config.partialWords, candidates: config.candidates }));
   notes.push(hodlNote("Every draw is made after shuffling the indicated A–8, A–4, or A–2 card set; suits are ignored."));
-  return { ok: true, bytes, hex: hodlHex.encode(bytes), bits: config.bits, sourceBits: config.bits, method: "cards-direct", notes, warnings, parsed, mnemonic };
+  return { ok: true, bytes, bits: config.bits, sourceBits: config.bits, method: "cards-direct", notes, warnings, parsed, mnemonic };
 }
 function hodlDirectCardSetLabel(max) {
   return `A\u2013${max}`;
@@ -4175,9 +4685,10 @@ function hodlUpdateDirectCards() {
 }
 function hodlSelectedCardsEntropy(targetWords = hodlTargetWordCount) {
   let input = document.getElementById(hodlCardMethod === "direct" ? "direct-cards" : "cards");
-  if (!input) return { ok: false, error: { key: "Card input is unavailable." } };
+  if (!input) return { ok: false, error: hodlNote("Card input is unavailable.") };
   return hodlCardMethod === "direct" ? hodlDirectCardsEntropy(input.value, targetWords) : hodlCardsEntropy(input.value, targetWords, hodlCardColemanSymbols);
 }
+
 function hodlUpdateCards() {
   let input = document.getElementById("cards");
   if (!input) return;
@@ -4273,16 +4784,23 @@ function hodlSeedCountStatus(count, targetWords = hodlTargetWordCount) {
   return entered <= config.words ? hodlT("{entered} of {words} BIP39 words entered", { entered, words: config.words }) : hodlT("{entered} entered · {words} required BIP39 words", { entered, words: config.words });
 }
 function hodlValidateTargetMnemonic(value, targetWords = hodlTargetWordCount) {
+  // Digits and non-ASCII letters are separators to the normalizer but word
+  // characters to the analyzer: "abandon1abandon" shows red and would still
+  // derive the clean phrase's wallet. Refuse them instead of silently
+  // changing the phrase (audit follow-up).
+  if (/[0-9]|[^\x00-\x7F]/.test(String(value ?? ""))) {
+    return { ok: false, words: [], error: hodlNote("Seed words are the BIP39 English list: remove digits and non-ASCII characters."), unknown: [] };
+  }
   let words = hodlNormalizeMnemonicText(value).split(" ").filter(Boolean), config = hodlSeedConfig(targetWords);
-  if (!words.length) return { ok: false, words, error: { key: "{entered} of {words} BIP39 words entered · {n} remaining", vars: { entered: 0, words: config.words, n: config.words } }, unknown: [] };
+  if (!words.length) return { ok: false, words, error: hodlNote("{entered} of {words} BIP39 words entered · {n} remaining", { entered: 0, words: config.words, n: config.words }), unknown: [] };
   if (words.length !== config.words) {
     let difference = config.words - words.length;
-    return difference > 0 ? { ok: false, words, error: { key: "{entered} of {words} BIP39 words entered · {n} remaining", vars: { entered: words.length, words: config.words, n: difference } }, unknown: [] } : { ok: false, words, error: { key: difference === -1 ? "{entered} entered · {words} required BIP39 words · {n} extra word must be removed" : "{entered} entered · {words} required BIP39 words · {n} extra words must be removed", vars: { entered: words.length, words: config.words, n: -difference } }, unknown: [] };
+    return difference > 0 ? { ok: false, words, error: hodlNote("{entered} of {words} BIP39 words entered · {n} remaining", { entered: words.length, words: config.words, n: difference }), unknown: [] } : { ok: false, words, error: hodlNote(difference === -1 ? "{entered} entered · {words} required BIP39 words · {n} extra word must be removed" : "{entered} entered · {words} required BIP39 words · {n} extra words must be removed", { entered: words.length, words: config.words, n: -difference }), unknown: [] };
   }
   let result = hodlValidateMnemonic(words.join(" "));
   if (result.ok) return result;
-  if (result.unknown?.length) return { ...result, error: { key: "Word {n} (“{word}”) is not on the BIP39 English list.", vars: { n: result.unknown[0].index + 1, word: result.unknown[0].word } } };
-  return { ...result, error: { key: "Words are on the list, but the checksum does not match. One of the words is wrong, or this is not a BIP39 phrase." } };
+  if (result.unknown?.length) return { ...result, error: hodlNote("Word {n} (“{word}”) is not on the BIP39 English list.", { n: result.unknown[0].index + 1, word: result.unknown[0].word }) };
+  return { ...result, error: hodlNote("Words are on the list, but the checksum does not match. One of the words is wrong, or this is not a BIP39 phrase.") };
 }
 function hodlNormalizeSeedMethod(method) {
   return method === "numbers" ? "numbers" : "words";
@@ -4378,6 +4896,16 @@ function hodlAnalyzeSeedInput(input, targetWords = hodlTargetWordCount) {
     let final = tokens[tokens.length - 1];
     invalidRanges.push([final.start, final.end]);
   }
+  // A code unit outside ASCII can hide between words (a no-break space) or
+  // inside one (a combining mark); the validator refuses it, so the field
+  // must show where it is instead of only disabling Derive.
+  for (let index = 0; index < value.length; index++) {
+    if (value.charCodeAt(index) < 0x80) continue;
+    let token = tokens.find((candidate) => index >= candidate.start && index < candidate.end);
+    let start = token ? token.start : index, end = token ? token.end : index + 1;
+    if (!invalidRanges.some(([from]) => from === start)) invalidRanges.push([start, end]);
+  }
+  invalidRanges.sort((a, b) => a[0] - b[0]);
   return { tokens, invalidRanges, invalidWords, excessCount, checksumInvalid, extendedKey: false, finalContext };
 }
 function hodlRenderSeedInputState(input, targetWords = hodlTargetWordCount) {
@@ -4401,6 +4929,31 @@ function hodlPassphraseAutocompleteEnabled() {
 // can be wiped. BIP39-word mode edits the field's own text (autocomplete,
 // highlighting), so there the field is ordinary.
 var hodlPassphraseVault = new PassphraseVault(), hodlPassphraseVaultField = null, hodlPassphraseShown = false;
+// A passphrase with a line break cannot be edited as BIP39 words: the
+// single-line field drops the break, so the wallet would change. The note
+// under the switch says so, and is shown only while the passphrase has one.
+function hodlShowPassphraseLineBreakWarning(show) {
+  let warning = document.getElementById("passphrase-linebreak-warning");
+  if (warning) warning.hidden = !show;
+}
+// True when the bytes hold a line break. In UTF-8 only LF and CR encode as
+// 0x0A and 0x0D, so the test is exact and never decodes the passphrase.
+function hodlPassphraseBytesHaveLineBreak(bytes) {
+  if (!ArrayBuffer.isView(bytes)) return false;
+  for (let i = 0; i < bytes.length; i++) if (bytes[i] === 0x0a || bytes[i] === 0x0d) return true;
+  return false;
+}
+function hodlPassphraseHasLineBreak() {
+  // The vault holds the passphrase in vault mode, including while the switch
+  // is being turned on (before unmask runs); in word mode unmask cleared it
+  // and the field's plain text cannot hold a break.
+  let held = hodlPassphraseVault.length ? hodlPassphraseVault.bytes() : hodlPassphraseFieldBytes();
+  try {
+    return hodlPassphraseBytesHaveLineBreak(held);
+  } finally {
+    if (ArrayBuffer.isView(held)) held.fill(0);
+  }
+}
 function hodlPassphraseVaultActive() {
   return !hodlPassphraseBip39Enabled();
 }
@@ -4423,7 +4976,7 @@ function hodlStoredPassphraseBytes(value) {
   return value ? new TextEncoder().encode(String(value)) : "";
 }
 function hodlPassphraseText(value) {
-  return ArrayBuffer.isView(value) ? new TextDecoder().decode(value) : String(value ?? "");
+  return ArrayBuffer.isView(value) ? hodlTypedText(value) : String(value ?? "");
 }
 function hodlStorePassphrase(state) {
   if (!state?.fields) return;
@@ -4434,6 +4987,17 @@ function hodlShowStoredPassphrase(value) {
   hodlPassphraseShown = false;
   let bytes = hodlStoredPassphraseBytes(value);
   try {
+    // A stored passphrase with a line break cannot be edited as BIP39 words:
+    // the field would drop the break. Keep the exact bytes in the vault.
+    let lineBreak = hodlPassphraseBytesHaveLineBreak(bytes);
+    if (lineBreak && hodlPassphraseBip39Enabled()) {
+      let state = hodlKeys[hodlActiveKey];
+      if (state) state.passphraseBip39Words = false;
+      let toggle = document.getElementById("passphrase-bip39-words");
+      if (toggle) toggle.checked = false;
+      hodlPassphraseVaultField?.mask();
+      hodlShowPassphraseLineBreakWarning(true);
+    } else if (!lineBreak) hodlShowPassphraseLineBreakWarning(false);
     if (hodlPassphraseVaultField) hodlPassphraseVaultField.setBytes(bytes || new Uint8Array(0));
     else {
       let field = document.getElementById("pass");
@@ -4457,7 +5021,7 @@ function hodlClearPassphraseField() {
 // stays active. A reader takes a byte copy and wipes it.
 var hodlStationPassphraseFields = Object.create(null);
 function hodlInitStationPassphraseVaults() {
-  for (let id of ["sp-pass", "psbt-pass", "nonce-pass"]) {
+  for (let id of ["sp-pass", "psbt-pass", "nonce-pass", "bip47-pass"]) {
     if (hodlStationPassphraseFields[id]) continue;
     let field = document.getElementById(id);
     if (!field) continue;
@@ -4566,6 +5130,15 @@ function hodlRenderPassphraseInputState(input, enabled = hodlPassphraseBip39Enab
       }
     }
   }
+  // A passphrase longer than 50 code points may not restore on some hardware
+  // wallets. The note is static shell text; show it only when it applies.
+  if (input.id === "pass") {
+    let lengthNote = document.getElementById("passphrase-length-note");
+    if (lengthNote) {
+      let length = hodlPassphraseVaultActive() ? hodlPassphraseVault.length : [...input.value].length;
+      lengthNote.hidden = input.disabled || !(length > 50);
+    }
+  }
   return analysis;
 }
 function hodlRenderSeedNumberInputState(input, targetWords = hodlTargetWordCount, zeroIndexed = hodlSeedZeroIndexed) {
@@ -4602,21 +5175,30 @@ function hodlAutocompleteSeedInput(input, event, completeExisting = false, whole
 function hodlAutocompletePassphraseInput(input, event, completeExisting = false) {
   return hodlPassphraseBip39Enabled() && hodlAutocompleteSeedInput(input, event, completeExisting, true, hodlPassphraseAutocompleteEnabled());
 }
-function hodlKeyboardToggleMarkup(id, label, controls = "seed-keyboard") {
-  return `<button type="button" class="seed-keyboard-toggle" id="${id}" data-on-screen-keyboard-toggle aria-label="${hodlOnScreenKeyboardOpen ? `Hide ${label}` : `Show ${label}`}" aria-controls="${controls}" aria-expanded="${hodlOnScreenKeyboardOpen}"><svg viewBox="0 0 64 44" aria-hidden="true" focusable="false"><rect class="seed-keyboard-icon-case" x="3" y="6" width="58" height="32" rx="4"/><g class="seed-keyboard-icon-keys"><rect x="9" y="10" width="4" height="5" rx=".5"/><rect x="15" y="10" width="4" height="5" rx=".5"/><rect x="21" y="10" width="4" height="5" rx=".5"/><rect x="27" y="10" width="4" height="5" rx=".5"/><rect x="33" y="10" width="4" height="5" rx=".5"/><rect x="39" y="10" width="4" height="5" rx=".5"/><rect x="45" y="10" width="4" height="5" rx=".5"/><rect x="51" y="10" width="4" height="5" rx=".5"/><rect x="12" y="18" width="4" height="5" rx=".5"/><rect x="18" y="18" width="4" height="5" rx=".5"/><rect x="24" y="18" width="4" height="5" rx=".5"/><rect x="30" y="18" width="4" height="5" rx=".5"/><rect x="36" y="18" width="4" height="5" rx=".5"/><rect x="42" y="18" width="4" height="5" rx=".5"/><rect x="48" y="18" width="4" height="5" rx=".5"/><rect x="17" y="28" width="30" height="5" rx=".75"/></g></svg></button>`;
+// Each on-screen keyboard toggle names its keyboard, as it reads with the
+// keyboard closed and open.
+function hodlKeyboardToggleLabel(id, open = hodlOnScreenKeyboardOpen) {
+  if (id === "passphrase-keyboard-toggle") return open ? hodlTText("Hide on-screen passphrase keyboard") : hodlTText("Show on-screen passphrase keyboard");
+  if (id === "private-keyboard-toggle") return open ? hodlTText("Hide on-screen private key keyboard") : hodlTText("Show on-screen private key keyboard");
+  if (id === "base64-keyboard-toggle") return open ? hodlTText("Hide on-screen Base64 keyboard") : hodlTText("Show on-screen Base64 keyboard");
+  if (id === "base32-keyboard-toggle") return open ? hodlTText("Hide on-screen Bech32 keyboard") : hodlTText("Show on-screen Bech32 keyboard");
+  return open ? hodlTText("Hide on-screen seed keyboard") : hodlTText("Show on-screen seed keyboard");
+}
+function hodlKeyboardToggleMarkup(id, controls = "seed-keyboard") {
+  return `<button type="button" class="seed-keyboard-toggle" id="${id}" data-on-screen-keyboard-toggle aria-label="${hodlEscapeHtml(hodlKeyboardToggleLabel(id))}" aria-controls="${controls}" aria-expanded="${hodlOnScreenKeyboardOpen}"><svg viewBox="0 0 64 44" aria-hidden="true" focusable="false"><rect class="seed-keyboard-icon-case" x="3" y="6" width="58" height="32" rx="4"/><g class="seed-keyboard-icon-keys"><rect x="9" y="10" width="4" height="5" rx=".5"/><rect x="15" y="10" width="4" height="5" rx=".5"/><rect x="21" y="10" width="4" height="5" rx=".5"/><rect x="27" y="10" width="4" height="5" rx=".5"/><rect x="33" y="10" width="4" height="5" rx=".5"/><rect x="39" y="10" width="4" height="5" rx=".5"/><rect x="45" y="10" width="4" height="5" rx=".5"/><rect x="51" y="10" width="4" height="5" rx=".5"/><rect x="12" y="18" width="4" height="5" rx=".5"/><rect x="18" y="18" width="4" height="5" rx=".5"/><rect x="24" y="18" width="4" height="5" rx=".5"/><rect x="30" y="18" width="4" height="5" rx=".5"/><rect x="36" y="18" width="4" height="5" rx=".5"/><rect x="42" y="18" width="4" height="5" rx=".5"/><rect x="48" y="18" width="4" height="5" rx=".5"/><rect x="17" y="28" width="30" height="5" rx=".75"/></g></svg></button>`;
 }
 function hodlSeedKeyboardToggleMarkup() {
-  return hodlKeyboardToggleMarkup("seed-keyboard-toggle", "on-screen seed keyboard");
+  return hodlKeyboardToggleMarkup("seed-keyboard-toggle");
 }
 function hodlPassphraseKeyboardToggleMarkup() {
-  return hodlKeyboardToggleMarkup("passphrase-keyboard-toggle", "on-screen passphrase keyboard", "passphrase-keyboard");
+  return hodlKeyboardToggleMarkup("passphrase-keyboard-toggle", "passphrase-keyboard");
 }
 function hodlPassphraseBip39ToggleMarkup(checked = hodlPassphraseBip39Enabled()) {
   let autocomplete = hodlPassphraseAutocompleteEnabled();
   // Showing the passphrase is its own choice; in word mode the field shows
   // its text anyway, so the switch steps aside.
-  let reveal = hodlSwitchRowMarkup("passphrase-reveal", hodlT("Show passphrase"), { note: hodlT("Hidden by default: a passphrase on screen can be captured or seen"), checked: hodlPassphraseShown, hidden: checked });
-  return `<div class="passphrase-bip39-options"><div class="switch-row"><label class="switch-toggle passphrase-bip39-toggle"><input type="checkbox" id="passphrase-bip39-words" aria-describedby="passphrase-bip39-note" ${checked ? "checked" : ""} /><span class="label">Build passphrase from BIP39 words</span></label><p class="switch-note" id="passphrase-bip39-note">Use complete lowercase English BIP39 words separated by single spaces</p></div><label class="switch-toggle passphrase-autocomplete-toggle" id="passphrase-autocomplete-control"${checked ? "" : " hidden"}><input type="checkbox" id="passphrase-autocomplete" ${autocomplete ? "checked" : ""} /><span class="label">Autocomplete BIP39 words</span></label></div>${reveal}`;
+  let reveal = hodlSwitchRowMarkup("passphrase-reveal", hodlT("Show passphrase"), { note: hodlT("Hidden by default: a passphrase on screen can be captured or seen"), checked: hodlPassphraseShown, hidden: checked, privateReveal: true });
+  return `<div class="passphrase-bip39-options"><div class="switch-row"><label class="switch-toggle passphrase-bip39-toggle"><input type="checkbox" id="passphrase-bip39-words" aria-describedby="passphrase-bip39-note" ${checked ? "checked" : ""} /><span class="label">${hodlT("Build passphrase from BIP39 words")}</span></label><p class="switch-note" id="passphrase-bip39-note">${hodlT("Use complete lowercase English BIP39 words separated by single spaces")}</p></div><p class="edge-note is-private" id="passphrase-linebreak-warning" data-passphrase-linebreak-warning hidden>${hodlT("This passphrase contains a hidden line break, so it can't be edited as BIP39 words without changing your wallet.")}</p><label class="switch-toggle passphrase-autocomplete-toggle" id="passphrase-autocomplete-control"${checked ? "" : " hidden"}><input type="checkbox" id="passphrase-autocomplete" ${autocomplete ? "checked" : ""} /><span class="label">${hodlT("Autocomplete BIP39 words")}</span></label></div>${reveal}`;
 }
 function hodlBrainWalletTrimEnabled() {
   return Boolean(document.getElementById("brain-wallet-trim")?.checked);
@@ -4627,13 +5209,13 @@ function hodlBrainWalletTrimToggleMarkup(checked = Boolean(hodlKeys[hodlActiveKe
   return `<div class="passphrase-keyboard-tools" data-brain-wallet-trim-control hidden>${hodlSwitchRowMarkup("brain-wallet-trim", hodlT("Trim leading and trailing whitespace"), { checked })}</div>`;
 }
 function hodlPrivateKeyKeyboardToggleMarkup() {
-  return hodlKeyboardToggleMarkup("private-keyboard-toggle", "on-screen private key keyboard", "private-keyboard");
+  return hodlKeyboardToggleMarkup("private-keyboard-toggle", "private-keyboard");
 }
 function hodlBase64KeyboardToggleMarkup() {
-  return hodlKeyboardToggleMarkup("base64-keyboard-toggle", "on-screen Base64 keyboard", "base64-keyboard");
+  return hodlKeyboardToggleMarkup("base64-keyboard-toggle", "base64-keyboard");
 }
 function hodlBase32KeyboardToggleMarkup() {
-  return hodlKeyboardToggleMarkup("base32-keyboard-toggle", "on-screen Bech32 keyboard", "base32-keyboard");
+  return hodlKeyboardToggleMarkup("base32-keyboard-toggle", "base32-keyboard");
 }
 var hodlSeedKeyboardLayouts = { lower: ["abcdefghij", "klmnopqrs", "tuvwxyz"], upper: ["ABCDEFGHIJ", "KLMNOPQRS", "TUVWXYZ"], number: ["1234567890", "!@#$%^&*()", "-_+=/?\\"] };
 function hodlKeyboardMarkup(passphraseOnly = false, inputName = passphraseOnly ? "passphrase" : "seed phrase", keyboardId = "seed-keyboard", privateInitialOptions = false, modeLabel = "aA1") {
@@ -4664,8 +5246,7 @@ function hodlSetOnScreenKeyboardOpen(open) {
   hodlOnScreenKeyboardOpen = Boolean(open);
   document.querySelectorAll("[data-on-screen-keyboard-toggle]").forEach((toggle) => {
     toggle.setAttribute("aria-expanded", String(hodlOnScreenKeyboardOpen));
-    let target = toggle.id === "passphrase-keyboard-toggle" ? "passphrase" : toggle.id === "private-keyboard-toggle" ? "private key" : toggle.id === "base64-keyboard-toggle" ? "Base64" : toggle.id === "base32-keyboard-toggle" ? "Bech32" : "seed";
-    toggle.setAttribute("aria-label", `${hodlOnScreenKeyboardOpen ? "Hide" : "Show"} on-screen ${target} keyboard`);
+    toggle.setAttribute("aria-label", hodlKeyboardToggleLabel(toggle.id));
   });
   document.querySelectorAll("[data-on-screen-keyboard]").forEach((keyboard) => {
     keyboard.hidden = !hodlOnScreenKeyboardOpen;
@@ -4920,9 +5501,18 @@ function hodlSyncBrainOutput() {
     if (keyboardToggle && home && keyboardToggle.parentElement !== home) home.append(keyboardToggle);
   }
   let hex = document.getElementById("brain-lab-hex");
-  if (!hex || !brain || output !== "hd") return;
+  if (!hex) return;
   let copy = document.getElementById("brain-lab-copy");
   if (copy) copy.disabled = true;
+  if (!brain || output !== "hd") {
+    // The lab hides, and the digest it showed goes with it: it outlived an
+    // edit of the brain text (red-team sweep 0eed735, part04 #9).
+    if (hex.querySelector("[data-private-value]")) {
+      hex.textContent = hodlTText("SHA-256 hex appears here. 24 words appear only after {derive}.", { derive: hodlTText("Derive Key") });
+      hex.className = "muted";
+    }
+    return;
+  }
   if (!acked) {
     hex.textContent = hodlTText("Acknowledge the lab warning, then enter text. {derive} is still required.", { derive: hodlTText("Derive Key") });
     hex.className = "muted";
@@ -4938,8 +5528,11 @@ function hodlSyncBrainOutput() {
     let value = document.createElement("span");
     value.dataset.privateValue = "";
     value.dataset.i18nSkip = "";
-    value.textContent = entropy.hex;
+    // Encode at the point of display: the string cannot be zeroed, so no
+    // copy of it is kept beyond the rendered text.
+    value.textContent = hodlHex.encode(entropy.bytes);
     hex.replaceChildren(value);
+    entropy.bytes.fill(0);
     if (copy) copy.disabled = false;
   } else hex.textContent = hodlFormatNote(entropy.error);
   hex.className = "muted" + (entropy.ok ? " ok" : " err");
@@ -5294,6 +5887,7 @@ function hodlBindPassphraseKeyboard(inputId = "pass", toggleId = "passphrase-key
   }
   refresh();
 }
+const hodlPassphraseLineBreakBound = new WeakSet();
 function hodlBindPassphraseOptions(keyboardId = "passphrase-keyboard") {
   let input = document.getElementById("pass"), bip39Toggle = document.getElementById("passphrase-bip39-words"), autocompleteToggle = document.getElementById("passphrase-autocomplete"), autocompleteControl = document.getElementById("passphrase-autocomplete-control"), keyboard = document.getElementById(keyboardId), modeButton = keyboard?.querySelector("[data-seed-keyboard-mode]");
   if (!input || !bip39Toggle || !autocompleteToggle || !autocompleteControl) return;
@@ -5304,13 +5898,34 @@ function hodlBindPassphraseOptions(keyboardId = "passphrase-keyboard") {
     if (reveal) reveal.checked = hodlPassphraseShown;
     hodlRenderPassphraseInputState(input, bip39Toggle.checked);
     hodlUpdatePassphraseKeyboardKeys(input, keyboardId);
+    if (!hodlPassphraseHasLineBreak()) hodlShowPassphraseLineBreakWarning(false);
   };
   if (reveal) reveal.onchange = () => {
     hodlPassphraseShown = reveal.checked;
     refresh();
   };
+  // The note goes away as soon as the passphrase no longer has a line break.
+  // Bind once per field: the field outlives the form and this runs on every render.
+  if (!hodlPassphraseLineBreakBound.has(input)) {
+    hodlPassphraseLineBreakBound.add(input);
+    input.addEventListener("input", () => {
+      if (!hodlPassphraseHasLineBreak()) hodlShowPassphraseLineBreakWarning(false);
+    });
+  }
   bip39Toggle.onchange = () => {
     let state = hodlKeys[hodlActiveKey];
+    // A passphrase with a line break cannot be edited as words: the field
+    // would drop the break and the wallet would change. Refuse, keep the
+    // vault exactly as it is, and say why.
+    if (bip39Toggle.checked && hodlPassphraseHasLineBreak()) {
+      bip39Toggle.checked = false;
+      if (state) state.passphraseBip39Words = false;
+      refresh();
+      hodlShowPassphraseLineBreakWarning(true);
+      hodlSyncKeyClearButton();
+      hodlSyncDeriveButton();
+      return;
+    }
     if (state) state.passphraseBip39Words = bip39Toggle.checked;
     hodlPassphraseShown = false;
     if (bip39Toggle.checked) hodlPassphraseVaultField?.unmask();
@@ -5535,9 +6150,10 @@ function hodlManualCalculationMarkup(method, value, targetWords = hodlTargetWord
 // The switch every checkbox in the card uses: a checkbox and its title on one
 // row, and an optional note under both that the checkbox points at. A
 // component supplies only its id, its words, and how the row sits: a class
-// for its container, and whether it starts hidden.
-function hodlSwitchRowMarkup(id, label, { note = "", checked = false, rowClass = "", hidden = false } = {}) {
-  return `<div class="switch-row${rowClass ? ` ${rowClass}` : ""}"${hidden ? " hidden" : ""}><label class="switch-toggle"><input type="checkbox" id="${id}"${note ? ` aria-describedby="${id}-note"` : ""}${checked ? " checked" : ""} /><span class="label">${label}</span></label>${note ? `<p class="switch-note" id="${id}-note">${note}</p>` : ""}</div>`;
+// for its container, and whether it starts hidden. `privateReveal` marks a
+// switch that reveals secret material, so conceal-on-leave turns it off.
+function hodlSwitchRowMarkup(id, label, { note = "", checked = false, rowClass = "", hidden = false, privateReveal = false } = {}) {
+  return `<div class="switch-row${rowClass ? ` ${rowClass}` : ""}"${hidden ? " hidden" : ""}><label class="switch-toggle"><input type="checkbox" id="${id}"${privateReveal ? " data-private-reveal" : ""}${note ? ` aria-describedby="${id}-note"` : ""}${checked ? " checked" : ""} /><span class="label">${label}</span></label>${note ? `<p class="switch-note" id="${id}-note">${note}</p>` : ""}</div>`;
 }
 // The "Show calculations" switch and the panel it opens, shared by every
 // method that can show its working. The row ships hidden, because a fresh
@@ -5595,6 +6211,7 @@ function hodlGlobalSyncIsHashedMode() {
 function hodlGlobalSyncSourceId() {
   if (hodlKeyMode === "dice") return `dice:${hodlDiceMethod}`;
   if (hodlKeyMode === "cards") return `cards:${hodlCardMethod}`;
+
   if (hodlKeyMode === "hex") return `number:${hodlEntropyFormat}`;
   if (hodlKeyMode === "seed") return `seed:${hodlSeedMethod}`;
   let kind = hodlNormalizePrivateKeyKind(document.querySelector('input[name="kk"]:checked')?.value || hodlKeys[hodlActiveKey]?.fields?.keyKind, "");
@@ -5604,6 +6221,7 @@ function hodlGlobalSyncCurrentValue() {
   let state = hodlKeys[hodlActiveKey], fields = state?.fields || {};
   if (hodlKeyMode === "dice") return document.getElementById("dice")?.value ?? hodlStoredDiceValue(fields) ?? "";
   if (hodlKeyMode === "cards") return document.getElementById(hodlCardMethod === "direct" ? "direct-cards" : "cards")?.value ?? fields[hodlCardMethod === "direct" ? "directCards" : "cards"] ?? "";
+
   if (hodlKeyMode === "hex") return document.getElementById(hodlEntropyFormat)?.value ?? fields[hodlEntropyFormat] ?? "";
   if (hodlKeyMode === "seed") return document.getElementById(hodlSeedMethod === "numbers" ? "seed-numbers" : "seed")?.value ?? fields[hodlSeedMethod === "numbers" ? "seedNumbers" : "seed"] ?? "";
   let values = hodlPrivateKeyValues(fields), kind = hodlNormalizePrivateKeyKind(document.querySelector('input[name="kk"]:checked')?.value || fields.keyKind, "");
@@ -5668,16 +6286,18 @@ function hodlGlobalSyncSourceBits(targetWords = hodlTargetWordCount) {
   let value = hodlGlobalSyncCurrentValue(), config = hodlSeedConfig(targetWords);
   if (!String(value).length) return null;
   try {
-    if (hodlKeyMode === "dice") {
-      let entropy = hodlDiceEntropy(value, hodlDiceMethod, config.words);
-      if (entropy?.ok && Number.isFinite(entropy.sourceBits)) return entropy.sourceBits;
-      return null;
-    }
-    if (hodlKeyMode === "cards") {
-      let entropy = hodlCardsEntropy(value, config.words, hodlCardColemanSymbols);
-      if (entropy?.ok && Number.isFinite(entropy.sourceBits)) return entropy.sourceBits;
-      return null;
-    }
+    // The entropy is decoded only to count its bits; its bytes are zeroed,
+    // as hodlGlobalSyncCurrentBits zeroes its own copy (#1480 r2 gate, Kimi,
+    // Gemini).
+    let countOf = (entropy) => {
+      try {
+        return entropy?.ok && Number.isFinite(entropy.sourceBits) ? entropy.sourceBits : null;
+      } finally {
+        entropy?.bytes?.fill?.(0);
+      }
+    };
+    if (hodlKeyMode === "dice") return countOf(hodlDiceEntropy(value, hodlDiceMethod, config.words));
+    if (hodlKeyMode === "cards") return countOf(hodlCardsEntropy(value, config.words, hodlCardColemanSymbols));
     if (hodlKeyMode === "key") {
       let kind = hodlNormalizePrivateKeyKind(document.querySelector('input[name="kk"]:checked')?.value, String(value));
       // A brain wallet is only as strong as the text.
@@ -5696,32 +6316,42 @@ function hodlGlobalSyncSourceBits(targetWords = hodlTargetWordCount) {
 }
 function hodlGlobalSyncCurrentBits(targetWords = hodlTargetWordCount) {
   let value = hodlGlobalSyncCurrentValue(), config = hodlSeedConfig(targetWords), hashed = hodlGlobalSyncIsHashedMode();
+  // Every array decoded below (entropy, a key) is zeroed once its bits are
+  // read: they were dropped unwiped (red-team sweep 0eed735, part04 #4).
+  let bitsOf = (bytes) => {
+    try {
+      return hodlBitsFromBytes(bytes);
+    } finally {
+      bytes?.fill?.(0);
+    }
+  };
   if (!String(value).length) return "";
   try {
     if (hodlKeyMode === "dice") {
       if (hashed) {
         let entropy = hodlDiceEntropy(value, hodlDiceMethod, config.words);
-        return entropy.ok ? hodlBitsFromBytes(entropy.bytes) : null;
+        // A failed decode's bytes are zeroed too (#1480 r4 gate, MiniMax).
+        return entropy.ok ? bitsOf(entropy.bytes) : (entropy.bytes?.fill?.(0), null);
       }
       if (hodlDiceMethod === "dplus") {
         let parsed = hodlDPlusRolls(value, config.words);
-        if (parsed.complete) return hodlBitsFromBytes(hodlMnemonicToEntropy([...parsed.wordSlots, parsed.finalWord].join(" "), hodlBip39Wordlist));
+        if (parsed.complete) return bitsOf(hodlMnemonicToEntropy([...parsed.wordSlots, parsed.finalWord].join(" "), hodlBip39Wordlist));
         return hodlGlobalSyncDPlusBits(value, config.words);
       }
       let parsed = hodlBitBoxRolls(value, config.words);
       if (parsed.waiting === "last-word" && hodlPickedLastWord) {
         let mnemonic = [...parsed.words, hodlPickedLastWord].join(" ");
-        if (hodlIsValidMnemonic(mnemonic, hodlBip39Wordlist)) return hodlBitsFromBytes(hodlMnemonicToEntropy(mnemonic, hodlBip39Wordlist));
+        if (hodlIsValidMnemonic(mnemonic, hodlBip39Wordlist)) return bitsOf(hodlMnemonicToEntropy(mnemonic, hodlBip39Wordlist));
       }
       return hodlGlobalSyncBitBoxBits(value, config.words);
     }
     if (hodlKeyMode === "cards") {
       if (hodlCardMethod === "hashed") {
         let entropy = hodlCardsEntropy(value, config.words, hodlCardColemanSymbols);
-        return entropy.ok ? hodlBitsFromBytes(entropy.bytes) : null;
+        return entropy.ok ? bitsOf(entropy.bytes) : (entropy.bytes?.fill?.(0), null);
       }
       let parsed = hodlParseDirectCards(value, config.words);
-      if (parsed.complete) return hodlBitsFromBytes(hodlMnemonicToEntropy([...parsed.wordSlots, parsed.finalWord].join(" "), hodlBip39Wordlist));
+      if (parsed.complete) return bitsOf(hodlMnemonicToEntropy([...parsed.wordSlots, parsed.finalWord].join(" "), hodlBip39Wordlist));
       return hodlGlobalSyncDirectCardBits(value, config.words);
     }
     if (hodlKeyMode === "hex") {
@@ -5740,7 +6370,7 @@ function hodlGlobalSyncCurrentBits(targetWords = hodlTargetWordCount) {
       }
       else return null;
       let mnemonic = words.length === config.words ? words.join(" ") : "";
-      if (mnemonic) return hodlIsValidMnemonic(mnemonic, hodlBip39Wordlist) ? hodlBitsFromBytes(hodlMnemonicToEntropy(mnemonic, hodlBip39Wordlist)) : null;
+      if (mnemonic) return hodlIsValidMnemonic(mnemonic, hodlBip39Wordlist) ? bitsOf(hodlMnemonicToEntropy(mnemonic, hodlBip39Wordlist)) : null;
       return hodlGlobalSyncWordBits(words);
     }
     let kind = hodlNormalizePrivateKeyKind(document.querySelector('input[name="kk"]:checked')?.value || "wif", value);
@@ -5750,16 +6380,41 @@ function hodlGlobalSyncCurrentBits(targetWords = hodlTargetWordCount) {
       // every other source publishes nothing when invalid.
       let digits = value.replace(/\s/g, "").replace(/^0x/i, "");
       if (digits.length > 64) return null;
-      let bits = "";
-      for (let digit of digits) {
-        if (!/^[0-9a-fA-F]$/.test(digit)) break;
-        bits += Number.parseInt(digit, 16).toString(2).padStart(4, "0");
+      // The same for a key with any character that is not hex: stopping at it
+      // published the digits before it, a cut-off key the private-key field
+      // itself rejects (the bitcoinjs/bip39 GHSA-726r-qj3q-vrxm pattern).
+      if (!/^[0-9a-fA-F]*$/.test(digits)) return null;
+      // A complete key that is zero or at or above the group order is not a
+      // private key, and the field rejects it: it publishes nothing either
+      // (red-team sweep 0eed735, part04 #8).
+      if (digits.length === 64) {
+        let key = hodlHex.decode(digits.toLowerCase());
+        try {
+          hodlAssertPrivateKey(key);
+        } catch {
+          return null;
+        } finally {
+          key.fill(0);
+        }
       }
+      let bits = "";
+      for (let digit of digits) bits += Number.parseInt(digit, 16).toString(2).padStart(4, "0");
       return bits;
     }
-    if (kind === "wif") return hodlBitsFromBytes(hodlDecodeWif(value.trim()).priv);
-    if (kind === "minikey") return hodlBitsFromBytes(hodlDecodeMiniKey(value.trim()));
-    return hodlBitsFromBytes(hodlBrainWalletPrivateKey(value, hodlBrainWalletTrimEnabled()));
+    if (kind === "wif") {
+      // A WIF whose key is zero or at or above the group order is not a
+      // private key either, as for a hex key (#1480 r4 gate, GLM).
+      let priv = hodlDecodeWif(value.trim()).priv;
+      try {
+        hodlAssertPrivateKey(priv);
+      } catch {
+        priv.fill(0);
+        return null;
+      }
+      return bitsOf(priv);
+    }
+    if (kind === "minikey") return bitsOf(hodlDecodeMiniKey(value.trim()));
+    return bitsOf(hodlBrainWalletPrivateKey(value, hodlBrainWalletTrimEnabled()));
   } catch {
     return null;
   }
@@ -5779,7 +6434,14 @@ function hodlGlobalSyncNumberValue(bits, format, targetWords = hodlTargetWordCou
 function hodlGlobalSyncMnemonic(bits, targetWords = hodlTargetWordCount) {
   let config = hodlSeedConfig(targetWords), source = String(bits ?? "");
   if (source.length < config.bits) return null;
-  return hodlEntropyToMnemonic(hodlBytesFromBits(source.slice(0, config.bits)), hodlBip39Wordlist);
+  // The entropy bytes are dead once the words exist (red-team sweep 0eed735,
+  // part04 #5).
+  let bytes = hodlBytesFromBits(source.slice(0, config.bits));
+  try {
+    return hodlEntropyToMnemonic(bytes, hodlBip39Wordlist);
+  } finally {
+    bytes.fill(0);
+  }
 }
 function hodlGlobalSyncWordIndices(bits, limit = Infinity) {
   let source = String(bits ?? ""), count = Math.min(limit, Math.floor(source.length / 11)), indices = [];
@@ -5833,9 +6495,30 @@ function hodlGlobalSyncBitBoxValue(bits, targetWords = hodlTargetWordCount) {
   }
   return tokens.map((token, index) => `${index && index % 6 === 0 ? " " : ""}${token}`).join("");
 }
+// A private key is 256 bits and only 24 words hold them all. Synced into a
+// shorter seed, the words came from part of the key while the status said
+// "Key synced" (red-team sweep of 0eed735). So every sync from a private key
+// uses 24 words, raising a shorter length first; the length dropdown is hidden
+// in Private key mode (the only mode with a key source), so the status says
+// when it was raised, and hodlSetMode redraws the dropdown on leaving. The
+// derived key result does not depend on the length and stays.
+function hodlGlobalSyncFitKeyLength(state, sourceId) {
+  let keySource = String(sourceId).startsWith("key:");
+  if (keySource && hodlSeedConfig(state.targetWords).words < 24) {
+    state.targetWords = 24;
+    hodlTargetWordCount = 24;
+    state.dplusLastWord = "";
+    state.globalSyncLengthRaised = true;
+  } else if (!keySource) {
+    state.globalSyncLengthRaised = false;
+  }
+}
 function hodlApplyGlobalSync(bits, sourceId = hodlGlobalSyncSourceId()) {
+  // Sync writes words and hex into text fields.
+  if (hodlSecureEntryOn) return false;
   let state = hodlKeys[hodlActiveKey];
   if (!state) return false;
+  hodlGlobalSyncFitKeyLength(state, sourceId);
   let config = hodlSeedConfig(state.targetWords), source = String(bits ?? "").slice(0, config.bits), sourceValue = String(hodlGlobalSyncCurrentValue()), fields = state.fields, privateKeys = hodlPrivateKeyValues(fields), mnemonic = hodlGlobalSyncMnemonic(source, config.words), words = mnemonic ? mnemonic.split(" ") : hodlGlobalSyncWordIndices(source, config.partialWords).map((index) => hodlBip39Wordlist[index]);
   Object.keys(hodlEntropyFormats).forEach((format) => fields[format] = hodlGlobalSyncNumberValue(source, format, config.words));
   fields.seed = words.join(" ");
@@ -5845,17 +6528,37 @@ function hodlApplyGlobalSync(bits, sourceId = hodlGlobalSyncSourceId()) {
   fields.bitboxDice = hodlGlobalSyncBitBoxValue(source, config.words);
   if (sourceId !== "dice:bitbox") state.diceCoinPositions = [];
   state.lastWord = mnemonic ? words.at(-1) : "";
-  privateKeys["hex-key"] = source.slice(0, 256).match(/.{4}/g)?.map((chunk) => Number.parseInt(chunk, 2).toString(16)).join("") || "";
+  // The hex-key copy is a whole 64-digit key or nothing: fewer bits are not
+  // a private key, and a 32-digit copy only looked like one.
+  privateKeys["hex-key"] = "";
   privateKeys.wif = "";
   if (source.length >= 256) {
     let bytes = hodlBytesFromBits(source.slice(0, 256));
     try {
       hodlAssertPrivateKey(bytes);
+      // Only a private key gets the hex-key copy: 256 bits of zeros, or at or
+      // above the group order, are not one (part04 #8; #1480 gate, GLM).
+      privateKeys["hex-key"] = source.slice(0, 256).match(/.{4}/g).map((chunk) => Number.parseInt(chunk, 2).toString(16)).join("");
       let coinType = hodlParseDerivationIndexText(fields.coinType ?? "0'")?.value ?? 0, network = hodlNetworkFromCoinType(coinType);
       privateKeys.wif = hodlEncodeWif(bytes, true, network);
     } catch {
+    } finally {
+      // The key bytes are dead once the WIF exists (red-team sweep 0eed735,
+      // part04 #5).
+      bytes.fill(0);
     }
   }
+  hodlGlobalSyncKeepSource(state, sourceId, sourceValue);
+  state.globalSyncSource = sourceId;
+  state.globalSyncBitCount = source.length;
+  state.globalSyncSourceBits = hodlGlobalSyncSourceBits();
+  return true;
+}
+
+// The source's own field holds what the user typed, never a copy: it is put
+// back after the copies are written or dropped.
+function hodlGlobalSyncKeepSource(state, sourceId, sourceValue) {
+  let fields = state.fields, privateKeys = hodlPrivateKeyValues(fields);
   if (sourceId.startsWith("number:")) fields[sourceId.slice(7)] = sourceValue;
   else if (sourceId === "seed:words") fields.seed = sourceValue;
   else if (sourceId === "seed:numbers") fields.seedNumbers = sourceValue;
@@ -5864,18 +6567,35 @@ function hodlApplyGlobalSync(bits, sourceId = hodlGlobalSyncSourceId()) {
   else if (sourceId === "cards:direct") fields.directCards = sourceValue;
   else if (sourceId === "key:hex-key") privateKeys["hex-key"] = sourceValue;
   else if (sourceId === "key:wif") privateKeys.wif = sourceValue;
-  state.globalSyncSource = sourceId;
-  state.globalSyncBitCount = source.length;
-  state.globalSyncSourceBits = hodlGlobalSyncSourceBits();
-  return true;
+}
+// The fields hodlApplyGlobalSync writes, emptied so Clear leaves no copy.
+function hodlClearGlobalSyncCopies(state) {
+  let fields = state.fields, privateKeys = hodlPrivateKeyValues(fields);
+  Object.keys(hodlEntropyFormats).forEach((format) => fields[format] = "");
+  fields.seed = "";
+  fields.seedNumbers = "";
+  fields.dplusDice = "";
+  fields.directCards = "";
+  fields.bitboxDice = "";
+  privateKeys["hex-key"] = "";
+  privateKeys.wif = "";
+  // The copies are gone, so the caution about the length they were made at goes too.
+  state.globalSyncLengthRaised = false;
 }
 function hodlGlobalSyncFromCurrentInput() {
+  if (hodlSecureEntryOn) { hodlRenderGlobalSyncControl(); return false; }
   let state = hodlKeys[hodlActiveKey];
   if (!state?.globalSync) {
     hodlRenderGlobalSyncControl();
     return false;
   }
   if (hodlGlobalSyncIsHashedMode() && !String(hodlGlobalSyncCurrentValue()).length) {
+    // The other fields keep the last valid sync, as they do for an invalid
+    // source (the browser suite pins it), but the status no longer counts its
+    // bits: "Key synced" stayed over an emptied field (red-team sweep
+    // 0eed735, part04 #18; round 1 dropped the copies too, which reverted
+    // that pinned behaviour, #1480 r3 CI).
+    state.globalSyncBitCount = 0;
     hodlRenderGlobalSyncControl();
     return false;
   }
@@ -5889,6 +6609,19 @@ function hodlGlobalSyncFromCurrentInput() {
   hodlRenderGlobalSyncControl();
   return true;
 }
+// Which key-sync cautions apply (#1459): a part-typed hex key reads short
+// until all 256 bits are in; a synced private key gets the note that its
+// words restore a different wallet; and the status says when the sync raised
+// the hidden seed length to hold the whole key.
+function hodlGlobalSyncKeyCautions(state) {
+  let shown = !hodlSecureEntryOn && Boolean(state?.globalSync && state?.globalSyncBitCount),
+    keySynced = shown && String(state?.globalSyncSource || "").startsWith("key:");
+  return {
+    minimumBits: state?.globalSyncSource === "key:hex-key" ? 256 : hodlGlobalSyncMinimumBits(),
+    keySynced,
+    lengthRaised: keySynced && Boolean(state?.globalSyncLengthRaised),
+  };
+}
 function hodlGlobalSyncControlMarkup(state) {
   // Two rows: the switch and its title, then the explanation beneath. The
   // explanation describes the checkbox rather than naming it, so it stays out
@@ -5898,9 +6631,17 @@ function hodlGlobalSyncControlMarkup(state) {
     sourceBits = Number.isFinite(reported) ? Math.floor(reported) : null,
     effectiveBits = sourceBits === null ? syncBits : Math.min(syncBits, sourceBits),
     syncUnknown = Boolean(syncBits) && reported === hodlGlobalSyncUnknownBits,
-    syncShort = Boolean(syncBits) && !syncUnknown && effectiveBits < hodlGlobalSyncMinimumBits(),
-    caution = syncUnknown ? hodlT("entropy unknown · only as strong as the text") : hodlT("{n} bits of entropy · under {min}", { n: effectiveBits, min: hodlGlobalSyncMinimumBits() });
-  return `<div class="switch-row"><div class="global-sync-head"><label class="switch-toggle global-sync-toggle"><input type="checkbox" id="global-entropy-sync" aria-describedby="global-sync-note" ${state?.globalSync ? "checked" : ""} /><span class="label">${hodlT("Sync entropy across methods")}</span></label><span class="global-sync-status" id="global-sync-status" aria-live="polite" ${state?.globalSync && syncBits ? "" : "hidden"}>${hodlCopiedIconMarkup()}<span>${hodlT("Key synced")}</span>${syncShort || syncUnknown ? `<span class="global-sync-shortfall">${hodlSyncWarningIconMarkup()}<span>${caution}</span></span>` : ""}</span></div><p class="switch-note" id="global-sync-note">${hodlT("Keeps non-hashed methods synchronized. Hashed inputs update them one way and are never overwritten.")}</p></div>`;
+    keyCautions = hodlGlobalSyncKeyCautions(state),
+    minimumBits = keyCautions.minimumBits,
+    syncShort = Boolean(syncBits) && !syncUnknown && effectiveBits < minimumBits,
+    caution = syncUnknown ? hodlT("entropy unknown · only as strong as the text") : hodlT("{n} bits of entropy · under {min}", { n: effectiveBits, min: minimumBits }),
+    secure = hodlSecureEntryOn,
+    checked = !secure && state?.globalSync,
+    statusHidden = secure || !(state?.globalSync && syncBits),
+    keySynced = keyCautions.keySynced,
+    lengthRaised = keyCautions.lengthRaised,
+    note = secure ? hodlT("Global sync is unavailable while Secure entry is on.") : hodlT("Keeps non-hashed methods synchronized. Hashed inputs update them one way and are never overwritten.");
+  return `<div class="switch-row"><div class="global-sync-head"><label class="switch-toggle global-sync-toggle"><input type="checkbox" id="global-entropy-sync" aria-describedby="global-sync-note" ${checked ? "checked" : ""}${secure ? " disabled" : ""} /><span class="label">${hodlT("Sync entropy across methods")}</span></label><span class="global-sync-status" id="global-sync-status" aria-live="polite" ${statusHidden ? "hidden" : ""}>${hodlCopiedIconMarkup()}<span>${hodlT("Key synced")}</span>${syncShort || syncUnknown ? `<span class="global-sync-shortfall">${hodlSyncWarningIconMarkup()}<span>${caution}</span></span>` : ""}${lengthRaised ? `<span class="global-sync-shortfall" data-sync-length-raised>${hodlSyncWarningIconMarkup()}<span>${hodlT("seed set to 24 words")}</span></span>` : ""}</span></div><p class="switch-note" id="global-sync-note">${note}</p>${keySynced ? `<p class="edge-note is-private" id="global-sync-key-note">${hodlT("In a wallet, these words restore a different wallet, not this private key. Back up the private key itself.")}</p>` : ""}</div>`;
 }
 function hodlRenderGlobalSyncControl() {
   let host = document.getElementById("global-sync-host"), state = hodlKeys[hodlActiveKey];
@@ -5912,6 +6653,7 @@ function hodlRenderGlobalSyncControl() {
     if (!toggle.checked) {
       state.globalSyncBitCount = 0;
       state.globalSyncSource = "";
+      state.globalSyncLengthRaised = false;
       hodlRenderGlobalSyncControl();
       hodlSyncKeyClearButton();
       return;
@@ -5919,6 +6661,38 @@ function hodlRenderGlobalSyncControl() {
     hodlGlobalSyncFromCurrentInput();
     hodlSyncKeyClearButton();
   };
+}
+function hodlRenderSecureEntryControl() {
+  let host = document.getElementById("secure-entry-host");
+  if (!host) return;
+  if (!hodlSecureEntryAvailable()) {
+    host.hidden = true;
+    host.innerHTML = "";
+    return;
+  }
+  host.hidden = false;
+  let on = hodlSecureEntryOn, methodNote = "";
+  if (on && hodlSecureKeyActive()) {
+    if (!hodlSecureKeyFormApplies(hodlKeys[hodlActiveKey])) methodNote = `<p class="field-note edge-note is-muted" id="secure-entry-key-text-backed">${hodlT("This private key came in as text, so it uses standard text entry. Clear the field to enter it securely.")}</p>`;
+  } else if (on) {
+    if (hodlSecureSeedActive()) {
+      if (!hodlSecureSeedPickerShown(hodlKeys[hodlActiveKey])) methodNote = `<p class="field-note edge-note is-muted" id="secure-entry-text-backed">${hodlT("These words came in as text, so this key uses standard text entry. Clear the field to enter words securely.")}</p>`;
+    } else if (hodlSecureDiceActive()) {
+      if (!hodlSecureDicePadShown(hodlKeys[hodlActiveKey])) methodNote = `<p class="field-note edge-note is-muted" id="secure-entry-dice-text-backed">${hodlT("These rolls came in as text, so this key uses standard text entry. Clear the field to enter rolls securely.")}</p>`;
+    } else methodNote = `<p class="field-note edge-note is-muted" id="secure-entry-unsupported">${hodlT("Secure entry is not available for this method yet. This method uses standard text entry.")}</p>`;
+  }
+  let convertNote = on && hodlSecureEntryConvertFailed ? `<p class="field-note edge-note is-private" id="secure-entry-convert-failed" role="alert">${hodlT("Secure entry is still on: some entries could not be converted to text. Try again, or choose Clear entries and turn off.")}</p>` : "";
+  host.innerHTML = hodlSwitchBarMarkup({
+    id: "secure-entry-switch",
+    checked: on,
+    describedBy: "",
+    attributes: hodlJournalKeyDerivation ? "disabled" : "",
+    state: on ? hodlT("Secure entry: on") : hodlT("Secure entry"),
+    hint: on ? hodlT("Limits copies of secrets during entry. Words are entered one at a time; private keys and dice rolls are hidden by default. Secrets still exist in memory. Applies to all keys in this session.") : hodlT("Off — standard text entry."),
+    className: "secure-entry-bar",
+  }) + methodNote + convertNote;
+  let checkbox = document.getElementById("secure-entry-switch");
+  if (checkbox) checkbox.onchange = () => hodlSecureEntryToggle(checkbox.checked);
 }
 function hodlSeedPhraseCopyText(words, targetWords = hodlTargetWordCount) {
   let needed = hodlSeedConfig(targetWords).words, source = Array.isArray(words) ? words : [], values = Array.from({ length: needed }, (_, index) => String(source[index] || "").trim()), firstMissing = values.findIndex((word) => !word);
@@ -5931,8 +6705,7 @@ var hodlEmptyWordSlot = "\u2014";
 // The text a copy button copies, read when it is clicked. The Key Station copy
 // seed phrase button keeps no copy of the phrase (#546 B3: no secret in an
 // attribute or property, where Wipe cannot reach it): it reads the words its
-// grid shows, through the same rule the grid was rendered with. The Journal
-// copy buttons still carry their text in data-phrase.
+// grid shows, through the same rule the grid was rendered with.
 function hodlSeedButtonPhrase(button) {
   if (!button.hasAttribute("data-copy-seed-phrase")) return button.dataset.phrase;
   let slots = Array.from(button.closest("#form")?.querySelectorAll("[data-word-slot] [data-word]") || []);
@@ -5940,6 +6713,77 @@ function hodlSeedButtonPhrase(button) {
 }
 function hodlClipboardIconMarkup() {
   return `<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><rect class="seed-copy-icon-clip" x="8" y="2" width="8" height="4" rx="1"/><path class="seed-copy-icon-board" d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/></svg>`;
+}
+
+function hodlPasteIconMarkup() {
+  return `<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><rect class="seed-copy-icon-clip" x="8" y="2" width="8" height="4" rx="1"/><path class="seed-copy-icon-board" d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><path class="seed-copy-icon-board" d="M12 9v6m0 0-3-3m3 3 3-3"/></svg>`;
+}
+
+function hodlAppPasteInto(field) {
+  let bytes = appClipboardBytes();
+  if (!bytes) return;
+  // These passphrase fields keep their text in a vault, never in .value
+  // (ln-pass is a plain password field and takes the text path).
+  let vaultIds = ["pass", "bip47-pass", "sp-pass", "psbt-pass", "nonce-pass"];
+  let vault = field.id === "pass" ? hodlPassphraseVaultField : hodlStationPassphraseFields?.[field.id]?.api;
+  // A single-line field takes the paste as a typed paste would: trailing line
+  // breaks dropped, inner ones as spaces (the vault's own rule), so the same
+  // copied text is the same passphrase whichever way it arrives.
+  let singleLine = field.tagName !== "TEXTAREA", breaks = bytes.some((byte) => byte === 10 || byte === 13);
+  if (vault) {
+    let copy = singleLine && breaks ? new TextEncoder().encode(hodlSingleLineText(appClipboardText())) : bytes.slice();
+    try {
+      vault.setBytes(copy, { notify: true });
+    } catch {
+      // The vault refused the bytes and is left empty; nothing else to do.
+      return;
+    } finally {
+      copy.fill(0);
+    }
+  } else if (vaultIds.includes(field.id)) {
+    // A vault field whose vault is not bound must not take the text path.
+    return;
+  } else {
+    let event;
+    try {
+      event = new InputEvent("input", { bubbles: true, inputType: "insertFromPaste" });
+    } catch {
+      return;
+    }
+    field.value = singleLine && breaks ? hodlSingleLineText(appClipboardText()) : appClipboardText();
+    field.dispatchEvent(event);
+  }
+  field.focus();
+}
+
+// The paste control's name says which field it fills: several can share a
+// screen, and a secret pasted into the wrong one is the mistake to prevent.
+function hodlAppPasteLabel(id) {
+  let field = {
+    "seed": () => hodlTText("seed phrase"),
+    "key": () => hodlTText("private key"),
+    "hex": () => hodlTText("hex entropy"),
+    "pass": () => hodlTText("Key Station passphrase"),
+    "bip85-key": () => hodlTText("Root xprv"),
+    "bip47-key": () => hodlTText("BIP-47 session key"),
+    "bip47-pass": () => hodlTText("BIP-47 passphrase"),
+    "sp-key": () => hodlTText("Silent Payments session key"),
+    "sp-pass": () => hodlTText("Silent Payments passphrase"),
+    "psbt-key": () => hodlTText("PSBT session key"),
+    "psbt-pass": () => hodlTText("PSBT passphrase"),
+    "nonce-key": () => hodlTText("nonce session key"),
+    "nonce-pass": () => hodlTText("nonce passphrase"),
+    "ln-seed": () => hodlTText("Lightning seed phrase"),
+    "ln-pass": () => hodlTText("Lightning passphrase"),
+    "core-add-text": () => hodlTText("output descriptor"),
+    "journal-input": () => hodlTText("raw rolls or input"),
+    "journal-phrase": () => hodlTText("BIP39 seed or passphrase"),
+  }[id];
+  return hodlTText("Paste into {field} from EntropyLab's clipboard", { field: field ? field() : id });
+}
+function hodlDecorateAppPaste() {
+  decorateAppPaste(document, { pasteIcon: hodlPasteIconMarkup, labelFor: hodlAppPasteLabel });
+  syncAppPaste(document);
 }
 function hodlSyncWarningIconMarkup() {
   return `<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path class="seed-copy-icon-board" d="M12 4 2.5 20h19L12 4Z"/><path class="seed-copy-icon-board" d="M12 10v4"/><path class="seed-copy-icon-board" d="M12 17.2v.1"/></svg>`;
@@ -6020,21 +6864,21 @@ function hodlDerivedSeedRowMarkup() {
   return hodlSeedPhraseRowMarkup(hodlT("Derived seed phrase"));
 }
 function hodlSeedCopyRowMarkup(leading = "") {
-  return `<div class="seed-word-copy-row">${leading}<button type="button" class="copy-button boxed-copy-button" data-copy-seed-phrase disabled aria-label="${hodlTAttr("Copy seed phrase")}" title="${hodlTAttr("Copy seed phrase")}">${hodlClipboardIconMarkup()}</button></div>`;
+  return `<div class="seed-word-copy-row">${leading}<button type="button" class="copy-button boxed-copy-button" data-copy-seed-phrase disabled aria-label="${hodlTAttr("Copy seed phrase to EntropyLab's clipboard")}" title="${hodlTAttr("Copy seed phrase to EntropyLab's clipboard")}">${hodlClipboardIconMarkup()}</button></div>`;
 }
 function hodlShowSeedPhraseCopied(button) {
   if (!button) return;
   button.classList.add("is-copied");
   button.innerHTML = hodlCopiedIconMarkup();
-  button.setAttribute("aria-label", button.dataset.copiedLabel || hodlTText("Seed phrase copied"));
-  button.title = hodlTText("Copied");
+  button.setAttribute("aria-label", button.dataset.copiedLabel || hodlTText("Seed phrase copied to EntropyLab's clipboard"));
+  button.title = hodlTText("Copied to EntropyLab's clipboard");
   clearTimeout(button.hodlCopiedTimer);
   button.hodlCopiedTimer = setTimeout(() => {
     if (!button.isConnected) return;
     let phrase = hodlSeedButtonPhrase(button);
     button.classList.remove("is-copied");
     button.innerHTML = hodlClipboardIconMarkup();
-    let copyLabel = button.dataset.copyLabel || hodlT("Copy seed phrase");
+    let copyLabel = button.dataset.copyLabel || hodlT("Copy seed phrase to EntropyLab's clipboard");
     button.setAttribute("aria-label", phrase ? copyLabel : hodlTText("Seed phrase unavailable"));
     button.title = phrase ? copyLabel : hodlTText("Seed phrase unavailable");
   }, 1600);
@@ -6045,7 +6889,7 @@ function hodlCopySeedPhraseButton(button) {
   let done = () => {
     hodlShowSeedPhraseCopied(button);
   };
-  copyText(phrase).then((copied) => { if (copied) done(); });
+  if (appClipboardPut(phrase)) done();
 }
 function hodlRenderDiceWordGrid(container, words, targetWords = hodlTargetWordCount, provisional = false) {
   if (!container) return;
@@ -6077,8 +6921,8 @@ function hodlRenderDiceWordGrid(container, words, targetWords = hodlTargetWordCo
   if (copy) {
     copy.disabled = !phrase;
     if (!copy.classList.contains("is-copied")) {
-      copy.setAttribute("aria-label", phrase ? hodlTText("Copy seed phrase") : hodlTText("Seed phrase unavailable"));
-      copy.title = phrase ? hodlTText("Copy seed phrase") : hodlTText("Seed phrase unavailable");
+      copy.setAttribute("aria-label", phrase ? hodlTText("Copy seed phrase to EntropyLab's clipboard") : hodlTText("Seed phrase unavailable"));
+      copy.title = phrase ? hodlTText("Copy seed phrase to EntropyLab's clipboard") : hodlTText("Seed phrase unavailable");
     }
     if (!copy.hodlCopyBound) {
       copy.onclick = () => hodlCopySeedPhraseButton(copy);
@@ -6136,6 +6980,9 @@ function hodlRenderLastWordPicker(container, candidates, selected, onPick, setti
   label.className = "field last-word-field";
   label.textContent = hodlTText("Valid final word ({n} choices)", { n: candidates.length });
   select.setAttribute("aria-label", hodlTText("Valid final word for {n}-word seed", { n: targetWords }));
+  // The panel's change listener finds this select by this hook: its label is
+  // translated, so matching the English text missed it in every other locale.
+  select.setAttribute("data-last-word-select", "");
   if (!selected) {
     let placeholder = document.createElement("option");
     placeholder.value = placeholderValue;
@@ -6165,11 +7012,25 @@ function hodlUpdateSeedLengthControl() {
   if (!section) return;
   let config = hodlSeedConfig();
   section.hidden = hodlKeyMode === "key";
-  // Sync, not change: change would come straight back through onchange.
+  // Sync, not change: change would come straight back through onchange. The
+  // custom dropdown is told only when the value or a lock actually changed.
+  let changed = false;
   if (hodlSeedLengthSelectEl.value !== String(config.words)) {
     hodlSeedLengthSelectEl.value = String(config.words);
-    hodlSeedLengthSelectEl.dispatchEvent(new Event("entropylab:sync-select"));
+    changed = true;
   }
+  // Locked while the key holds secure seed words: a length changed under Word
+  // numbers or another mode would no longer match the entry.
+  let locked = hodlSecureEntryOn && hodlSecureSeedHasWords(hodlSecureKeyOf(hodlKeys[hodlActiveKey]));
+  let lockNote = locked ? " " + hodlTText("To change the length, undo or clear the words entered so far.") : "";
+  for (const option of hodlSeedLengthSelectEl.options) {
+    let disabled = locked && option.value !== String(config.words);
+    if (option.disabled !== disabled) {
+      option.disabled = disabled;
+      changed = true;
+    }
+  }
+  if (changed) hodlSeedLengthSelectEl.dispatchEvent(new Event("entropylab:sync-select"));
   let help = document.getElementById("seed-length-help");
   if (!help) return;
   if (hodlKeyMode === "hex") {
@@ -6178,10 +7039,10 @@ function hodlUpdateSeedLengthControl() {
     if (format.remainderBits) extra = format.binaryRemainder
       ? hodlT(" Enter {fullDigits} complete {shortLabel} characters followed by {n} coin flip(s), using Heads (0) or Tails (1).", { fullDigits: format.fullDigits, shortLabel: format.shortLabel, n: format.remainderBits })
       : hodlT(" The final character contributes {n} bit(s) and must be one of {chars}.", { n: format.remainderBits, chars: [...format.finalCharacters].join(", ") });
-    help.textContent = hodlTText("{words} words require exactly {digits} {unit}.", { words: config.words, digits: format.digits, unit: format.unit }) + extra;
+    help.textContent = hodlTText("{words} words require exactly {digits} {unit}.", { words: config.words, digits: format.digits, unit: format.unit }) + extra + lockNote;
     return;
   }
-  help.textContent = hodlKeyMode === "seed" ? hodlSeedMethod === "numbers" ? hodlTText("Enter exactly {words} BIP39 word numbers using {range}.", { words: config.words, range: hodlTText(hodlSeedZeroIndexed ? "0 through 2047" : "1 through 2048") }) : hodlTText("Enter exactly {words} BIP39 words. Extended keys ignore this selection.", { words: config.words }) : hodlKeyMode === "cards" ? hodlCardMethod === "direct" ? hodlTText("{words} words use {partial} complete 11-bit rank selections plus {final} final rank draw(s).", { words: config.words, partial: config.partialWords, final: hodlDirectCardFinalRadices(config.words).length }) : config.words === 24 ? hodlTText("24 words need 256 bits. One deck is about 225.6 bits, so deal 52 unique cards, shuffle again, then deal 6 more.") : hodlTText("{words} words need {bits} bits. Deal {first} unique cards from one shuffled deck.", { words: config.words, bits: config.bits, first: hodlCardNeeded(config.words).first }) : hodlTText("{words} words use {bits} bits of BIP39 entropy.", { words: config.words, bits: config.bits });
+  help.textContent = (hodlKeyMode === "seed" ? hodlSeedMethod === "numbers" ? hodlTText("Enter exactly {words} BIP39 word numbers using {range}.", { words: config.words, range: hodlTText(hodlSeedZeroIndexed ? "0 through 2047" : "1 through 2048") }) : hodlTText("Enter exactly {words} BIP39 words. Extended keys ignore this selection.", { words: config.words }) : hodlKeyMode === "cards" ? hodlCardMethod === "direct" ? hodlTText("{words} words use {partial} complete 11-bit rank selections plus {final} final rank draw(s).", { words: config.words, partial: config.partialWords, final: hodlDirectCardFinalRadices(config.words).length }) : config.words === 24 ? hodlTText("24 words need 256 bits. One deck is about 225.6 bits, so deal 52 unique cards, shuffle again, then deal 6 more.") : hodlTText("{words} words need {bits} bits. Deal {first} unique cards from one shuffled deck.", { words: config.words, bits: config.bits, first: hodlCardNeeded(config.words).first }) : hodlTText("{words} words use {bits} bits of BIP39 entropy.", { words: config.words, bits: config.bits })) + lockNote;
 }
 function hodlInvalidateActiveKeyOutput() {
   hodlWalletResult = null;
@@ -6203,17 +7064,28 @@ function hodlInvalidateActiveKeyOutput() {
 function hodlSetSeedLength(words) {
   let config = hodlSeedLengths[Number(words)];
   if (!config) return;
+  // The lock is enforced here, not only in the dropdown: a key holding secure
+  // seed words keeps the length its entry was made for.
+  if (config.words !== hodlTargetWordCount && hodlSecureEntryOn && hodlSecureSeedHasWords(hodlSecureKeyOf(hodlKeys[hodlActiveKey]))) {
+    hodlUpdateSeedLengthControl();
+    return;
+  }
   if (hodlTargetWordCount === config.words) {
     hodlUpdateSeedLengthControl();
     hodlQueueMasterFingerprintPreview(0);
     return;
   }
+  // The length is about to change: a derivation still running from the old
+  // length must not commit (see the Method dropdown's handler).
+  hodlStopDerivation("key");
   hodlCaptureKey();
   let state = hodlKeys[hodlActiveKey];
   hodlTargetWordCount = config.words;
   hodlInvalidateActiveKeyOutput();
   if (state) {
     state.targetWords = config.words;
+    // A length the user chose is no longer one the key sync set.
+    state.globalSyncLengthRaised = false;
     state.diceMethod = hodlDiceMethod;
     state.lastWord = "";
     state.dplusLastWord = "";
@@ -6227,10 +7099,41 @@ function hodlSetSeedLength(words) {
   hodlUpdateSeedLengthControl();
   hodlQueueMasterFingerprintPreview(0);
 }
+// The Key Station's scan panel is a preview-only extra: release builds define
+// no flag, so the host is never rendered and the module is never imported.
+var hodlKeyScan = null, hodlKeyScanModule = null, hodlKeyScanImport = null, hodlKeyScanOpenAfterMount = false;
+var hodlSeedScan = null, hodlSeedScanOpenAfterMount = false;
+var hodlSeedPicker = null, hodlSeedPickerImport = null, hodlSeedPickerFocusOnMount = false;
+var hodlSecureDicePad = null, hodlSecureDicePadImport = null;
+// The three PSBT scan panels are the same preview-only extra: release builds
+// strip their hosts and never import the module.
+var hodlPsbtScans = [], hodlPsbtScanModule = null, hodlPsbtScanImport = null;
+// Every PSBT field: the three tools' main fields, and the fee-bump original,
+// the PSBT sent to the signer and the Editor's comparison PSBT (owner 11-01:
+// scanners in every section that takes one).
+const hodlPsbtScanHosts = [
+  ["psbt-scan-host", "psbt-text"], ["nonce-scan-host", "nonce-text"], ["psbted-scan-host", "psbted-text"],
+  ["rbf-scan-host", "psbt-rbf-original"], ["audit-scan-host", "psbt-audit-before"], ["psbted-compare-scan-host", "psbted-compare-text"],
+];
+function hodlKeyScanHostMarkup() {
+  return '<div id="key-scan-host"></div>';
+}
+function hodlSeedScanHostMarkup() {
+  return '<div id="seed-scan-host"></div>';
+}
 function hodlRenderKeyForm() {
   // The form and its on-screen keyboards are replaced: the listeners they
   // added outside the form go with them (#546 B3).
   hodlReleaseFormListeners();
+  try { hodlKeyScan?.destroy(); } catch {}
+  hodlKeyScan = null;
+  try { hodlSeedScan?.destroy(); } catch {}
+  hodlSeedScan = null;
+  try { hodlSeedPicker?.destroy(); } catch {}
+  hodlSeedPicker = null;
+  hodlSeedPickerFocusOnMount = false;
+  try { hodlSecureDicePad?.destroy(); } catch {}
+  hodlSecureDicePad = null;
   let config = hodlSeedConfig(), keyboardHost = document.getElementById("passphrase-keyboard-host"), toggleHost = document.getElementById("passphrase-keyboard-toggle-host");
   if (keyboardHost) {
     keyboardHost.hidden = true;
@@ -6242,28 +7145,17 @@ function hodlRenderKeyForm() {
   }
   hodlUpdateSeedLengthControl();
   hodlRenderGlobalSyncControl();
+  hodlRenderSecureEntryControl();
+
   if (hodlKeyMode === "dice") {
+    if (hodlSecureDiceActive() && hodlSecureDicePadShown(hodlKeys[hodlActiveKey])) { hodlRenderSecureDiceForm(config); return; }
     let dplusFaces = ["0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "A", "B", "C", "D", "E", "F"],
       dplusPad = dplusFaces.map(face => `<button type="button" data-d="${face}" aria-label="${hodlTAttr("Hexadecimal D16 result {face}", { face })}">${face}</button>`).join("");
     let diceLabel = hodlDiceMethod === "dplus" ? hodlT("D++ rolls (each word D8 and two D16 hexadice; then {final} for checksum)", { final: hodlDPlusFinalPhrase(config.words) }) : hodlDiceMethod === "bitbox" ? hodlT("Dice rolls (each word five D6 and a sixth D6 as a coin flip)") : hodlT("Dice rolls (D6)");
     let dicePlaceholder = hodlDiceMethod === "dplus" ? "100 2AF…" : hodlDiceMethod === "bitbox" ? "111111 222224\u2026" : "415263415263\u2026";
     let dicePad = hodlDiceMethod === "dplus" ? `<div class="dice-input-pad dplus">${dplusPad}</div>` : `<div class="dice-input-pad faces-1-6">${[1,2,3,4,5,6].map(face=>`<button type="button" data-d="${face}">${face}</button>`).join("")}</div>`;
     hodlFormEl.innerHTML = `
-      <p class="label">${hodlT("Dice roll options")}</p>
-      <div class="choice-grid">
-      <label class="choice"><input type="radio" name="dm" value="coldcard" ${hodlDiceMethod === "coldcard" ? "checked" : ""} />
-        <span><strong>${hodlT("Base 10 [1-6] / Hashed rolls")}</strong><span class="desc">${hodlT("SHA-256 of the original dice digit string, matching the method used by COLDCARD and SeedSigner. The first {bits} bits become the selected {words}-word seed; {hashRolls} rolls are recommended, and every entered roll is included.", { bits: config.bits, words: config.words, hashRolls: config.hashRolls })}</span></span>
-      </label>
-      <label class="choice"><input type="radio" name="dm" value="coleman" ${hodlDiceMethod === "coleman" ? "checked" : ""} />
-        <span><strong>${hodlT("Base 6 [0-5] / Hashed rolls")}</strong><span class="desc">${hodlT("Convert each 6 to 0 and SHA-256 the complete mapped digit string, matching the method used by Keystone. Use the first {bits} bits; {hashRolls} rolls are recommended, and every entered roll is included.", { bits: config.bits, words: config.words, hashRolls: config.hashRolls })}</span></span>
-      </label>
-      <label class="choice"><input type="radio" name="dm" value="bitbox" ${hodlDiceMethod === "bitbox" ? "checked" : ""} />
-        <span><strong>${hodlT("BitBox diceware / Direct word selection")}</strong><span class="desc">${hodlT("Use five dice showing 1–4, then a coin (or 6th die: 1–3 heads, 4–6 tails). Build {partialWords} lookup-table words, then choose 1 of {candidates} valid final checksum words.", { partialWords: config.partialWords, candidates: config.candidates })}</span></span>
-      </label>
-      <label class="choice"><input type="radio" name="dm" value="dplus" ${hodlDiceMethod==="dplus"?"checked":""} />
-        <span><strong>${hodlT("D++ / Direct word selection")}</strong><span class="desc">${hodlT("Roll one D8 labeled 1–8 and two hexadecimal D16 dice labeled 0–F for each of the first {partialWords} words, then {final} to select the valid checksum final word.", { partialWords: config.partialWords, final: hodlDPlusFinalDescription(config.words) })}</span></span>
-      </label>
-      </div>
+      <p class="label">${hodlT("Dice roll options")}</p>${hodlDiceMethodChoicesMarkup(config)}
       <p class="label" id="dice-label">${diceLabel}</p>
       ${hodlSeedMetaRowMarkup("dice-meta", true)}
       <div class="dice-input-shell"><pre class="dice-input-highlight" id="dice-highlight" translate="no" aria-hidden="true"></pre><textarea id="dice" placeholder="${dicePlaceholder}" aria-describedby="dice-meta"></textarea></div>
@@ -6290,6 +7182,13 @@ function hodlRenderKeyForm() {
       else delete input.hodlDiceBeforeInput;
       hodlSanitizeDiceInput(input);
       hodlUpdateDice();
+      if (!input.hodlRestoring && hodlSecureDiceActive() && !input.value.trim() && !hodlSecureDiceHasRolls(hodlSecureKeyOf(hodlKeys[hodlActiveKey]))) {
+        let state = hodlKeys[hodlActiveKey];
+        if (state) state.fields[hodlDiceFieldName()] = "";
+        delete input.dataset.previousValue;
+        hodlSetMode(hodlKeyMode);
+        hodlSecureDicePadImport?.then(() => { try { hodlSecureDicePad?.focus?.(); } catch {} });
+      }
     };
     input.onscroll = () => hodlSyncDiceHighlight(input);
     hodlFormEl.querySelectorAll("input[name=dm]").forEach(radio => {
@@ -6333,7 +7232,7 @@ function hodlRenderKeyForm() {
     if (!direct) hodlCardSuit = hodlCardRank = "";
     let suitPad = hodlCardSuits.map((suit) => `<button type="button" class="card-suit${suit.red ? " is-red" : ""}" data-card-suit="${suit.code}" aria-label="${suit.label}" aria-pressed="false">${suit.symbol}</button>`).join("");
     let rankPad = direct ? hodlDirectCardRanks.map((rank) => `<button type="button" data-direct-card-rank="${rank}" aria-label="Enter rank ${rank}">${rank}</button>`).join("") : hodlCardRanks.map((rank) => `<button type="button" data-card-rank="${rank}" aria-label="${rank === "T" ? "10" : rank}">${rank === "T" ? "10" : rank}</button>`).join("");
-    let inputId = direct ? "direct-cards" : "cards", inputLabel = direct ? "Rank-only draw transcript" : "Card transcript", inputHelp = direct ? `For each of the first ${config.partialWords} words, shuffle and draw from A\u20138 three times, then A\u20134 once. Each four-character group selects one word; spaces separate the groups. The shorter final group supplies the remaining entropy bits, and EntropyLab calculates the BIP39 checksum bits.` : `Each valid card updates a deterministic test seed. For real security, ${config.words === 24 ? "deal all 52 unique cards, shuffle again, then deal 6 more" : `deal ${needed.first} unique cards without putting them back`}. SHA-256 hashes the ASCII transcript (As 2c Td).`, placeholder = direct ? "A284 37A2 \u2026" : hodlCardColemanSymbols ? "A\u2660 2\u2663 T\u2665 T\u2666\u2026" : "As 2c Th Td\u2026";
+    let inputId = direct ? "direct-cards" : "cards", inputLabel = direct ? hodlT("Rank-only draw transcript") : hodlT("Card transcript"), inputHelp = direct ? hodlT("For each of the first {n} words, shuffle and draw from A\u20138 three times, then A\u20134 once. Each four-character group selects one word; spaces separate the groups. The shorter final group supplies the remaining entropy bits, and EntropyLab calculates the BIP39 checksum bits.", { n: config.partialWords }) : config.words === 24 ? hodlT("Each valid card updates a deterministic test seed. For real security, deal all 52 unique cards, shuffle again, then deal 6 more. SHA-256 hashes the ASCII transcript (As 2c Td).") : hodlT("Each valid card updates a deterministic test seed. For real security, deal {n} unique cards without putting them back. SHA-256 hashes the ASCII transcript (As 2c Td).", { n: needed.first }), placeholder = direct ? "A284 37A2 \u2026" : hodlCardColemanSymbols ? "A\u2660 2\u2663 T\u2665 T\u2666\u2026" : "As 2c Th Td\u2026";
     hodlFormEl.innerHTML = `
       <p class="label">${hodlT("Card options")}</p>
       <div class="choice-grid">
@@ -6341,7 +7240,7 @@ function hodlRenderKeyForm() {
         <label class="choice"><input type="radio" name="card-method" value="direct" ${direct ? "checked" : ""} /><span><strong>${hodlT("Direct word selection")}</strong><span class="desc">${hodlT("Ignore suits. Reshuffle and draw A–8, A–8, A–8, then A–4 for each full word. Finish with the shorter rank sequence shown for the checksum-valid final word.")}</span></span></label>
       </div>
       <p class="muted" id="cards-help">${inputHelp}</p>
-      ${direct ? "" : `<div class="switch-row"><label class="switch-toggle"><input type="checkbox" id="cards-ian-coleman" aria-describedby="cards-ian-coleman-note" ${hodlCardColemanSymbols ? "checked" : ""} /><span class="label">Match Ian Coleman method</span></label><p class="switch-note" id="cards-ian-coleman-note">show and hash A\u2660 2\u2663 instead of As 2c</p></div>`}
+      ${direct ? "" : `<div class="switch-row"><label class="switch-toggle"><input type="checkbox" id="cards-ian-coleman" aria-describedby="cards-ian-coleman-note" ${hodlCardColemanSymbols ? "checked" : ""} /><span class="label">${hodlT("Match Ian Coleman method")}</span></label><p class="switch-note" id="cards-ian-coleman-note">${hodlT("show and hash A\u2660 2\u2663 instead of As 2c")}</p></div>`}
       <p class="label" id="cards-input-label">${inputLabel}</p>
       ${hodlSeedMetaRowMarkup("cards-meta")}
       <div class="dice-input-shell cards-input-shell"><pre class="dice-input-highlight" translate="no" id="cards-highlight" aria-hidden="true"></pre><textarea id="${inputId}" placeholder="${placeholder}" autocomplete="off" spellcheck="false" autocapitalize="off" aria-labelledby="cards-input-label" aria-describedby="cards-help cards-meta"></textarea></div>
@@ -6450,7 +7349,7 @@ function hodlRenderKeyForm() {
     hodlFormEl.innerHTML = `
       <p class="label">${hodlT("Number base options")}</p>
       <div class="choice-grid entropy-format-grid">${formatChoices}</div>
-      <p class="label" id="entropy-input-label">${format.label} entropy for a ${config.words}-word seed</p>
+      <p class="label" id="entropy-input-label">${hodlT("{format} entropy for a {words}-word seed", { format: formatLabel, words: config.words })}</p>
       ${hodlSeedMetaRowMarkup("entropy-meta", true, keyboardToggle)}
       <div class="dice-input-shell entropy-input-shell"><pre class="dice-input-highlight" translate="no" id="entropy-input-highlight" aria-hidden="true"></pre><textarea id="${inputId}" placeholder="${hodlTAttr("Exactly {digits} {unit}", { digits: format.digits, unit: formatUnit })}" aria-labelledby="entropy-input-label" aria-describedby="entropy-meta" autocomplete="off" spellcheck="false" autocapitalize="${usesKeyboard ? "off" : format.base > 10 ? "characters" : "off"}"></textarea></div>
       ${numberBaseKeyboard}
@@ -6563,7 +7462,20 @@ function hodlRenderKeyForm() {
       update();
       return;
     }
-    hodlFormEl.innerHTML = `${choices}<p class="label">Your ${config.words}-word seed phrase</p>${hodlSeedMetaRowMarkup("seed-meta", true)}<div class="passphrase-keyboard-tools">${hodlSwitchRowMarkup("seed-autocomplete", hodlT("Autocomplete BIP39 words"), { checked: autocompleteEnabled })}${hodlSeedKeyboardToggleMarkup()}</div><div class="dice-input-shell seed-input-shell"><pre class="dice-input-highlight" id="seed-highlight" translate="no" aria-hidden="true"></pre><textarea id="seed" placeholder="Enter exactly ${config.words} BIP39 words" aria-describedby="seed-meta" autocomplete="off" spellcheck="false" autocapitalize="off"></textarea></div>${hodlSeedKeyboardMarkup()}<div id="last-words" translate="no" class="row last-word-options"></div>`;
+    if (hodlSecureSeedActive() && hodlSecureSeedPickerShown(state)) {
+      // Secure entry: the picker holds the words as indices; no text field. A
+      // seed that arrived as text while the switch was on (an import, a Journal
+      // fill) keeps the text field, as hodlSecureSeedApplies decides.
+      hodlFormEl.innerHTML = `${choices}<div id="seed-picker-host"></div>${hodlSeedScanHostMarkup()}`;
+      bindMethodChoices({ value: "" });
+      hodlMountSeedPicker();
+      hodlBindSeedScan();
+      hodlBindKeyFields();
+      hodlRenderPassphraseKeyboard();
+      return;
+    }
+    hodlFormEl.innerHTML = `${choices}<p class="label">${hodlT("Your {words}-word seed phrase", { words: config.words })}</p>${hodlSeedMetaRowMarkup("seed-meta", true)}<div class="passphrase-keyboard-tools">${hodlSwitchRowMarkup("seed-autocomplete", hodlT("Autocomplete BIP39 words"), { checked: autocompleteEnabled })}${hodlSeedKeyboardToggleMarkup()}</div><div class="dice-input-shell seed-input-shell"><pre class="dice-input-highlight" id="seed-highlight" translate="no" aria-hidden="true"></pre><textarea id="seed" placeholder="${hodlTAttr("Enter exactly {words} BIP39 words", { words: config.words })}" aria-describedby="seed-meta" autocomplete="off" spellcheck="false" autocapitalize="off"></textarea></div>${hodlSeedKeyboardMarkup()}<div id="last-words" translate="no" class="row last-word-options"></div>${hodlSeedScanHostMarkup()}`;
+    hodlBindSeedScan();
     let input = document.getElementById("seed"), update = () => {
       let rawValue = input.value, value = rawValue.trim(), meta = hodlElement("#seed-meta"), picker = hodlElement("#last-words"), analysis = hodlRenderSeedInputState(input, config.words);
       if (hodlLooksExtendedKey(value)) {
@@ -6604,6 +7516,14 @@ function hodlRenderKeyForm() {
       hodlApplyFilteredInput(input, hodlFilterSeed);
       hodlAutocompleteSeedInput(input, event);
       update();
+      // Emptied while secure entry is on: the next words go to the picker.
+      let state = hodlKeys[hodlActiveKey];
+      if (hodlSecureSeedActive() && !input.value.trim() && !hodlSecureSeedHasWords(hodlSecureKeyOf(state))) {
+        if (state) state.fields.seed = "";
+        hodlLastWordCache.clear();
+        hodlSetMode(hodlKeyMode);
+        hodlSeedPickerImport?.then(() => { try { hodlSeedPicker?.focus?.(); } catch {} });
+      }
     };
     input.onscroll = () => hodlSyncDiceHighlight(input);
     input.onfocus = update;
@@ -6617,20 +7537,52 @@ function hodlRenderKeyForm() {
     update();
     return;
   }
+  hodlReleaseSecureKeyField();
+  if (hodlSecureKeyFormApplies(hodlKeys[hodlActiveKey])) {
+    // Secure entry: the private key is typed into a vault-bound masked field.
+    // This is its own template so the standard one below stays exactly as it
+    // was. The field is #secure-key, not #key: capture, global sync and the
+    // standard kind radios all read #key. Highlight, keyboard, scan and the
+    // brain trim only work on #key, so they stay on the standard template.
+    let secureKind = hodlNormalizePrivateKeyKind(hodlKeys[hodlActiveKey]?.fields?.keyKind);
+    let secureChecked = (value) => value === secureKind ? " checked" : "";
+    hodlFormEl.innerHTML = `
+    <p class="label">${hodlT("Private key format")}</p>
+    <div class="choice-grid">
+    <label class="choice"><input type="radio" name="kk" value="wif"${secureChecked("wif")} /><span><strong>${hodlT("WIF")}</strong><span class="desc">${hodlT("Bitcoin wallet import format (Base58Check).")}</span></span></label>
+    <label class="choice"><input type="radio" name="kk" value="hex-key"${secureChecked("hex-key")} /><span><strong>${hodlT("Private key hex")}</strong><span class="desc">${hodlT("Raw 32-byte private key as 64 hexadecimal characters.")}</span></span></label>
+    <label class="choice"><input type="radio" name="kk" value="minikey"${secureChecked("minikey")} /><span><strong>${hodlT("Mini key")}</strong><span class="desc">${hodlT("Casascius-style short key.")}</span></span></label>
+    <label class="choice"><input type="radio" name="kk" value="brain"${secureChecked("brain")} /><span><strong>${hodlT("Brain wallet")}</strong><span class="desc">${hodlT("Unsafe. SHA-256 of your text, as a single key pair or a 24-word seed.")}</span></span></label>
+    </div>
+    ${hodlBrainOutputMarkup(hodlKeys[hodlActiveKey]?.brainWalletOutput || "scalar")}
+    <div id="private-key-entry">
+    <p class="label" id="private-key-input-label">${hodlT("Private key or recovery passphrase")}</p>
+    ${hodlSeedMetaRowMarkup("private-key-meta", true, "")}
+    <div class="dice-input-shell private-key-input-shell"><input id="secure-key" type="text" placeholder="${hodlTAttr("5… / K… / L…")}" aria-labelledby="private-key-input-label" aria-describedby="private-key-meta" autocomplete="off" spellcheck="false" autocapitalize="off" data-secure-key /></div><p class="field-note" id="secure-key-status" aria-live="polite"></p><button type="button" class="btn secondary" id="secure-key-reveal" aria-pressed="false">${hodlT("Show key")}</button>${hodlKeyScanHostMarkup()}</div>`;
+    hodlBindKeyFields();
+    hodlBindSecureKeyField();
+    hodlBindKeyScan();
+    hodlRenderPassphraseKeyboard();
+    return;
+  }
+  // The bind below writes the checked radio back into the key's state, so a
+  // template that always checked WIF reset the stored format on every render.
+  let plainKind = hodlNormalizePrivateKeyKind(hodlKeys[hodlActiveKey]?.fields?.keyKind);
+  let plainChecked = (value) => value === plainKind ? " checked" : "";
   hodlFormEl.innerHTML = `
     <p class="label">${hodlT("Private key format")}</p>
     <div class="choice-grid">
-    <label class="choice"><input type="radio" name="kk" value="wif" checked /><span><strong>${hodlT("WIF")}</strong><span class="desc">${hodlT("Bitcoin wallet import format (Base58Check).")}</span></span></label>
-    <label class="choice"><input type="radio" name="kk" value="hex-key" /><span><strong>${hodlT("Private key hex")}</strong><span class="desc">${hodlT("Raw 32-byte private key as 64 hexadecimal characters.")}</span></span></label>
-    <label class="choice"><input type="radio" name="kk" value="minikey" /><span><strong>${hodlT("Mini key")}</strong><span class="desc">${hodlT("Casascius-style short key.")}</span></span></label>
-    <label class="choice"><input type="radio" name="kk" value="brain" /><span><strong>${hodlT("Brain wallet")}</strong><span class="desc">${hodlT("Unsafe. SHA-256 of your text, as a single key pair or a 24-word seed.")}</span></span></label>
+    <label class="choice"><input type="radio" name="kk" value="wif"${plainChecked("wif")} /><span><strong>${hodlT("WIF")}</strong><span class="desc">${hodlT("Bitcoin wallet import format (Base58Check).")}</span></span></label>
+    <label class="choice"><input type="radio" name="kk" value="hex-key"${plainChecked("hex-key")} /><span><strong>${hodlT("Private key hex")}</strong><span class="desc">${hodlT("Raw 32-byte private key as 64 hexadecimal characters.")}</span></span></label>
+    <label class="choice"><input type="radio" name="kk" value="minikey"${plainChecked("minikey")} /><span><strong>${hodlT("Mini key")}</strong><span class="desc">${hodlT("Casascius-style short key.")}</span></span></label>
+    <label class="choice"><input type="radio" name="kk" value="brain"${plainChecked("brain")} /><span><strong>${hodlT("Brain wallet")}</strong><span class="desc">${hodlT("Unsafe. SHA-256 of your text, as a single key pair or a 24-word seed.")}</span></span></label>
     </div>
     ${hodlBrainOutputMarkup(hodlKeys[hodlActiveKey]?.brainWalletOutput || "scalar")}
     <div id="private-key-entry">
     <p class="label" id="private-key-input-label">${hodlT("Private key or recovery passphrase")}</p>
     ${hodlSeedMetaRowMarkup("private-key-meta", true, hodlPrivateKeyKeyboardToggleMarkup())}
     ${hodlBrainWalletTrimToggleMarkup()}
-    <div class="dice-input-shell private-key-input-shell"><pre class="dice-input-highlight" id="private-key-highlight" translate="no" aria-hidden="true"></pre><textarea id="key" placeholder="${hodlTAttr("5… / K… / L…")}" aria-labelledby="private-key-input-label" aria-describedby="private-key-meta" autocomplete="off" spellcheck="false" autocapitalize="off"></textarea></div><div class="passphrase-keyboard-host" id="private-keyboard-host" hidden></div></div>`;
+    <div class="dice-input-shell private-key-input-shell"><pre class="dice-input-highlight" id="private-key-highlight" translate="no" aria-hidden="true"></pre><textarea id="key" placeholder="${hodlTAttr("5… / K… / L…")}" aria-labelledby="private-key-input-label" aria-describedby="private-key-meta" autocomplete="off" spellcheck="false" autocapitalize="off"></textarea></div>${hodlKeyScanHostMarkup()}<div class="passphrase-keyboard-host" id="private-keyboard-host" hidden></div></div>`;
   hodlBindKeyFields();
   hodlRenderPassphraseKeyboard();
 }
@@ -6850,6 +7802,421 @@ function hodlRenderPrivateKeyInputState(input) {
   }
   return analysis;
 }
+// A scan only ever delivers a WIF (the classifier checked it), so the field
+// takes it as one whatever key type is selected: in Brain wallet mode the
+// text would otherwise be hashed as a passphrase (#1291 gate).
+
+function hodlBindKeyScan() {
+  // The slice harness loads this with no scan host: return before anything
+  // else. Every build ships the scan (Secure entry unhide, owner 11-04).
+  let host = document.getElementById("key-scan-host");
+  // No host, no mount: an open request is dropped here too.
+  if (!host) {
+    hodlKeyScanOpenAfterMount = false;
+    return;
+  }
+  if (!hodlKeyScanImport) {
+    hodlKeyScanImport = import("./qr-key-scan.js").then((module) => {
+      hodlKeyScanModule = module;
+      return module;
+    }).catch(() => null);
+  }
+  hodlKeyScanImport.then((module) => {
+    // An open request belongs to this mount only: a mount that bails (the
+    // host gone, a panel already there) drops it, so a later mount never
+    // opens the camera without a Scan press.
+    let openNow = hodlKeyScanOpenAfterMount;
+    hodlKeyScanOpenAfterMount = false;
+    if (!module || hodlKeyScan || !host.isConnected || host.childNodes.length) return;
+    try {
+      hodlKeyScan = module.mountKeyScan(host, {
+        accept: "wif",
+        privateValue: (value, revealed) => hodlPrivateValue(value, "mono private-field-value", revealed),
+        beforeOpen: hodlKeyScanBeforeOpen,
+        onKey: hodlKeyScanLoad,
+        replacesKey: hodlKeyScanReplaces,
+        afterLoad: () => { try { document.getElementById("secure-key")?.focus(); } catch {} },
+      });
+    } catch {
+      return;
+    }
+    // Not for a page hidden while Secure entry was turning on: the camera
+    // would start out of sight.
+    if (openNow && document.visibilityState !== "hidden") try { hodlKeyScan.open(); } catch {}
+  }).catch(() => {});
+}
+
+async function hodlKeyScanBeforeOpen() {
+  if (document.getElementById("secure-key")) return true;
+  if (hodlKeyMode === "key" && !hodlSecureEntryOn) {
+    hodlKeyScanOpenAfterMount = true;
+    try {
+      await hodlSecureEntryToggle(true);
+    } catch {
+      hodlKeyScanOpenAfterMount = false;
+      return false;
+    }
+    if (hodlSecureEntryOn) return false;
+    hodlKeyScanOpenAfterMount = false;
+    return false;
+  }
+  return false;
+}
+
+function hodlKeyScanReplaces() {
+  let state = hodlKeys[hodlActiveKey];
+  if (!state) return false;
+  return hodlSecureKeyHasData(hodlSecureKeyOf(state));
+}
+
+function hodlKeyScanLoad(bytes) {
+  // A load that cannot happen throws, so the panel says nothing was loaded
+  // instead of closing as if it had.
+  if (!hodlSecureKeyActive()) throw new Error("Secure entry is not active for a private key.");
+  let state = hodlKeys[hodlActiveKey];
+  if (!state) throw new Error("No active key.");
+  if (!document.getElementById("secure-key")) throw new Error("The masked key field is not on screen.");
+  if (!(bytes instanceof Uint8Array)) throw new Error("Bad key bytes.");
+  for (const byte of bytes) if (byte >= 0x80) throw new Error("The key is not ASCII.");
+  let entry = hodlSecureKeyEntry(true);
+  if (!entry) throw new Error("No secure key.");
+  hodlInvalidateLiveKeyResult();
+  try {
+    entry.vault.setBytes(bytes);
+  } catch (error) {
+    try { entry.vault.clear(); } catch {}
+    throw error;
+  }
+  // The format changes only once the vault holds the scanned key: a failed
+  // load leaves it as it was (MiniMax, DeepSeek, #1405).
+  state.fields.keyKind = "wif";
+  let values = hodlPrivateKeyValues(state.fields);
+  for (const format of ["wif", "hex-key", "minikey", "brain"]) values[format] = "";
+  // Global sync copies computed from the old key go with it, as at turn-on
+  // Keep and in the seed scan (MiniMax, #1439 gate). The key is installed, so
+  // a throw here must not make the panel say nothing was loaded.
+  if (state.globalSync && String(state.globalSyncSource || "").startsWith("key:")) {
+    try { hodlClearGlobalSyncCopies(state); } catch {}
+  }
+  // The key is installed: a redraw that fails from here on must not make the
+  // panel say nothing was loaded, as in the seed scan (Kimi, #1439 gate r3).
+  // Each step has its own guard, so the fingerprint preview is queued even
+  // when the form redraw fails: the fingerprint on screen follows the key in
+  // the vault (DeepSeek, MiniMax, #1441 gate).
+  try { hodlSetMode(hodlKeyMode); } catch {}
+  try { hodlQueueMasterFingerprintPreview(0); } catch {}
+}
+function hodlBindSeedScan() {
+  // The slice harness loads this with no scan host: return before anything
+  // else. Every build ships the scan (Secure entry unhide, owner 11-04).
+  let host = document.getElementById("seed-scan-host");
+  // No host, no mount: an open request is dropped here too (GLM, round 1).
+  if (!host) {
+    hodlSeedScanOpenAfterMount = false;
+    return;
+  }
+  if (!hodlKeyScanImport) {
+    hodlKeyScanImport = import("./qr-key-scan.js").then((module) => {
+      hodlKeyScanModule = module;
+      return module;
+    }).catch(() => null);
+  }
+  hodlKeyScanImport.then((module) => {
+    // An open request belongs to this mount only: a mount that bails (the
+    // host gone, a panel already there) drops it, so a later mount never
+    // opens the camera without a Scan press (Kimi, autofix review).
+    let openNow = hodlSeedScanOpenAfterMount;
+    hodlSeedScanOpenAfterMount = false;
+    if (!module || hodlSeedScan || !host.isConnected || host.childNodes.length) return;
+    try {
+      hodlSeedScan = module.mountKeyScan(host, {
+        accept: "seed",
+        idPrefix: "seed-scan",
+        wordlist: hodlBip39Wordlist,
+        privateValue: (value, revealed) => hodlPrivateValue(value, "mono private-field-value", revealed),
+        beforeOpen: hodlSeedScanBeforeOpen,
+        onSeed: hodlSeedScanLoad,
+        replacesSeed: hodlSeedScanReplaces,
+        afterLoad: hodlSeedScanAfterLoad,
+      });
+    } catch {
+      return;
+    }
+    // Not for a page hidden while Secure entry was turning on: the camera
+    // would start out of sight (K3.1, #1364 round 6).
+    if (openNow && document.visibilityState !== "hidden") try { hodlSeedScan.open(); } catch {}
+  }).catch(() => {});
+}
+async function hodlSeedScanBeforeOpen() {
+  if (hodlSecureSeedActive()) return true;
+  if (hodlKeyMode === "seed" && hodlSeedMethod === "words" && !hodlSecureEntryOn) {
+    hodlSeedScanOpenAfterMount = true;
+    try {
+      await hodlSecureEntryToggle(true);
+    } catch {
+      hodlSeedScanOpenAfterMount = false;
+      return false;
+    }
+    if (hodlSecureEntryOn) return false;
+    hodlSeedScanOpenAfterMount = false;
+    return false;
+  }
+  return false;
+}
+// True when Continue would replace words the active key already holds, typed
+// or held by Secure entry (DeepSeek red team, round 3).
+function hodlSeedScanReplaces() {
+  let state = hodlKeys[hodlActiveKey];
+  if (!state) return false;
+  return hodlSecureSeedHasWords(hodlSecureKeyOf(state)) || Boolean(String(state.fields?.seed ?? "").trim()) || Boolean(String(state.fields?.seedNumbers ?? "").trim());
+}
+// After a scanned seed loads, focus moves to the word picker instead of falling
+// to the page. The load redraws the form and the new picker mounts once its
+// import resolves, so when it is not there yet the mount takes the focus.
+function hodlSeedScanAfterLoad() {
+  if (hodlSeedPicker) {
+    try { hodlSeedPicker.focus(); } catch {}
+    return;
+  }
+  hodlSeedPickerFocusOnMount = true;
+}
+function hodlSeedScanLoad(indices, count) {
+  try {
+    // A load that cannot happen throws, so the panel says nothing was loaded
+    // instead of closing as if it had (MiniMax, round 4).
+    if (!hodlSecureSeedActive()) throw new Error("Secure entry is not active for seed words.");
+    if (![12, 15, 18, 21, 24].includes(count)) throw new Error("Unsupported word count.");
+    if (!(indices instanceof Uint16Array) || indices.length !== count) throw new Error("Bad indices.");
+    let state = hodlKeys[hodlActiveKey];
+    if (!state) throw new Error("No active key.");
+    let key = hodlSecureKeyOf(state, true);
+    if (key == null) throw new Error("No secure key.");
+    let entry = seedEntry(count);
+    try {
+      for (let i = 0; i < count; i += 1) {
+        let index = indices[i];
+        if (!Number.isInteger(index) || index < 0 || index >= 2048) throw new Error("bad index");
+        seedSet(entry, i, index);
+      }
+    } catch (error) {
+      try { entry.indices.fill(0); } catch {}
+      throw error;
+    }
+    // Like any edit of the words: a derivation still running on the old words
+    // stops and what they showed is dropped, before the new words go in (GLM,
+    // MiniMax, round 4). The old result is kept to wipe below.
+    let previous = state.result;
+    hodlInvalidateLiveKeyResult();
+    // sessionSet scrubs the entry it replaces, so the old words are zeroed
+    // before the new entry is installed.
+    try {
+      sessionSet(hodlSecureSession, key, "seed", entry);
+    } catch (error) {
+      try { entry.indices.fill(0); } catch {}
+      throw error;
+    }
+    state.fields.seed = "";
+    // The same seed typed as word numbers goes too: Continue replaces the
+    // key's seed, whichever way it was entered (Kimi, round 5).
+    state.fields.seedNumbers = "";
+    // Global sync copies computed from the old words go with them: the scan
+    // replaced those words, so every copy of them is stale. A wallet made
+    // from a private key keeps its fields, as at turn-on Keep: the words
+    // cannot rebuild it. The result was invalidated above, so the check reads
+    // the one kept to wipe (GLM, MiniMax, red team, #1439 gate r2).
+    // The words are installed, so a throw here must not make the panel say
+    // nothing was loaded (Kimi, #1439 gate).
+    if (state.globalSync && ["seed:words", "seed:numbers"].includes(state.globalSyncSource) && previous?.kind !== "single") {
+      try { hodlClearGlobalSyncCopies(state); } catch {}
+    }
+    state.lastWord = "";
+    // The D++ final word belonged to the old length, as on a word-count
+    // change (Kimi, round 3).
+    state.dplusLastWord = "";
+    // Typed partial phrases go with the typed words (GLM, round 1).
+    hodlLastWordCache.clear();
+    hodlTargetWordCount = count;
+    state.targetWords = count;
+    state.error = "";
+    state.errorSpec = null;
+    // The words are installed: a redraw that fails from here on must not make
+    // the panel say nothing was loaded (GLM, round 5).
+    try {
+      hodlRenderKeyForm();
+      hodlRestoreFormFields(state);
+      hodlUpdateSeedLengthControl();
+      hodlSecureSeedChanged();
+    } catch {}
+    // The wallet derived from the old words is wiped once nothing shows it,
+    // unless a key tab or the Key Manager still does (Kimi, round 2).
+    try { hodlWipeUnsharedWalletRows(previous); } catch {}
+  } finally {
+    try { indices.fill(0); } catch {}
+  }
+}
+// A teardown bumps the epoch, so a mount still waiting on the import when the
+// panels were torn down (End Session, a language switch) mounts nothing.
+var hodlPsbtScanEpoch = 0;
+function hodlBindPsbtScans() {
+  // The slice harness loads this with no scan host: return before anything
+  // else.
+  let hosts = hodlPsbtScanHosts.map(([hostId, fieldId]) => [document.getElementById(hostId), document.getElementById(fieldId)]);
+  if (!hosts.some(([host]) => host)) return;
+  if (!hodlPsbtScanImport) {
+    hodlPsbtScanImport = import("./qr-psbt-scan.js").then((module) => {
+      hodlPsbtScanModule = module;
+      return module;
+    }).catch(() => null);
+  }
+  let epoch = hodlPsbtScanEpoch;
+  hodlPsbtScanImport.then((module) => {
+    if (!module || epoch !== hodlPsbtScanEpoch) return;
+    for (let [host, field] of hosts) {
+      if (!host || !field || !host.isConnected || host.childNodes.length) continue;
+      if (hodlPsbtScans.some((entry) => entry.hostId === host.id)) continue;
+      try {
+        hodlPsbtScans.push({ hostId: host.id, panel: module.mountPsbtScan(host, { field }) });
+      } catch {
+        try { host.replaceChildren(); } catch {}
+      }
+    }
+  }).catch(() => {});
+}
+function hodlDestroyPsbtScans() {
+  hodlPsbtScanEpoch++;
+  let scans = hodlPsbtScans;
+  hodlPsbtScans = [];
+  for (let entry of scans) {
+    try { entry.panel?.destroy(); } catch {
+      // A panel that would not come down must not leave its markup behind.
+      try { document.getElementById(entry.hostId)?.replaceChildren(); } catch {}
+    }
+  }
+  // The decoders are retired at End Session only: the registry is shared with
+  // the nonce ceremony's frame decoder, which a language switch must not stop.
+}
+// A tool's own Clear, and leaving the Transactions workspace, close an open
+// scan panel (its camera would otherwise keep streaming) and give the host a
+// fresh, closed one.
+function hodlResetPsbtScans() {
+  try { hodlDestroyPsbtScans(); } catch {}
+  try { hodlBindPsbtScans(); } catch {}
+}
+
+// Public-text scan panels: every host that names its field (data-scan-field)
+// and what it reads (data-scan-accept). They ship in every build; no secret
+// field has a host.
+var hodlTextScans = [], hodlTextScanModule = null, hodlTextScanImport = null, hodlTextScanEpoch = 0;
+// Each tool's Clear closes the text scan panels in its card. The MultiSig
+// Clear re-renders its station, which resets them there.
+const hodlTextScanClears = [["ln-inv-clear", "ln-inv-card"], ["ln-wipe", "ln-card"], ["sp-wipe", "sp-card"], ["psbt-wipe", "psbt-card"], ["core-wipe", "core-card"]];
+function hodlBindTextScans() {
+  let hosts = typeof document.querySelectorAll === "function" ? [...document.querySelectorAll("[data-scan-field]")] : [];
+  if (!hosts.length) return;
+  if (!hodlTextScanImport) {
+    hodlTextScanImport = import("./qr-text-scan.js").then((module) => {
+      hodlTextScanModule = module;
+      return module;
+    }).catch(() => null);
+  }
+  let epoch = hodlTextScanEpoch;
+  hodlTextScanImport.then((module) => {
+    if (!module || epoch !== hodlTextScanEpoch) return;
+    for (let host of hosts) {
+      let field = document.getElementById(host.dataset.scanField);
+      if (!host.id || !field || !host.isConnected || host.childNodes.length) continue;
+      if (hodlTextScans.some((entry) => entry.host === host)) continue;
+      try {
+        hodlTextScans.push({ host, panel: module.mountTextScan(host, { field, accept: host.dataset.scanAccept, mode: host.dataset.scanMode || "replace" }) });
+      } catch {
+        try { host.replaceChildren(); } catch {}
+      }
+    }
+  }).catch(() => {});
+}
+// With a container id, only the panels inside it (and any whose host left the
+// page) come down; without one, all of them.
+function hodlDestroyTextScans(root = "") {
+  hodlTextScanEpoch++;
+  let container = root ? document.getElementById(root) : null, keep = [], gone = [];
+  for (let entry of hodlTextScans) {
+    let inside = !root || !entry.host.isConnected || Boolean(container?.contains(entry.host));
+    (inside ? gone : keep).push(entry);
+  }
+  hodlTextScans = keep;
+  for (let entry of gone) {
+    try { entry.panel?.destroy(); } catch {
+      try { entry.host.replaceChildren(); } catch {}
+    }
+  }
+}
+function hodlResetTextScans(root = "") {
+  try { hodlDestroyTextScans(root); } catch {}
+  try { hodlBindTextScans(); } catch {}
+}
+// A collapsed section, or Clear Comparison, closes only the panels inside it,
+// so a scan running on another field keeps its camera and its frames (Kimi,
+// MiniMax), and gives those hosts fresh, closed panels.
+function hodlResetPsbtScansIn(container) {
+  if (!container) return;
+  let kept = [];
+  for (let entry of hodlPsbtScans) {
+    let host = document.getElementById(entry.hostId);
+    if (!host || !container.contains(host)) {
+      kept.push(entry);
+      continue;
+    }
+    try { entry.panel?.destroy(); } catch {
+      try { host.replaceChildren(); } catch {}
+    }
+  }
+  hodlPsbtScans = kept;
+  try { hodlBindPsbtScans(); } catch {}
+}
+function hodlMountSeedPicker() {
+  let host = document.getElementById("seed-picker-host");
+  if (!host || !hodlSecureSeedActive()) return;
+  if (!hodlSeedPickerImport) hodlSeedPickerImport = import("./seed-picker.js").catch(() => null);
+  hodlSeedPickerImport.then((module) => {
+    if (!module) {
+      hodlSeedPickerImport = null;
+      if (host.isConnected && host.childNodes.length === 0 && hodlSecureSeedActive()) {
+        host.innerHTML = `<p class="field-note edge-note is-private" id="seed-picker-load-error" role="alert">${hodlT("The word picker could not load. Turn Secure entry off to use standard text entry.")}</p>`;
+      }
+      return;
+    }
+    if (hodlSeedPicker || !host.isConnected || host.childNodes.length || !hodlSecureSeedActive()) return;
+    let entry = hodlSecureSeedEntry(true);
+    if (!entry) return;
+    try {
+      hodlSeedPicker = module.mountSeedPicker(host, {
+        entry, wordlist: hodlBip39Wordlist, seedSet, seedUndo, seedIndices,
+        entropyFromWordIndices: hodlEntropyFromWordIndices,
+        onChange: hodlSecureSeedChanged,
+      });
+      // A scanned seed asked for focus before this mount finished.
+      if (hodlSeedPickerFocusOnMount) {
+        hodlSeedPickerFocusOnMount = false;
+        try { hodlSeedPicker.focus(); } catch {}
+      }
+    } catch {
+      if (host.isConnected && hodlSecureSeedActive()) {
+        host.innerHTML = "";
+        host.innerHTML = `<p class="field-note edge-note is-private" id="seed-picker-load-error" role="alert">${hodlT("The word picker could not load. Turn Secure entry off to use standard text entry.")}</p>`;
+      }
+    }
+  }).catch(() => {});
+}
+function hodlSecureSeedChanged() {
+  // A word was picked, replaced or removed: a derivation still running took
+  // its copy of the words before this change and must not commit them.
+  hodlStopDerivation("key");
+  hodlInvalidateActiveKeyOutput();
+  hodlUpdateSeedLengthControl();
+  hodlSyncKeyClearButton();
+  hodlSyncDeriveButton();
+  hodlQueueMasterFingerprintPreview();
+}
 function hodlBindKeyFields() {
   // Its listener from the last bind goes before this bind adds its own.
   hodlReleaseFormListeners("key-fields");
@@ -6905,6 +8272,17 @@ function hodlBindKeyFields() {
       hodlUpdatePrivateKeyInputPresentation();
       hodlRenderPrivateKeyInputState(key);
       hodlUpdatePrivateKeyKeyboardKeys(key);
+      // Emptied while Secure entry is on: the next key goes to the masked
+      // field, as the seed field's next words go to the picker (Grok, Kimi,
+      // round 3). Only the user's own edit counts: the apply() at bind time
+      // runs before the stored kind's radio is restored, and a kind change
+      // has its own redraw (Grok, round 5).
+      if (event?.type === "input" && !key.value && state && hodlSecureKeyFormApplies(state)) {
+        hodlSetMode(hodlKeyMode);
+        // The next keystroke goes to the masked field, not to the field the
+        // redraw removed (DeepSeek, round 4).
+        document.getElementById("secure-key")?.focus({ preventScroll: true });
+      }
     };
     let change = (event) => {
       if (!event.currentTarget.checked) return;
@@ -6957,6 +8335,9 @@ function hodlBindKeyFields() {
     };
     apply();
   }
+  hodlBindKeyScan();
+  hodlBindSeedScan();
+  hodlDecorateAppPaste();
 }
 function hodlSelectedEntropy(targetWords = hodlTargetWordCount) {
   let format = hodlNormalizeEntropyFormat(hodlEntropyFormat), value = document.getElementById(format)?.value.trim() || "";
@@ -6987,6 +8368,7 @@ function hodlCanDeriveCurrentKey() {
       }
     } else hodlReadCoinType(document.getElementById("network"));
     if (hodlKeyMode === "dice") {
+      if (hodlSecureDiceApplies()) return hodlSecureDiceReady();
       let input = document.getElementById("dice");
       if (!input) return false;
       let analysis = hodlAnalyzeDiceInput(input.value, hodlDiceMethod, hodlTargetWordCount);
@@ -7014,6 +8396,7 @@ function hodlCanDeriveCurrentKey() {
     }
     if (hodlKeyMode === "hex") return hodlSelectedEntropy().ok;
     if (hodlKeyMode === "seed") {
+      if (hodlSecureSeedApplies()) return hodlSecureSeedReady();
       let selected = hodlSelectedSeedInput(hodlTargetWordCount), value = selected.value;
       if (!value) return false;
       if (selected.extended) {
@@ -7025,6 +8408,7 @@ function hodlCanDeriveCurrentKey() {
       }
       return hodlValidateTargetMnemonic(value, hodlTargetWordCount).ok;
     }
+    if (hodlKeyMode === "key" && hodlSecureKeyApplies()) return hodlSecureKeyReady(derivationPlan?.network ?? hodlSelectedNetwork(document.getElementById("network")));
     if (hodlKeyMode === "key" && hodlNormalizePrivateKeyKind(document.querySelector('input[name="kk"]:checked')?.value, document.getElementById("key")?.value || "") === "brain") {
       if (!hodlBrainAcked()) return false;
       if (hodlBrainWalletOutput() === "hd") return hodlBrainLabEntropy(hodlBrainWalletText(document.getElementById("key")?.value)).ok;
@@ -7045,6 +8429,7 @@ var hodlLowEntropyConfirm = null, hodlFingerprintCollisionConfirm = null;
 // "recommended amount" the user can fall short of at derive time. The brain
 // wallet keeps its own explicit acknowledgement instead.
 function hodlLowEntropyWarningFor(mode, method, value, targetWords) {
+
   let config = hodlSeedConfig(targetWords);
   if (mode === "dice" && (method === "coldcard" || method === "coleman")) {
     let rolls = hodlSplitDiceString(value).rolls;
@@ -7062,8 +8447,9 @@ function hodlLowEntropyWarningFor(mode, method, value, targetWords) {
 }
 function hodlLowEntropyWarning() {
   try {
-    if (hodlKeyMode === "dice") return hodlLowEntropyWarningFor("dice", hodlDiceMethod, document.getElementById("dice")?.value ?? "", hodlTargetWordCount);
+    if (hodlKeyMode === "dice") return hodlSecureDiceApplies() ? hodlSecureDiceLowEntropyWarning(hodlSecureDiceEntry()?.count ?? 0, hodlTargetWordCount) : hodlLowEntropyWarningFor("dice", hodlDiceMethod, document.getElementById("dice")?.value ?? "", hodlTargetWordCount);
     if (hodlKeyMode === "cards") return hodlLowEntropyWarningFor("cards", hodlCardMethod, document.getElementById(hodlCardMethod === "direct" ? "direct-cards" : "cards")?.value ?? "", hodlTargetWordCount);
+
   } catch {
   }
   return null;
@@ -7109,9 +8495,13 @@ function hodlSyncDeriveButton() {
   }
 }
 var hodlMasterFingerprintTimer = 0, hodlMasterFingerprintRevision = 0;
-function hodlFingerprintMnemonic() {
+function hodlFingerprintSource() {
   try {
     if (hodlKeyMode === "dice") {
+      if (hodlSecureDiceApplies()) {
+        let entropy = hodlSecureDiceEntropy(hodlTargetWordCount);
+        return entropy.ok ? { entropy: entropy.bytes } : null;
+      }
       let input = document.getElementById("dice");
       if (!input) return null;
       if (hodlDiceMethod === "dplus") {
@@ -7119,45 +8509,75 @@ function hodlFingerprintMnemonic() {
           parsed = hodlDPlusRolls(input.value, hodlTargetWordCount),
           finalWord = rollsFinalWord ? parsed.finalWord : hodlPickedLastWord;
         if (!parsed.allRolledValid || parsed.invalidRequiredCount || (rollsFinalWord ? !parsed.complete : parsed.waiting !== "last-word" || !parsed.candidates.includes(finalWord))) return null;
-        let validation = hodlValidateTargetMnemonic([...parsed.wordSlots, finalWord].join(" "), hodlTargetWordCount);
-        return validation.ok ? validation.words.join(" ") : null;
+        let words = [...parsed.wordSlots, finalWord];
+        if (words.length !== hodlTargetWordCount) return null;
+        let indices;
+        try {
+          indices = hodlWordIndices(words);
+          hodlEntropyFromWordIndices(indices).fill(0);
+        } catch {
+          indices?.fill(0);
+          return null;
+        }
+        return { indices };
       }
       if (hodlDiceMethod === "bitbox") {
         let parsed = hodlBitBoxRolls(input.value, hodlTargetWordCount);
         if (parsed.leftover || parsed.waiting !== "last-word" || !hodlPickedLastWord) return null;
-        let possible = hodlTargetLastWords(parsed.words.join(" "), hodlTargetWordCount);
-        if (!possible?.candidates.includes(hodlPickedLastWord)) return null;
-        let validation = hodlValidateTargetMnemonic([...parsed.words, hodlPickedLastWord].join(" "), hodlTargetWordCount);
-        return validation.ok ? validation.words.join(" ") : null;
+        let words = [...parsed.words, hodlPickedLastWord];
+        if (words.length !== hodlTargetWordCount) return null;
+        let indices;
+        try {
+          indices = hodlWordIndices(words);
+          hodlEntropyFromWordIndices(indices).fill(0);
+        } catch {
+          indices?.fill(0);
+          return null;
+        }
+        return { indices };
       }
       if (hodlAnalyzeDiceInput(input.value, hodlDiceMethod, hodlTargetWordCount).coinDerivedCount) return null;
       let entropy = hodlDiceEntropy(input.value, hodlDiceMethod, hodlTargetWordCount);
-      return entropy.ok ? hodlEntropyToMnemonic(entropy.bytes, hodlBip39Wordlist) : null;
+      return entropy.ok ? { entropy: entropy.bytes } : null;
     }
     if (hodlKeyMode === "cards") {
       let entropy = hodlSelectedCardsEntropy(hodlTargetWordCount);
-      return entropy.ok ? hodlEntropyToMnemonic(entropy.bytes, hodlBip39Wordlist) : null;
+      return entropy.ok ? { entropy: entropy.bytes } : null;
     }
     if (hodlKeyMode === "hex") {
       let entropy = hodlSelectedEntropy();
-      return entropy.ok ? hodlEntropyToMnemonic(entropy.bytes, hodlBip39Wordlist) : null;
+      return entropy.ok ? { entropy: entropy.bytes } : null;
     }
     if (hodlKeyMode === "seed") {
+      if (hodlSecureSeedApplies()) {
+        let indices = hodlSecureSeedIndices();
+        return indices ? { indices } : null;
+      }
       let selected = hodlSelectedSeedInput(hodlTargetWordCount), value = selected.value;
       if (!value || selected.extended) return null;
       let validation = hodlValidateTargetMnemonic(value, hodlTargetWordCount);
-      return validation.ok ? validation.words.join(" ") : null;
+      return validation.ok ? { indices: hodlWordIndices(validation.words) } : null;
     }
   } catch {
   }
   return null;
 }
-function hodlMasterFingerprint(mnemonic, passphrase = "") {
-  let seed = hodlMnemonicToSeed(mnemonic, passphrase);
+// Derives from hodlFingerprintSource's bytes ({ entropy } or { indices }),
+// never a phrase string; the caller zeroes the source.
+// The root node holds the master private key, so it is wiped as well as the
+// seed: the preview runs on every edit and must not leave the key for the GC.
+function hodlMasterFingerprint(source, passphrase = "") {
+  let seed = source.entropy ? hodlSeedFromEntropy(source.entropy, passphrase) : hodlSeedFromIndices(source.indices, passphrase);
+  let root;
   try {
-    return hodlFingerprintHex(hodlHDKey.fromMasterSeed(seed).fingerprint);
+    root = hodlHDKey.fromMasterSeed(seed);
+    return hodlFingerprintHex(root.fingerprint);
   } finally {
-    seed.fill(0);
+    try {
+      root?.wipePrivateData();
+    } finally {
+      seed.fill(0);
+    }
   }
 }
 function hodlSetMasterFingerprintCard(card, valueNode, value, imageNode) {
@@ -7200,30 +8620,35 @@ function hodlRenderMasterFingerprintPreview(revision = hodlMasterFingerprintRevi
     arrow.hidden = true;
     arrow.classList.add("is-disabled");
   };
-  let mnemonic = hodlFingerprintMnemonic();
-  if (!mnemonic) {
+  let source = hodlFingerprintSource();
+  if (!source) {
     clear();
     return;
   }
   try {
-    hodlSetMasterFingerprintCard(baseCard, base, hodlMasterFingerprint(mnemonic), baseImage);
-  } catch {
-    clear();
-    return;
-  }
-  let value = "", passphrase = hodlPassphraseFieldBytes();
-  if (passphrase.length > 0) try {
-    value = hodlMasterFingerprint(mnemonic, passphrase);
-  } catch {
+    try {
+      hodlSetMasterFingerprintCard(baseCard, base, hodlMasterFingerprint(source), baseImage);
+    } catch {
+      clear();
+      return;
+    }
+    let value = "", passphrase = hodlPassphraseFieldBytes();
+    if (passphrase.length > 0) try {
+      value = hodlMasterFingerprint(source, passphrase);
+    } catch {
+    } finally {
+      passphrase.fill(0);
+    }
+    let available = hodlSetMasterFingerprintCard(passphraseCard, passphraseValue, value, passphraseImage);
+    // The passphrase card appears only once it has a fingerprint to show: until
+    // then the row is the base seed alone, not a pair with half of it empty.
+    passphraseCard.hidden = !available;
+    arrow.hidden = !available;
+    arrow.classList.toggle("is-disabled", !available);
   } finally {
-    passphrase.fill(0);
+    source.entropy?.fill(0);
+    source.indices?.fill(0);
   }
-  let available = hodlSetMasterFingerprintCard(passphraseCard, passphraseValue, value, passphraseImage);
-  // The passphrase card appears only once it has a fingerprint to show: until
-  // then the row is the base seed alone, not a pair with half of it empty.
-  passphraseCard.hidden = !available;
-  arrow.hidden = !available;
-  arrow.classList.toggle("is-disabled", !available);
 }
 function hodlQueueMasterFingerprintPreview(delay = 90) {
   let revision = ++hodlMasterFingerprintRevision;
@@ -7237,6 +8662,9 @@ function hodlQueueMasterFingerprintPreview(delay = 90) {
 function hodlInvalidateLiveKeyResult() {
   let state = hodlKeys[hodlActiveKey];
   if (!state) return;
+  // Sessions cloned from a committed key must not keep deriving from a root
+  // this edit just discarded.
+  if (!state.isLab && state.result) hodlReleaseKeyConsumers(state.id);
   state.result = null;
   state.reveal = false;
   hodlWalletResult = null;
@@ -7252,6 +8680,9 @@ function hodlInvalidateLiveKeyResult() {
 function hodlRetractBrainWalletResults(output) {
   for (let state of hodlKeys) {
     if (state?.result?.brainWalletOutput !== output) continue;
+    // The stations cloned this brain-derived root; retracting the wallet
+    // without releasing them leaves a key the app says it withdrew.
+    hodlReleaseKeyConsumers(state.id);
     state.result = null;
     state.reveal = false;
   }
@@ -7262,6 +8693,14 @@ function hodlInitMasterFingerprintPreview() {
   if (!panel || !pass) return;
   panel.addEventListener("input", (event) => {
     let id = event.target?.id;
+    // The masked key field: the shown wallet and fingerprint no longer match
+    // its key (Grok, GLM, MiniMax). Its text is in the vault, so Global sync
+    // has nothing to read.
+    if (id === "secure-key") {
+      hodlInvalidateLiveKeyResult();
+      hodlQueueMasterFingerprintPreview();
+      return;
+    }
     if (!["pass", "dice", "hex", "bin", "base4", "base8", "base32", "base64", "seed", "seed-numbers", "cards", "direct-cards", "brain-lab", "key"].includes(id)) return;
     if (id === "pass") {
       let state = hodlKeys[hodlActiveKey];
@@ -7278,10 +8717,18 @@ function hodlInitMasterFingerprintPreview() {
   ["focus", "blur"].forEach((type) => pass.addEventListener(type, () => hodlRenderPassphraseInputState(pass)));
   panel.addEventListener("change", (event) => {
     let target = event.target;
-    if (!(target instanceof Element) || !target.matches('input[name="dm"], input[name="card-method"], input[name="seed-method"], input[name="kk"], #seed-zero-index, input[name="entropy-format"], select[aria-label^="Valid final word"]')) return;
+    if (!(target instanceof Element) || !target.matches('input[name="dm"], input[name="card-method"], input[name="seed-method"], input[name="kk"], #seed-zero-index, input[name="entropy-format"], select[data-last-word-select]')) return;
+    // A final word picked from the select changes the seed without an input
+    // event, so Global sync re-runs here, as the click handler does for the
+    // [data-lw] buttons; otherwise every other method kept the old word.
+    if (target.matches("select[data-last-word-select]")) hodlGlobalSyncFromCurrentInput();
     hodlInvalidateLiveKeyResult();
     hodlRenderGlobalSyncControl();
     hodlQueueMasterFingerprintPreview();
+    // P3b-2: the standard form's kind radios do not redraw the form. Leaving
+    // Brain wallet for a key kind whose key Secure entry holds draws the masked
+    // field, so the field on screen is the one derivation reads.
+    if (target.matches('input[name="kk"]') && !document.getElementById("secure-key") && hodlSecureKeyFormApplies(hodlKeys[hodlActiveKey])) hodlSetMode(hodlKeyMode);
   });
   panel.addEventListener("click", event => {
     let target = event.target instanceof Element ? event.target.closest("#modes .custom-select-option, #seed-length .custom-select-option, [data-d], [data-lw], [data-card-suit], [data-card-rank], [data-direct-card-rank], #card-undo") : null;
@@ -7304,13 +8751,19 @@ function hodlThrowIfFailed(result) {
   if (error && typeof error === "object" && typeof error.key === "string") throw hodlError(error.key, error.vars);
   throw new Error(typeof error === "string" && error ? error : hodlT("Could not calculate"));
 }
-async function hodlCalculateKey(progress, action = "derive") {
+async function hodlCalculateKey(progress, action = "derive", options = {}) {
   hodlSetWorkspaceError("key", null);
   // A fresh derivation restores the safe wallet.dat birthday default (scan
   // from genesis) so a previous "new keys" choice cannot leak into a
   // recovery export.
   hodlWalletDatBirthday = "genesis";
   let generation = hodlDerivationGeneration, control = hodlActiveDerivation, result, passphraseCopy = "";
+  let lab = hodlKeys[hodlActiveKey], importedInput = hodlKeyManagerPending.find(state => state.id === lab?.importedKeyId), reviewedInput = lab?.importedKeyId != null ? { ...lab, name: lab.importedName || importedInput?.name || lab.name } : null, importGeneration = hodlJournalGeneration;
+  const assertCurrent = () => {
+    hodlAssertDerivationActive(generation, control);
+    if (options.isCurrent?.() === false || reviewedInput && importGeneration !== hodlJournalGeneration || importedInput && !hodlKeyManagerPending.includes(importedInput)) throw new HodlDerivationCancelledError();
+  };
+  let savedNetwork = options.networkChoice ?? (reviewedInput ? lab.importedNetworkChoice ?? importedInput?.fields.network ?? lab.fields.network : undefined);
   try {
     // `network` is the encoding family the tool fields settled on (from the
     // coin type); `chain` is the picker's chain identity when it belongs to
@@ -7318,7 +8771,8 @@ async function hodlCalculateKey(progress, action = "derive") {
     // result and its wallet.dat export (issue #329). A tool override that
     // switches family (e.g. coin type 0' under a signet picker) drops the
     // picker chain with it.
-    let derivationPlan = hodlKeyMode === "key" && !hodlBrainHdActive() ? null : hodlReadDerivationPlan(), coinType = derivationPlan?.coinType ?? hodlReadCoinType(document.getElementById("network")), network = derivationPlan?.network ?? hodlNetworkFromCoinType(coinType), chain = hodlNetworkFamily(hodlNetworkChoice) === network ? hodlNetworkChoice : network, addressWindow = hodlKeyMode === "key" ? { start: 0, range: 1 } : hodlReadAddressWindow(), branchWindow = hodlKeyMode === "key" ? { start: 0, range: 2 } : hodlReadBranchWindow(), count = addressWindow.range, addressStart = addressWindow.start, branchStart = branchWindow.start, branchRange = branchWindow.range, passphrase = (passphraseCopy = hodlPassphraseFieldBytes()), scriptType = hodlSelectedScriptType(), purpose = derivationPlan?.purpose ?? 84, account = derivationPlan?.accountIndex ?? 0, hardening = derivationPlan?.hardening ?? hodlDefaultHardening();
+    let derivationPlan = hodlKeyMode === "key" && !hodlBrainHdActive() ? null : hodlReadDerivationPlan(), coinType = derivationPlan?.coinType ?? hodlReadCoinType(document.getElementById("network")), network = derivationPlan?.network ?? hodlNetworkFromCoinType(coinType), chain = savedNetwork ?? (hodlNetworkFamily(hodlNetworkChoice) === network ? hodlNetworkChoice : network), addressWindow = hodlKeyMode === "key" ? { start: 0, range: 1 } : hodlReadAddressWindow(), branchWindow = hodlKeyMode === "key" ? { start: 0, range: 2 } : hodlReadBranchWindow(), count = addressWindow.range, addressStart = addressWindow.start, branchStart = branchWindow.start, branchRange = branchWindow.range, passphrase = (passphraseCopy = hodlPassphraseFieldBytes()), scriptType = hodlSelectedScriptType(), purpose = derivationPlan?.purpose ?? 84, account = derivationPlan?.accountIndex ?? 0, hardening = derivationPlan?.hardening ?? hodlDefaultHardening();
+    if (savedNetwork !== undefined && (!["mainnet", "testnet", "signet", "regtest"].includes(chain) || hodlNetworkFamily(chain) !== network)) throw hodlError("The saved network does not match these derivation inputs. Review the network and path in Key Station.");
     // Only the entered purpose decides the initial link; custom suffixes and
     // a manually unchecked result are never inferred again while rendering.
     if (derivationPlan) derivationPlan.matchPurpose = hardening.purpose && purpose === hodlScriptDefinition(scriptType).purpose;
@@ -7327,7 +8781,18 @@ async function hodlCalculateKey(progress, action = "derive") {
       if (passphraseAnalysis.invalidRanges.length || passphraseAnalysis.incomplete || passphraseAnalysis.trailingSeparator) throw hodlError("Correct the highlighted BIP39-word passphrase inconsistencies before deriving.");
     }
     if (hodlKeyMode === "dice") {
-      if (hodlDiceMethod === "dplus") {
+      if (hodlSecureDiceApplies()) {
+        // Secure entry: the rolls are faces in the session, never text.
+        let entropy = hodlSecureDiceEntropy(hodlTargetWordCount);
+        hodlThrowIfFailed(entropy);
+        let indices;
+        try {
+          indices = hodlIndicesFromEntropy(entropy.bytes);
+        } finally {
+          entropy.bytes.fill(0);
+        }
+        result = await hodlMnemonicWalletWithProgress({ indices }, passphrase, chain, count, { notes: entropy.notes, warnings: entropy.warnings }, account, addressStart, progress, purpose, coinType, hardening, branchStart, branchRange, derivationPlan);
+      } else if (hodlDiceMethod === "dplus") {
         let parsed = hodlDPlusRolls(document.getElementById("dice").value, hodlTargetWordCount);
         if (parsed.firstInvalid) {
           let invalid = parsed.firstInvalid,
@@ -7379,14 +8844,26 @@ async function hodlCalculateKey(progress, action = "derive") {
       hodlThrowIfFailed(entropy);
       result = await hodlEntropyWalletWithProgress(entropy, passphrase, chain, count, account, addressStart, progress, purpose, coinType, hardening, branchStart, branchRange, derivationPlan);
     } else if (hodlKeyMode === "seed") {
-      let selected = hodlSelectedSeedInput(hodlTargetWordCount), value = selected.value;
-      if (selected.extended) result = await hodlImportedWalletWithProgress(value, chain, count, account, addressStart, progress, purpose, coinType, hardening, branchStart, branchRange, derivationPlan);
-      else {
-        if (hodlSeedMethod === "numbers" && !selected.parsed?.complete) throw selected.parsed?.invalidEntries.length ? hodlError("Word numbers must be between {min} and {max}.", { min: selected.parsed.minimum, max: selected.parsed.maximum }) : selected.parsed?.extraEntries.length ? hodlError("Enter exactly {words} BIP39 word numbers.", { words: hodlTargetWordCount }) : selected.parsed?.checksumInvalid ? hodlError("The entered word numbers do not have a valid BIP39 checksum.") : hodlError("Enter exactly {words} BIP39 word numbers before deriving the wallet.", { words: hodlTargetWordCount });
-        let validation = hodlValidateTargetMnemonic(value, hodlTargetWordCount);
-        hodlThrowIfFailed(validation);
-        result = await hodlMnemonicWalletWithProgress(validation.words.join(" "), passphrase, chain, count, void 0, account, addressStart, progress, purpose, coinType, hardening, branchStart, branchRange, derivationPlan);
+      if (hodlSecureSeedApplies()) {
+        // Secure entry: the words are indices in the session, never text.
+        let indices = hodlSecureSeedIndices();
+        if (!indices) throw hodlError("Invalid seed phrase");
+        result = await hodlMnemonicWalletWithProgress({ indices }, passphrase, chain, count, void 0, account, addressStart, progress, purpose, coinType, hardening, branchStart, branchRange, derivationPlan);
+      } else {
+        let selected = hodlSelectedSeedInput(hodlTargetWordCount), value = selected.value;
+        if (selected.extended) result = await hodlImportedWalletWithProgress(value, chain, count, account, addressStart, progress, purpose, coinType, hardening, branchStart, branchRange, derivationPlan);
+        else {
+          if (hodlSeedMethod === "numbers" && !selected.parsed?.complete) throw selected.parsed?.invalidEntries.length ? hodlError("Word numbers must be between {min} and {max}.", { min: selected.parsed.minimum, max: selected.parsed.maximum }) : selected.parsed?.extraEntries.length ? hodlError("Enter exactly {words} BIP39 word numbers.", { words: hodlTargetWordCount }) : selected.parsed?.checksumInvalid ? hodlError("The entered word numbers do not have a valid BIP39 checksum.") : hodlError("Enter exactly {words} BIP39 word numbers before deriving the wallet.", { words: hodlTargetWordCount });
+          let validation = hodlValidateTargetMnemonic(value, hodlTargetWordCount);
+          hodlThrowIfFailed(validation);
+          result = await hodlMnemonicWalletWithProgress(validation.words.join(" "), passphrase, chain, count, void 0, account, addressStart, progress, purpose, coinType, hardening, branchStart, branchRange, derivationPlan);
+        }
       }
+    } else if (hodlKeyMode === "key" && hodlSecureKeyApplies()) {
+      // Secure entry: the key is bytes in the session, never text.
+      progress.setTotal(1);
+      result = hodlSecureKeyWallet(chain);
+      progress.step();
     } else {
       let value = document.getElementById("key").value, kind = hodlNormalizePrivateKeyKind(document.querySelector("input[name=kk]:checked")?.value, value);
       if (kind === "brain" && !hodlBrainAcked()) throw hodlError("Acknowledge the lab warning before deriving.");
@@ -7409,23 +8886,27 @@ async function hodlCalculateKey(progress, action = "derive") {
       if (kind === "brain") result.brainWalletOutput = hodlBrainWalletOutput();
     }
     if (hodlNetworkFamily(result?.network) !== hodlNetworkFamily(chain)) throw hodlError("The supplied key is for {have}, but Network is set to {want}.", { have: result.network, want: chain });
-    hodlAssertDerivationActive(generation, control);
+    assertCurrent();
     // A different wallet already open with this fingerprint: confirm before
     // committing a second, identical-looking tab. Cancel discards this
     // derivation and leaves the station as it was.
-    if (!(await hodlConfirmKeyFingerprint(result))) return false;
-    hodlAssertDerivationActive(generation, control);
+    if (!(await hodlConfirmKeyFingerprint(result))) { options.onCancel?.(); return false; }
+    assertCurrent();
+    let decision = options.decideCommit ? await options.decideCommit(result, scriptType) : reviewedInput ? await hodlKeyManagerDecideCommit(null, reviewedInput, result, scriptType) : null;
+    assertCurrent();
+    if (decision?.kind === "skip") return false;
     hodlWalletResult = result;
-    hodlCommittedResults.add(result);
+    if (decision?.kind !== "reuse") hodlCommittedResults.add(result);
     hodlRevealPrivate = false;
     hodlSetSelectedScriptType(scriptType);
+    if (hodlKeys[hodlActiveKey]) delete hodlKeys[hodlActiveKey].secureCleared;
     hodlCaptureKey();
-    hodlJournalLog("derive", hodlWalletResult?.masterFingerprint || hodlWalletResult?.kind || "key");
+    let logDetail = hodlWalletResult?.masterFingerprint || hodlWalletResult?.kind || "key";
     hodlSnapshotKeySummary();
-    hodlCommitDerivedKey(action);
-    hodlJournalCaptureDerivedKey(hodlKeys[hodlActiveKey]);
+    hodlCommitDerivedKey(action, decision);
+    hodlJournalLog("derive", logDetail, options.logTool === "journal" ? "journal" : "calc");
     hodlDisposeDroppedWallets(); // the wallet this one replaced on its tab
-    hodlFocusWalletResult();
+    if (options.focusResult !== false) hodlFocusWalletResult();
     return true;
   } catch (error) {
     hodlAssertDerivationActive(generation, control);
@@ -7435,7 +8916,7 @@ async function hodlCalculateKey(progress, action = "derive") {
     hodlOutEl.innerHTML = "";
     hodlCaptureKey();
     hodlDisposeDroppedWallets(); // the wallet the tab showed before the failure
-    hodlJournalLog("derive-error");
+    hodlJournalLog("derive-error", "", options.logTool === "journal" ? "journal" : "calc");
     return false;
   } finally {
     if (ArrayBuffer.isView(passphraseCopy)) passphraseCopy.fill(0); // the wallet keeps its own copy
@@ -7448,8 +8929,12 @@ function hodlFilterBin(e) {
   return e.replace(/[^01\s]/g, "");
 }
 function hodlFilterSeed(e) {
-  let value = String(e ?? "").replace(/[^a-zA-Z0-9\s]/g, "");
-  return hodlLooksExtendedKey(value) ? value : value.toLowerCase();
+  // Keep non-ASCII characters: deleting them rewrites the phrase before
+  // either tokenizer sees it ("armý" became "arm" and derived that wallet).
+  // The validator refuses them, so they must survive to the field.
+  let value = String(e ?? "").replace(/[\x00-\x7F]/g, (ch) => /[a-zA-Z0-9\s]/.test(ch) ? ch : "");
+  if (hodlLooksExtendedKey(value)) return value;
+  return /^[\x00-\x7F]*$/.test(value) ? value.toLowerCase() : value;
 }
 function hodlFilterKey(e, t) {
   return t === "brain" ? e : e.replace(/[^0-9A-Za-z\s]/g, "");
@@ -7489,7 +8974,9 @@ function hodlFilterXpub(e) {
   // intact — stripping them would mangle /<0;1> into /01, and with trailing
   // paths honored the mangled digits would silently derive through a
   // made-up numeric path instead of reading as the branch position.
-  return String(e ?? "").replace(/[^A-Za-z0-9[\]/'*<>;]/g, "");
+  // ( ) , # are kept for a pasted descriptor expression or checksum; the
+  // parser, not this filter, rejects what is malformed.
+  return String(e ?? "").replace(/[^A-Za-z0-9[\]/'*<>;(),#\s]/g, "");
 }
 function hodlNormalizeOriginPath(path) {
   return String(path ?? "").trim().replace(/^m\//i, "").replace(/'/g, "h").replace(/H/g, "h");
@@ -7512,22 +8999,46 @@ function hodlParseKeyOrigin(raw) {
   for (let token of tokens) {
     if (!/^(?:\*|<\d+(?:;\d+)*>|\d+[hH']?)$/.test(token)) throw hodlError("Trailing path steps must be numbers, a wildcard *, or a multipath step like <0;1>.");
   }
-  if (tokens.includes("*") && tokens[tokens.length - 1] !== "*") throw hodlError("A wildcard * is only allowed as the last trailing path step.");
+  // Only the last step may be the wildcard: a second one (xpub/*/*) reached
+  // the path map below and crashed with a TypeError (#1460 r4 gate, GLM).
+  if (tokens.slice(0, -1).includes("*")) throw hodlError("A wildcard * is only allowed as the last trailing path step.");
   let hadWildcard = tokens[tokens.length - 1] === "*";
   if (hadWildcard) tokens.pop();
-  // A BIP45 descriptor carries its cosigner branch (always 0 here) as the
-  // first trailing step; the descriptor compose re-adds it, so it is
-  // decoration like the branch marker. A manually appended child path has
-  // no wildcard and must be honored in full.
-  if (hadWildcard && /^45h?$/.test(path.split("/")[0] || "") && tokens.length && /^\d+[hH']?$/.test(tokens[0])) tokens.shift();
+  // Real exports carry one to four steps; the cap keeps a pasted key from
+  // naming an absurd path (red-team sweep of 0eed735).
+  if (tokens.length > 16) throw hodlError("A trailing path can have at most 16 steps.");
+  // Every index, in a plain or a multipath step, is a BIP32 index; an
+  // out-of-range one was dropped as the branch marker instead of refused
+  // (#1460 gate, Gemini).
+  if (tokens.some((token) => (token.match(/\d+/g) || []).some((digits) => Number(digits) > 2147483647))) throw hodlError("A derivation path index after the extended key is out of range (0 to 2,147,483,647).");
+  // A BIP45 key derives as key/cosigner/branch/*, and the BIP45 compose always
+  // re-adds cosigner 0 (key/0/<branch>/*). So the descriptor's shape must be
+  // exactly plain 0, then the branch. Dropping any first step derived cosigner
+  // 0's addresses for /3/0/*, Copay's /2147483647/0/* or /0h/0/*, a different
+  // wallet, while the import panel already refused those shapes and a bare
+  // /0/* (issue #389; red-team sweep of 0eed735). A manually appended child
+  // path has no wildcard and is honored in full.
+  if (hadWildcard && /^45h?$/.test(path.split("/")[0] || "")) {
+    if (tokens.length !== 2 || !/^\d+$/.test(tokens[0]) || Number(tokens[0]) !== 0) throw hodlError("A BIP45 key must have plain cosigner step 0 before its branch, like /0/0/* or /0/<0;1>/*. This tool derives only cosigner 0; another cosigner step would derive a different wallet.");
+    tokens.shift();
+  }
   if (tokens.filter((token) => token.startsWith("<")).length > 1) throw hodlError("Only one multipath step like <0;1> is supported in a trailing path.");
   let multipathAt = tokens.findIndex((token) => token.startsWith("<"));
   if (multipathAt > 0 && tokens.slice(0, multipathAt).some((token) => !/^\d+[hH']?$/.test(token))) throw hodlError("A multipath step like <0;1> must follow plain number steps.");
   if (multipathAt >= 0 && multipathAt !== tokens.length - 1) throw hodlError("A multipath step like <0;1> must be the last trailing path step.");
+  // Without the wildcard a multipath step names fixed keys (BIP389: xpub/<0;1>
+  // is the keys at /0 and /1). This tool always derives a range below the key,
+  // so it can't reproduce that, and reading <0;1> as the branch marker gave a
+  // different wallet; BIP45 /3/<0;1> slipped past the cosigner rule the same
+  // way (#1460 gate, Gemini and GLM).
+  if (multipathAt >= 0 && !hadWildcard) throw hodlError("A multipath step like <0;1> must be followed by the wildcard *, as in /<0;1>/*.");
   // Steps ahead of a multipath step are honored; the multipath step itself
   // is the branch position. Without one, a sole step ahead of the wildcard
   // is the branch marker and every other shape is honored as written.
-  let honoredTokens = multipathAt >= 0 ? tokens.slice(0, multipathAt) : hadWildcard && tokens.length === 1 ? [] : tokens;
+  // Only an unhardened sole step is a branch marker: a hardened one (/0h/*)
+  // stays in the path, where the unhardened-path check refuses it, instead of
+  // being dropped silently.
+  let honoredTokens = multipathAt >= 0 ? tokens.slice(0, multipathAt) : hadWildcard && tokens.length === 1 && /^\d+$/.test(tokens[0]) ? [] : tokens;
   let derivationPath = honoredTokens.map((token) => {
     let step = token.match(/^(\d+)([hH']?)$/); // shape guaranteed by the validation above
     let index = Number(step[1]);
@@ -7665,15 +9176,19 @@ function hodlMsigSpecStepLabels(id) {
 function hodlMultisigScriptLabel(kind) {
   return kind === "p2sh" ? hodlT("Legacy") : kind === "p2sh-p2wsh" ? hodlT("Nested SegWit") : kind === "p2wsh" ? hodlT("Native SegWit") : kind === "p2tr" ? hodlT("Taproot") : hodlT("Unknown")
 }
+// The same names as plain text, for a status line set with textContent.
+function hodlMultisigScriptText(kind) {
+  return kind === "p2sh" ? hodlTText("Legacy") : kind === "p2sh-p2wsh" ? hodlTText("Nested SegWit") : kind === "p2wsh" ? hodlTText("Native SegWit") : kind === "p2tr" ? hodlTText("Taproot") : hodlTText("Unknown");
+}
 function hodlOriginScriptError(origin, kind, network, purpose, coinType = hodlCoinTypeFromNetwork(network), hardening = { purpose: true, coinType: true, account: true, address: false }) {
   let steps = hodlNormalizeOriginPath(origin.path).split("/");
   let expectedPurpose = `${purpose}${hardening.purpose ? "h" : ""}`;
-  if (steps[0] !== expectedPurpose) return `This key origin uses purpose ${steps[0] || "none"}; the selected Purpose is ${expectedPurpose}.`;
+  if (steps[0] !== expectedPurpose) return hodlNote("This key origin uses purpose {step}; the selected Purpose is {purpose}.", { step: steps[0] || "none", purpose: expectedPurpose });
   if (kind === "p2tr" || purpose === 87) {
     let coin = `${coinType}${hardening.coinType ? "h" : ""}`;
-    if (steps[1] !== coin) return `This key origin should use ${coin} as the selected coin type.`;
-    if (steps.length !== 3) return `${purpose === 87 ? "A BIP87" : "A Taproot"} origin must contain purpose, coin type, and account.`;
-    if (!new RegExp(`^\\d+${hardening.account ? "h" : ""}$`).test(steps[2])) return `The account index must be ${hardening.account ? "hardened" : "unhardened"}.`;
+    if (steps[1] !== coin) return hodlNote("This key origin should use {coin} as the selected coin type.", { coin });
+    if (steps.length !== 3) return hodlNote(purpose === 87 ? "A BIP87 origin must contain purpose, coin type, and account." : "A Taproot origin must contain purpose, coin type, and account.");
+    if (!new RegExp(`^\\d+${hardening.account ? "h" : ""}$`).test(steps[2])) return hodlNote(hardening.account ? "The account index must be hardened." : "The account index must be unhardened.");
     return ""
   }
   // BIP44/49/84 account keys double as co-signers in their script type's
@@ -7682,30 +9197,30 @@ function hodlOriginScriptError(origin, kind, network, purpose, coinType = hodlCo
   // purposes is refused and needs Custom (audit A1-1).
   if (purpose === 44 || purpose === 49 || purpose === 84) {
     let mapped = purpose === 44 ? "p2sh" : purpose === 49 ? "p2sh-p2wsh" : "p2wsh";
-    if (kind !== mapped) return `A BIP${purpose} origin belongs to ${hodlMultisigScriptLabel(mapped)} multisig; the selected script type is ${hodlMultisigScriptLabel(kind)}.`;
+    if (kind !== mapped) return hodlNote("A BIP{purpose} origin belongs to {mapped} multisig; the selected script type is {kind}.", { purpose, mapped: hodlMultisigScriptLabel(mapped), kind: hodlMultisigScriptLabel(kind) });
     let coin = `${coinType}${hardening.coinType ? "h" : ""}`;
-    if (steps[1] !== coin) return `This key origin should use ${coin} as the selected coin type.`;
-    if (steps.length !== 3) return `A BIP${purpose} origin must contain purpose, coin type, and account.`;
-    if (!new RegExp(`^\\d+${hardening.account ? "h" : ""}$`).test(steps[2])) return `The account index must be ${hardening.account ? "hardened" : "unhardened"}.`;
+    if (steps[1] !== coin) return hodlNote("This key origin should use {coin} as the selected coin type.", { coin });
+    if (steps.length !== 3) return hodlNote("A BIP{purpose} origin must contain purpose, coin type, and account.", { purpose });
+    if (!new RegExp(`^\\d+${hardening.account ? "h" : ""}$`).test(steps[2])) return hodlNote(hardening.account ? "The account index must be hardened." : "The account index must be unhardened.");
     return "";
   }
   if (kind === "p2wsh" || kind === "p2sh-p2wsh") {
     let coin = `${coinType}${hardening.coinType ? "h" : ""}`;
-    if (steps[1] !== coin) return `This key origin should use ${coin} as the selected coin type.`;
-    if (steps.length !== 4) return "SegWit multisig origin must contain purpose, coin type, account, and script type.";
-    if (!new RegExp(`^\\d+${hardening.account ? "h" : ""}$`).test(steps[2])) return `The account index must be ${hardening.account ? "hardened" : "unhardened"}.`;
+    if (steps[1] !== coin) return hodlNote("This key origin should use {coin} as the selected coin type.", { coin });
+    if (steps.length !== 4) return hodlNote("SegWit multisig origin must contain purpose, coin type, account, and script type.");
+    if (!new RegExp(`^\\d+${hardening.account ? "h" : ""}$`).test(steps[2])) return hodlNote(hardening.account ? "The account index must be hardened." : "The account index must be unhardened.");
     let last = kind === "p2wsh" ? "2h" : "1h";
     if (steps[3] !== last) return hodlNote("This script type's origin must end in {last}.", { last });
     return "";
   }
   if (purpose !== 45) {
     let coin = `${coinType}${hardening.coinType ? "h" : ""}`;
-    if (steps[1] !== coin) return `This key origin should use ${coin} as the selected coin type.`;
-    if (steps.length !== 3) return "Account-based Legacy origin must contain purpose, coin type, and account.";
-    if (!new RegExp(`^\\d+${hardening.account ? "h" : ""}$`).test(steps[2])) return `The account index must be ${hardening.account ? "hardened" : "unhardened"}.`;
+    if (steps[1] !== coin) return hodlNote("This key origin should use {coin} as the selected coin type.", { coin });
+    if (steps.length !== 3) return hodlNote("Account-based Legacy origin must contain purpose, coin type, and account.");
+    if (!new RegExp(`^\\d+${hardening.account ? "h" : ""}$`).test(steps[2])) return hodlNote(hardening.account ? "The account index must be hardened." : "The account index must be unhardened.");
     return "";
   }
-  if (steps.length !== 1) return `Legacy purpose 45 uses the BIP45 purpose key at m/${expectedPurpose} without an account.`;
+  if (steps.length !== 1) return hodlNote("Legacy purpose 45 uses the BIP45 purpose key at m/{purpose} without an account.", { purpose: expectedPurpose });
   return "";
 }
 function hodlMsigOriginHardening(origin, hardening) {
@@ -7950,7 +9465,7 @@ function hodlSyncMsigDescriptorImport(fromFields = false) {
   let button = document.getElementById("msig-descriptor-import"), field = document.getElementById("msig-descriptor"), status = document.getElementById("msig-descriptor-status");
   if (!button) return;
   let occupied = hodlReadMsigXpubs().some((value) => String(value).trim()), empty = !String(field?.value ?? "").trim();
-  button.disabled = occupied || empty;
+  button.disabled = occupied || empty || (typeof hodlMsigBip138Pending === "function" && hodlMsigBip138Pending());
   button.setAttribute("aria-disabled", String(button.disabled));
   if (!status) return;
   if (fromFields) delete status.dataset.result;
@@ -7996,10 +9511,14 @@ function hodlImportMsigDescriptor() {
     // lifehash and pressed chip, exactly as if the key was picked by hand.
     hodlRefreshMsigSessionPickers();
     hodlValidatedMsigInputs();
-    show(true, "Imported a " + imported.m + "-of-" + imported.n + " descriptor: " + (imported.kind ? hodlMultisigScriptLabel(imported.kind) : "kept the selected script type") + ", " + (imported.sorted ? "sorted" : "as listed") + " key order. Review the co-signers, then derive.");
+    // Whole sentences, so a translation can place the script and key order.
+    let vars = { m: imported.m, n: imported.n, script: imported.kind ? hodlMultisigScriptText(imported.kind) : "" };
+    show(true, imported.kind
+      ? (imported.sorted ? hodlTText("Imported a {m}-of-{n} descriptor: {script}, sorted key order. Review the co-signers, then derive.", vars) : hodlTText("Imported a {m}-of-{n} descriptor: {script}, as listed key order. Review the co-signers, then derive.", vars))
+      : (imported.sorted ? hodlTText("Imported a {m}-of-{n} descriptor: kept the selected script type, sorted key order. Review the co-signers, then derive.", vars) : hodlTText("Imported a {m}-of-{n} descriptor: kept the selected script type, as listed key order. Review the co-signers, then derive.", vars)));
     hodlSyncMsigClearButton(true);
   } catch (error) {
-    show(false, error.message || "The descriptor could not be imported.");
+    show(false, error.message || hodlTText("The descriptor could not be imported."));
   }
 }
 function hodlDetectMsigScriptSummary(values = hodlReadMsigXpubs()) {
@@ -8243,7 +9762,7 @@ function hodlUpdateMsigAccount() {
   if (kind === "p2sh" && purpose === 45) {
     field.value = "";
     hodlSyncDerivationPrime(field);
-    field.placeholder = "Not applicable";
+    field.placeholder = hodlTText("Not applicable");
     field.dataset.state = "not-applicable";
     if (help) help.textContent = hodlTText("BIP45 purpose keys do not contain an account number.");
     if (warning) {
@@ -8264,16 +9783,16 @@ function hodlUpdateMsigAccount() {
   let summary = hodlSummarizeMultisigAccounts(accountNumbers), message = hodlMultisigAccountWarning(summary);
   field.value = summary.mixed ? "Mixed" : summary.account == null ? "" : String(summary.account);
   hodlSyncDerivationPrime(field);
-  field.placeholder = "Derived from keys";
+  field.placeholder = hodlTText("Derived from keys");
   field.dataset.state = summary.mixed ? "mixed" : summary.account == null ? "empty" : "account";
   if (help) {
-    let mode = hardening.account ? "Hardened" : "Unhardened";
-    help.textContent = summary.mixed ? `Account index · ${mode} · Co-signer key origins use different account numbers.` : summary.account == null ? `Account index · ${mode} · Derived from co-signer key origins.` : `Account index · ${mode} · Derived from the co-signer account paths.`;
+    let vars = { hardening: hardening.account ? hodlTText("Hardened") : hodlTText("Unhardened") };
+    help.textContent = summary.mixed ? hodlTText("Account index · {hardening} · Co-signer key origins use different account numbers.", vars) : summary.account == null ? hodlTText("Account index · {hardening} · Derived from co-signer key origins.", vars) : hodlTText("Account index · {hardening} · Derived from the co-signer account paths.", vars);
   }
   if (warning) {
-
+    // The warning is a note, formatted here: assigned as is, it read "[object Object]".
     warning.hidden = !message;
-    warning.textContent = message || "";
+    warning.textContent = message ? hodlFormatNote(message) : "";
   }
   return summary;
 }
@@ -8461,11 +9980,11 @@ function hodlSyncMsigKeyMoveButtons() {
       down = row.querySelector('[data-msig-move="1"]');
     if (up) {
       up.disabled = index === 0;
-      up.setAttribute("aria-label", "Move co-signer " + (index + 1) + " up to position " + index)
+      up.setAttribute("aria-label", hodlTText("Move co-signer {n} up to position {position}", { n: index + 1, position: index }))
     }
     if (down) {
       down.disabled = index === rows.length - 1;
-      down.setAttribute("aria-label", "Move co-signer " + (index + 1) + " down to position " + (index + 2))
+      down.setAttribute("aria-label", hodlTText("Move co-signer {n} down to position {position}", { n: index + 1, position: index + 2 }))
     }
   })
 }
@@ -8477,6 +9996,11 @@ function hodlReindexMsigKeys() {
       title = row.querySelector(".msig-key-title"),
       fingerprint = row.querySelector(".msig-master-fingerprint");
     if (ta) ta.id = "msig-x-" + index;
+    let scanHost = row.querySelector("[data-scan-field]");
+    if (scanHost && ta) {
+      scanHost.id = "msig-scan-x-" + index;
+      scanHost.dataset.scanField = ta.id;
+    }
     if (title) {
       title.id = "msig-cosigner-" + index + "-label";
       title.textContent = hodlTText("Co-signer {n}", { n: index + 1 });
@@ -8490,7 +10014,8 @@ function hodlReindexMsigKeys() {
     fingerprint?.setAttribute("aria-label", hodlTText("Master fingerprint for co-signer {n}", { n: index + 1 }));
   });
   hodlSyncMsigKeyMoveButtons();
-  hodlUpdateMsigKeyPlaceholders()
+  hodlUpdateMsigKeyPlaceholders();
+  if (typeof hodlResetTextScans === "function") hodlResetTextScans("msig-keys");
 }
 
 function hodlMoveMsigKeyRow(row, offset) {
@@ -8618,7 +10143,7 @@ function hodlFillStationKeyPicker(id, selectedSource, onSelect, keys = hodlSessi
     button.className = "session-key-option" + (selected ? " active" : "");
     button.dataset.keyId = String(state.id);
     button.setAttribute("aria-pressed", String(selected));
-    button.setAttribute("aria-label", state.isBip85Child ? hodlTText("Bring in BIP-85 child {child} of parent {parent}", { child: fingerprint, parent: state.parentFingerprint }) : "Bring in Key Station key " + fingerprint);
+    button.setAttribute("aria-label", state.isBip85Child ? hodlTText("Bring in BIP-85 child {child} of parent {parent}", { child: fingerprint, parent: state.parentFingerprint }) : hodlTText("Bring in Key Station key {key}", { key: fingerprint }));
     // A LifeHash draws a fingerprint, not an arbitrary key name.
     hodlAppendSessionKeyLifehashes(button, state, master);
     label.textContent = fingerprint;
@@ -8701,9 +10226,607 @@ function hodlOpenKeyStation() {
   let lab = hodlKeys.findIndex((state) => state.isLab);
   if (lab >= 0) hodlSelectKey(lab);
 }
+// BIP-47 station (preview only). A depth-0 private root derives the
+// m/47'/coin'/0' account node; the payment code and its notification address
+// are public readouts. Nothing here builds, signs or broadcasts a transaction.
+var hodlBip47Source = "";
+// The Key Station key whose seed or root text was copied into #bip47-key. It
+// outlives hodlBip47Source (a passphrase edit makes the session manual) and is
+// cleared only when the key text itself is edited, so clearing or deleting
+// that Key Station key still empties the copy.
+var hodlBip47Origin = "";
+var hodlBip47Hd = null;
+var hodlBip47Contact = null;
+var hodlBip47Direction = "send";
+var hodlBip47RowsLast = null;
+var hodlBip47Revealed = null;
+var hodlBip47NotifyCode = null;
+
+function hodlBip47Network() {
+  return document.getElementById("bip47-network")?.value === "testnet" ? "testnet" : "mainnet";
+}
+
+function hodlBip47Path() {
+  return hodlBip47AccountPath(hodlBip47Network() === "mainnet" ? 0 : 1);
+}
+
+function hodlSyncBip47Path() {
+  let field = document.getElementById("bip47-path");
+  if (field) field.textContent = hodlBip47Path();
+}
+
+function hodlBip47WipeKeys() {
+  if (hodlBip47Hd) {
+    try { hodlBip47Hd.wipePrivateData(); } catch {}
+  }
+  hodlBip47Hd = null;
+  hodlBip47Source = "";
+}
+
+function hodlBip47ClearOwn() {
+  let own = document.getElementById("bip47-own");
+  if (own) own.innerHTML = "";
+}
+
+// The notification report is public, but it belongs to the key and network it
+// was checked with: any change clears it rather than leaving a stale verdict.
+function hodlBip47ClearNotify() {
+  hodlBip47NotifyCode = null;
+  let out = document.getElementById("bip47-notify-out");
+  if (out) out.innerHTML = "";
+}
+
+// Every derived result goes, the key stays. The root does not depend on the
+// network (the account path does, at derive time), so a network change clears
+// only these: keeping the root also keeps its Key Station link, and with it
+// the wipe when that key is cleared or deleted.
+function hodlBip47ClearResults() {
+  hodlBip47ClearOwn();
+  hodlBip47ClearRows();
+  hodlBip47ClearNotify();
+  let error = document.getElementById("bip47-error");
+  if (error) error.textContent = "";
+  hodlBip47SyncPairsNeeds();
+}
+
+function hodlBip47Invalidate() {
+  hodlBip47WipeKeys();
+  hodlBip47ClearResults();
+}
+
+// The key source and everything derived from it: the root, the readouts and
+// the seed or root text in the station's own fields.
+function hodlBip47WipeSource() {
+  hodlBip47Invalidate();
+  hodlBip47Origin = "";
+  for (let id of ["bip47-key", "bip47-pass"]) {
+    let field = document.getElementById(id);
+    if (field) field.value = "";
+  }
+  hodlClearStationPassphrase("bip47-pass");
+  hodlBip47SyncPairsNeeds();
+}
+
+// A decoded contact code is public, but its notification address belongs to
+// the network it was decoded for.
+function hodlBip47ClearContact() {
+  hodlBip47Contact = null;
+  hodlBip47ClearRows();
+  let contactOut = document.getElementById("bip47-contact-out");
+  if (contactOut) contactOut.innerHTML = "";
+  hodlBip47SyncPairsNeeds();
+}
+
+// The direction state and its segmented control always change together: a
+// "Receive" tab left active over send rows would offer the contact's address
+// as the user's own.
+function hodlBip47SetDirection(direction) {
+  hodlBip47Direction = direction === "receive" ? "receive" : "send";
+  let directions = document.getElementById("bip47-directions");
+  for (let button of directions?.querySelectorAll("[data-direction]") || []) {
+    let active = button.dataset.direction === hodlBip47Direction;
+    button.classList.toggle("active", active);
+    button.setAttribute("aria-pressed", active ? "true" : "false");
+  }
+}
+
+function hodlBip47WipeMem() {
+  hodlBip47WipeSource();
+  hodlBip47ClearContact();
+  hodlBip47Contact = null;
+  hodlBip47SetDirection("send");
+  hodlBip47RowsLast = null;
+  hodlBip47Revealed = null;
+  hodlBip47ClearNotify();
+  // A contact's code is public, but it names who the session was paying:
+  // ending the session leaves nothing on screen.
+  for (let id of ["bip47-contact", "bip47-notify-tx", "bip47-notify-pub"]) {
+    let field = document.getElementById(id);
+    if (field) field.value = "";
+  }
+  let notifyInput = document.getElementById("bip47-notify-input");
+  if (notifyInput) notifyInput.innerHTML = '<option value="" disabled selected></option>';
+  let notifyManual = document.getElementById("bip47-notify-manual");
+  if (notifyManual) notifyManual.open = false;
+}
+
+function hodlBip47LoadKey(text, passphrase) {
+  hodlBip47WipeKeys();
+  let value = String(text || "").trim();
+  if (!value) throw hodlError("Paste a BIP39 seed phrase or a BIP32 root xprv/tprv.");
+  if (/^[xt]prv[1-9A-HJ-NP-Za-km-z]+$/.test(value.replace(/\s/g, ""))) {
+    let parsed = hodlParseExtendedKey(value.replace(/\s/g, ""));
+    if (!parsed.isPrivate) throw hodlError("Watch-only extended keys cannot derive BIP-47 payment codes.");
+    if (parsed.node.depth !== 0) {
+      // A refused account key is still private material: wipe it here.
+      try { parsed.node.wipePrivateData(); } catch {}
+      throw hodlError("BIP-47 needs a BIP32 root private key (depth 0), not an account xprv.");
+    }
+    hodlBip47Hd = parsed.node;
+    hodlBip47Source = "manual";
+    return;
+  }
+  let mnemonic = hodlValidateMnemonic(value);
+  if (!mnemonic.ok) {
+    if (mnemonic.error?.key) throw hodlError(mnemonic.error.key, mnemonic.error.vars);
+    throw hodlError("Enter a BIP39 seed phrase or a BIP32 root xprv/tprv.");
+  }
+  let indices = hodlWordIndices(mnemonic.words), seed;
+  try {
+    seed = hodlSeedFromIndices(indices, passphrase || "");
+  } finally {
+    indices.fill(0);
+  }
+  try {
+    hodlBip47Hd = hodlHDKey.fromMasterSeed(seed);
+  } finally {
+    seed.fill(0);
+  }
+  hodlBip47Source = "manual";
+}
+
+function hodlBip47UseKey(state) {
+  if (!state || !state.result) throw hodlError("Derive a key in Key Station first, then return to the BIP-47 station.");
+  let result = state.result;
+  hodlBip47WipeKeys();
+  if (result.kind === "hd" && hodlResultHasSeed(result)) {
+    hodlBip47Hd = hodlSeedSessionRoot(result, state.fields.pass || "");
+  } else if (result.kind === "hd" && hodlResultHasRoot(result)) {
+    let root = hodlResultRootNode(result);
+    // The same rule as a pasted xprv: m/47' hangs off the master key. The
+    // copy is this station's own, so a refused one is wiped here.
+    if (root?.depth !== 0) {
+      try { root?.wipePrivateData(); } catch {}
+      throw hodlError("BIP-47 needs a BIP32 root private key (depth 0), not an account xprv.");
+    }
+    hodlBip47Hd = root;
+  } else throw hodlError("BIP-47 needs a seed or root xprv. Account-level and single keys cannot derive m/47'.");
+  hodlBip47Source = "key:" + state.id;
+}
+
+function hodlPickBip47SessionKey(state) {
+  let error = document.getElementById("bip47-error");
+  if (error) error.textContent = "";
+  hodlBip47Invalidate();
+  try {
+    hodlBip47UseKey(state);
+    document.getElementById("bip47-key").value = hodlResultMnemonic(state.result) || hodlResultRootXprv(state.result) || "";
+    hodlBip47Origin = hodlBip47Source;
+    hodlSetStationPassphrase("bip47-pass", hodlResultHasSeed(state.result) ? state.fields?.pass : "");
+  } catch (exception) {
+    if (error) error.textContent = exception.message || String(exception);
+  }
+  // The prerequisite notes follow the key that was just picked.
+  hodlBip47SyncPairsNeeds();
+  hodlRefreshStationKeyPickers();
+}
+
+function hodlBip47EnsureHd() {
+  let manual = document.getElementById("bip47-key")?.value;
+  if (manual && manual.trim()) {
+    if (!hodlBip47Hd || !hodlBip47Source.startsWith("key:")) {
+      let pass = hodlStationPassphraseBytes("bip47-pass");
+      try {
+        hodlBip47LoadKey(manual, pass || "");
+      } finally {
+        if (pass) pass.fill(0);
+      }
+    }
+    hodlRefreshStationKeyPickers();
+  }
+  if (!hodlNodeHasPrivateKey(hodlBip47Hd)) throw hodlError("Choose a compatible existing key, or enter a BIP39 seed or root xprv.");
+}
+
+function hodlRunBip47() {
+  let error = document.getElementById("bip47-error"), out = document.getElementById("bip47-own");
+  // Working elsewhere in the station hides a shown spending key.
+  hodlBip47Conceal();
+  if (error) error.textContent = "";
+  if (out) out.innerHTML = "";
+  let account = null;
+  try {
+    hodlBip47EnsureHd();
+    let network = hodlBip47Network();
+    account = hodlBip47AccountNode(hodlBip47Hd, network);
+    let code = hodlBip47EncodePaymentCode(account.publicKey, account.chainCode);
+    let notificationAddress = hodlBip47NotificationAddress({ derivable: true, publicKey: account.publicKey, chainCode: account.chainCode }, network);
+    if (out) out.innerHTML = hodlBip47OwnHtml({ code, notificationAddress, network, path: hodlBip47Path() }, {});
+  } catch (exception) {
+    if (error) error.textContent = exception.message || String(exception);
+  } finally {
+    if (account) {
+      try { account.wipePrivateData(); } catch {}
+    }
+    hodlBip47SyncPairsNeeds();
+  }
+}
+
+function hodlDecodeBip47Contact() {
+  let field = document.getElementById("bip47-contact"), out = document.getElementById("bip47-contact-out");
+  if (!out) return;
+  out.innerHTML = "";
+  hodlBip47Contact = null;
+  hodlBip47ClearRows();
+  let text = field?.value ?? "";
+  if (!text.trim()) { hodlBip47SyncPairsNeeds(); return; }
+  try {
+    let decoded = hodlBip47DecodePaymentCode(text);
+    out.innerHTML = hodlBip47ContactHtml(decoded, hodlBip47Network(), {});
+    hodlBip47Contact = decoded.derivable === true ? decoded : null;
+  } catch (exception) {
+    out.innerHTML = hodlBip47ErrorHtml(exception instanceof hodlBip47Error ? exception.code : (exception?.message || String(exception)));
+  }
+  hodlBip47SyncPairsNeeds();
+}
+
+// Hooks the shared Key Station, workspace and conceal code calls through a
+// typeof guard: the function-slice test harnesses run those shared functions
+// without this section. The station markup exists only in preview builds.
+function hodlRefreshBip47Picker() {
+  if (!document.getElementById("bip47-session-keys")) return;
+  hodlFillStationKeyPicker("bip47-session-keys", hodlBip47Source, hodlPickBip47SessionKey);
+  hodlPaintKeyStationNote("bip47-session-keys-note", !hodlSessionHdRootKeys().length, hodlTText("Choose a compatible HD-root key from the {station}, or enter a seed phrase or root extended private key below.", { station: hodlKeyStationMarker }));
+}
+
+// A Key Station key was cleared or deleted: a BIP-47 session using it goes too.
+function hodlBip47ReleaseSource(source) {
+  if ((hodlBip47Source && hodlBip47Source === source) || (hodlBip47Origin && hodlBip47Origin === source)) hodlBip47WipeSource();
+}
+
+function hodlInitBip47() {
+  if (!document.getElementById("bip47-card")) return;
+  // The station joins the Privacy stations only where its preview markup is.
+  if (!hodlPrivacyTools.some(([tool]) => tool === "bip47")) hodlPrivacyTools.push(["bip47", "bip47-card"]);
+  let key = document.getElementById("bip47-key"), pass = document.getElementById("bip47-pass"),
+      network = document.getElementById("bip47-network"), contact = document.getElementById("bip47-contact"),
+      go = document.getElementById("bip47-go"), decode = document.getElementById("bip47-decode");
+  if (!key || !pass || !network || !contact || !go || !decode) return;
+  let onKeyEdit = () => {
+    let wasStationKey = hodlBip47Source.startsWith("key:");
+    hodlBip47WipeKeys();
+    if (key.value.trim()) hodlBip47Source = "manual";
+    hodlBip47ClearOwn();
+    hodlBip47ClearRows();
+    // A notification verdict belongs to the key that produced it.
+    hodlBip47ClearNotify();
+    let error = document.getElementById("bip47-error");
+    if (error) error.textContent = "";
+    if (wasStationKey) hodlRefreshStationKeyPickers();
+    hodlBip47SyncPairsNeeds();
+  };
+  // Editing the key text makes it the user's own; a passphrase edit does not.
+  // The passphrase copied with that key goes too: it belonged to the Key
+  // Station key, and kept here it would apply silently to a new seed.
+  key.addEventListener("input", () => {
+    if (hodlBip47Origin) hodlClearStationPassphrase("bip47-pass");
+    hodlBip47Origin = "";
+  });
+  key.addEventListener("input", onKeyEdit);
+  pass.addEventListener("input", onKeyEdit);
+  network.addEventListener("change", () => { hodlBip47ClearResults(); hodlBip47ClearContact(); hodlSyncBip47Path(); });
+  go.onclick = hodlRunBip47;
+  decode.onclick = hodlDecodeBip47Contact;
+  contact.addEventListener("input", () => {
+    hodlBip47ClearContact();
+  });
+  hodlInitBip47Notify();
+  hodlInitBip47Pairs();
+  hodlSyncBip47Path();
+}
+
+// The pairs disclosure needs a private depth-0 source and a derivable
+// contact; until both are present the prerequisite note stays visible. The
+// notification check needs only a key source.
+function hodlBip47SyncPairsNeeds() {
+  // A key typed but not yet derived counts as chosen: deriving the rows or
+  // checking a transaction loads it first.
+  let key = document.getElementById("bip47-key");
+  let keyChosen = hodlNodeHasPrivateKey(hodlBip47Hd) || Boolean((key?.value || "").trim());
+  let needs = document.getElementById("bip47-pairs-needs");
+  if (needs) needs.hidden = keyChosen && hodlBip47Contact?.derivable === true;
+  let notifyNeeds = document.getElementById("bip47-notify-needs");
+  if (notifyNeeds) notifyNeeds.hidden = keyChosen;
+}
+
+// Derived rows are public data only. The revealed key is never kept here: it
+// is re-derived for the one row on show and wiped in `finally`.
+function hodlBip47ClearRows() {
+  hodlBip47Revealed = null;
+  hodlBip47RowsLast = null;
+  let rows = document.getElementById("bip47-rows");
+  if (rows) rows.innerHTML = "";
+  let next = document.getElementById("bip47-rows-next");
+  if (next) next.hidden = true;
+}
+
+function hodlBip47Conceal() {
+  if (!hodlBip47Revealed) return;
+  hodlBip47Revealed = null;
+  hodlBip47RenderRows();
+}
+
+function hodlBip47RenderRows() {
+  let out = document.getElementById("bip47-rows");
+  if (!out || !hodlBip47RowsLast) return;
+  let last = hodlBip47RowsLast;
+  out.innerHTML = hodlBip47RowsHtml({
+    direction: last.direction,
+    rows: last.rows,
+    skipped: last.skipped,
+    budgetExhausted: last.budgetExhausted,
+    network: hodlBip47Network(),
+    revealed: hodlBip47Revealed,
+  }, {
+    copy: hodlClipboardIconMarkup,
+    privateValue: hodlPrivateValue,
+    privateCopy: hodlPrivateCopyButton,
+  });
+}
+
+function hodlBip47StartIndex() {
+  let field = document.getElementById("bip47-start");
+  return field ? field.valueAsNumber : NaN;
+}
+
+function hodlBip47RunRows() {
+  let error = document.getElementById("bip47-error");
+  if (error) error.textContent = "";
+  hodlBip47ClearRows();
+  let account = null, child0 = null, own = null, result = null;
+  try {
+    let ready = false, keyError = null;
+    try {
+      hodlBip47EnsureHd();
+      ready = hodlNodeHasPrivateKey(hodlBip47Hd);
+    } catch (exception) {
+      keyError = exception;
+    }
+    // A key that was entered but cannot be read says why, rather than the
+    // generic prerequisite note.
+    if (keyError && (document.getElementById("bip47-key")?.value || "").trim()) throw keyError;
+    if (!ready || hodlBip47Contact?.derivable !== true) {
+      throw new Error(hodlTText("Choose a key and decode a contact's payment code first."));
+    }
+    let network = hodlBip47Network();
+    let direction = hodlBip47Direction === "receive" ? "receive" : "send";
+    // Fail closed: an empty, fractional or out-of-range start index is
+    // refused, never rewritten, so a used address is not shown again by
+    // accident (Codex review, 10-28).
+    let start = hodlBip47StartIndex();
+    if (!Number.isInteger(start) || start < 0 || start > 2147483647) {
+      throw new Error(hodlTText("Start index must be a whole number from 0 to 2,147,483,647."));
+    }
+    account = hodlBip47AccountNode(hodlBip47Hd, network);
+    if (direction === "send") {
+      child0 = account.deriveChild(0);
+      own = child0.privateKey;
+    } else {
+      own = account;
+    }
+    result = hodlBip47PairRows(direction, { own, code: hodlBip47Contact }, start, 10, network);
+    hodlBip47RowsLast = {
+      direction,
+      start,
+      rows: result.rows.map((row) => ({ index: row.index, address: row.address })),
+      skipped: result.skipped,
+      budgetExhausted: result.budgetExhausted,
+    };
+    hodlBip47RenderRows();
+    let next = document.getElementById("bip47-rows-next");
+    // Nothing follows the last unhardened index (2^31 - 1).
+    if (next) next.hidden = result.budgetExhausted || start + result.rows.length + result.skipped.length > 2147483647;
+  } catch (exception) {
+    if (error) error.textContent = exception.message || String(exception);
+  } finally {
+    if (result) for (let row of result.rows) if (row.privateKey) { try { row.privateKey.fill(0); } catch {} }
+    if (own instanceof Uint8Array) { try { own.fill(0); } catch {} }
+    if (child0) { try { child0.wipePrivateData(); } catch {} }
+    if (account) { try { account.wipePrivateData(); } catch {} }
+    hodlBip47SyncPairsNeeds();
+  }
+}
+
+function hodlBip47RevealRow(index) {
+  if (!Number.isInteger(index) || !hodlBip47RowsLast || hodlBip47RowsLast.direction !== "receive") return;
+  if (hodlBip47Contact?.derivable !== true) return;
+  let error = document.getElementById("bip47-error");
+  if (error) error.textContent = "";
+  let account = null, row = null;
+  try {
+    hodlBip47EnsureHd();
+    let network = hodlBip47Network();
+    account = hodlBip47AccountNode(hodlBip47Hd, network);
+    row = hodlBip47ReceiveRow(account, hodlBip47Contact, index, network);
+    if (!row || !row.privateKey) { hodlBip47Conceal(); return; }
+    // The key is derived again on show, so it must belong to the address on
+    // screen; if it does not, the rows are stale and go.
+    let shown = hodlBip47RowsLast.rows.find((entry) => entry.index === index);
+    if (!shown || row.address !== shown.address) { hodlBip47ClearRows(); return; }
+    hodlBip47Revealed = { index, wif: hodlEncodeWif(row.privateKey, true, network) };
+    hodlBip47RenderRows();
+  } catch (exception) {
+    if (error) error.textContent = exception.message || String(exception);
+  } finally {
+    if (row && row.privateKey) { try { row.privateKey.fill(0); } catch {} }
+    if (account) { try { account.wipePrivateData(); } catch {} }
+  }
+}
+
+function hodlInitBip47Pairs() {
+  let directions = document.getElementById("bip47-directions");
+  if (directions) {
+    for (let button of directions.querySelectorAll("[data-direction]")) {
+      button.addEventListener("click", () => {
+        let direction = button.dataset.direction === "receive" ? "receive" : "send";
+        if (direction === hodlBip47Direction) return;
+        hodlBip47SetDirection(direction);
+        hodlBip47ClearRows();
+      });
+    }
+  }
+  let start = document.getElementById("bip47-start");
+  if (start) start.addEventListener("input", () => { hodlBip47ClearRows(); });
+  let go = document.getElementById("bip47-rows-go");
+  if (go) go.onclick = hodlBip47RunRows;
+  let next = document.getElementById("bip47-rows-next");
+  if (next) next.onclick = () => {
+    if (!hodlBip47RowsLast) return;
+    let after = hodlBip47RowsLast.start + hodlBip47RowsLast.rows.length + hodlBip47RowsLast.skipped.length;
+    let field = document.getElementById("bip47-start");
+    if (field) field.value = String(after);
+    hodlBip47RunRows();
+  };
+  let rows = document.getElementById("bip47-rows");
+  if (rows) {
+    rows.addEventListener("click", (event) => {
+      let reveal = event.target.closest?.("[data-bip47-reveal]");
+      if (reveal) { hodlBip47RevealRow(Number(reveal.dataset.bip47Reveal)); return; }
+      if (event.target.closest?.("[data-bip47-conceal]")) hodlBip47Conceal();
+    });
+    // `toggle` does not bubble; capture reaches the details from its ancestor.
+    rows.addEventListener("toggle", (event) => {
+      let details = event.target;
+      if (details?.matches?.("details[data-bip47-keys]") && !details.open) hodlBip47Conceal();
+    }, true);
+  }
+  // Closing the whole Payment addresses disclosure hides a shown key too.
+  let pairs = document.getElementById("bip47-pairs");
+  if (pairs) pairs.addEventListener("toggle", () => { if (!pairs.open) hodlBip47Conceal(); });
+  hodlBip47SyncPairsNeeds();
+}
+
+// The notification check: the pasted transaction is public data, and the
+// notification private key (child 0) is derived for the one call and wiped in
+// `finally` with every intermediate node. Manual mode is on only while the
+// override is open and both of its values are present; it never falls back to
+// manual silently.
+function hodlBip47NotifyManual() {
+  let manual = document.getElementById("bip47-notify-manual");
+  let select = document.getElementById("bip47-notify-input");
+  let pub = document.getElementById("bip47-notify-pub");
+  let open = manual?.open === true;
+  let index = select && select.value !== "" ? Number(select.value) : NaN;
+  let pubkey = (pub?.value || "").trim();
+  let complete = open && Number.isInteger(index) && index >= 0 && pubkey !== "";
+  return { open, complete, options: complete ? { designatedPub: pubkey, designatedInput: index } : {} };
+}
+
+// The manual picker lists the parsed transaction's inputs; nothing is
+// selected, so the engine's input-0 fallback is never reached by accident.
+function hodlBip47FillNotifyInputs() {
+  let select = document.getElementById("bip47-notify-input");
+  if (!select) return;
+  let text = (document.getElementById("bip47-notify-tx")?.value || "").trim();
+  let tx = null;
+  if (text) {
+    try { tx = parseRawTx(hodlBip47HexToBytes(text)); } catch { tx = null; }
+  }
+  // A notification transaction has a few inputs; a crafted paste with
+  // thousands would freeze the page building options, so none are listed.
+  select.innerHTML = '<option value="" disabled selected></option>' + (tx && tx.inputs.length <= 1000 ? hodlBip47NotifyInputsHtml(tx.inputs) : "");
+  select.value = "";
+}
+
+function hodlBip47CheckNotify() {
+  let error = document.getElementById("bip47-error");
+  let out = document.getElementById("bip47-notify-out");
+  hodlBip47Conceal();
+  if (error) error.textContent = "";
+  if (out) out.innerHTML = "";
+  hodlBip47NotifyCode = null;
+  let account = null, child0 = null, priv = null;
+  try {
+    let key = document.getElementById("bip47-key");
+    if (!hodlNodeHasPrivateKey(hodlBip47Hd) && !(key?.value || "").trim()) {
+      if (error) error.textContent = hodlTText("Choose a key first.");
+      return;
+    }
+    try {
+      hodlBip47EnsureHd();
+    } catch (exception) {
+      if (error) error.textContent = exception?.message || String(exception);
+      return;
+    }
+    let manual = hodlBip47NotifyManual();
+    if (manual.open && !manual.complete) {
+      if (error) error.textContent = hodlTText("Choose an input and enter its public key, or close the manual override.");
+      return;
+    }
+    account = hodlBip47AccountNode(hodlBip47Hd, hodlBip47Network());
+    child0 = account.deriveChild(0);
+    priv = child0.privateKey;
+    let result = hodlBip47DecodeNotificationTx(document.getElementById("bip47-notify-tx")?.value ?? "", priv, manual.options);
+    hodlBip47NotifyCode = result?.code || null;
+    if (out) out.innerHTML = hodlBip47NotifyHtml(result, { manual: manual.open });
+  } catch (exception) {
+    if (out) out.innerHTML = hodlBip47NotifyErrorHtml(exception);
+  } finally {
+    if (priv instanceof Uint8Array) { try { priv.fill(0); } catch {} }
+    if (child0) { try { child0.wipePrivateData(); } catch {} }
+    if (account) { try { account.wipePrivateData(); } catch {} }
+    hodlBip47SyncPairsNeeds();
+  }
+}
+
+function hodlInitBip47Notify() {
+  let tx = document.getElementById("bip47-notify-tx");
+  if (tx) {
+    tx.addEventListener("input", () => {
+      hodlBip47ClearNotify();
+      hodlBip47FillNotifyInputs();
+      // A public key entered for the old transaction's input does not carry over.
+      let pub = document.getElementById("bip47-notify-pub");
+      if (pub) pub.value = "";
+    });
+  }
+  // The verdict belongs to the input, key and mode it was checked with.
+  for (let [id, type] of [["bip47-notify-input", "change"], ["bip47-notify-pub", "input"], ["bip47-notify-manual", "toggle"]]) {
+    document.getElementById(id)?.addEventListener(type, () => {
+      hodlBip47ClearNotify();
+      let error = document.getElementById("bip47-error");
+      if (error) error.textContent = "";
+    });
+  }
+  let go = document.getElementById("bip47-notify-go");
+  if (go) go.onclick = hodlBip47CheckNotify;
+  let out = document.getElementById("bip47-notify-out");
+  if (out) {
+    // An explicit transfer: the recovered code is copied into the contact
+    // field and decoded there. Nothing replaces the contact automatically.
+    out.addEventListener("click", (event) => {
+      if (!event.target.closest?.("[data-bip47-use-code]")) return;
+      let contact = document.getElementById("bip47-contact");
+      if (!contact || !hodlBip47NotifyCode) return;
+      contact.value = hodlBip47NotifyCode;
+      hodlDecodeBip47Contact();
+    });
+  }
+}
+
 function hodlRefreshStationKeyPickers() {
   hodlFillStationKeyPicker("bip85-session-keys", hodlBip85Source, hodlPickBip85SessionKey);
   hodlFillStationKeyPicker("sp-session-keys", hodlSpSource, hodlPickSpSessionKey);
+  if (typeof hodlRefreshBip47Picker === "function") hodlRefreshBip47Picker();
   hodlFillStationKeyPicker("vanity-session-keys", hodlVanitySource, hodlPickVanitySessionKey, hodlVanitySourceKeys);
   hodlFillStationKeyPicker("psbt-session-keys", hodlPsbtSource, hodlPickPsbtSessionKey, hodlPsbtSourceKeys);
   hodlFillStationKeyPicker("nonce-session-keys", hodlPsbtSource, hodlPickPsbtSessionKey, hodlPsbtSourceKeys);
@@ -9077,7 +11200,7 @@ function hodlRefreshMsigSessionPickers() {
     options.forEach((option) => {
       let active = hodlMsigSessionKeyMatches(option, parsed);
       let unavailable = !reuse && !active && Boolean(option.baseId) && usedElsewhere.has(option.baseId);
-      box.appendChild(hodlCreateMsigSessionKeyButton(option, "msig-session-key", active, unavailable, () => hodlPickMsigSessionKey(option, row), (fingerprint, selected, used) => used ? `Key ${fingerprint} is already selected for another co-signer` : `${selected ? "Remove" : "Use"} key ${fingerprint} ${selected ? "from" : "for"} this co-signer`));
+      box.appendChild(hodlCreateMsigSessionKeyButton(option, "msig-session-key", active, unavailable, () => hodlPickMsigSessionKey(option, row), (fingerprint, selected, used) => used ? hodlTText("Key {fingerprint} is already selected for another co-signer", { fingerprint }) : selected ? hodlTText("Remove key {fingerprint} from this co-signer", { fingerprint }) : hodlTText("Use key {fingerprint} for this co-signer", { fingerprint })));
     });
   });
 }
@@ -9089,6 +11212,7 @@ function hodlFillKeys(values, specs) {
   // A key that stays keeps its card's spec; a new key's origin pre-selects one.
   let previousSpecs = new Map([...box.querySelectorAll(".msig-key-row")].map((row) => [hodlMsigRowValue(row), hodlMsigRowSpec(row)]));
   box.classList.toggle("msig-keys-listed", listed);
+  if (typeof hodlDestroyTextScans === "function") hodlDestroyTextScans("msig-keys");
   box.innerHTML = "";
   for (let i = 0; i < n; i++) {
     let row = document.createElement("div");
@@ -9144,8 +11268,13 @@ function hodlFillKeys(values, specs) {
     chips.className = "msig-session-keys";
     chips.hidden = true;
     chips.setAttribute("role", "group");
-    chips.setAttribute("aria-label", "Existing keys for co-signer " + (i + 1));
+    chips.setAttribute("aria-label", hodlTText("Existing keys for co-signer {n}", { n: i + 1 }));
     lab.append(ta);
+    let scanHost = document.createElement("div");
+    scanHost.id = "msig-scan-x-" + i;
+    scanHost.dataset.scanField = ta.id;
+    scanHost.dataset.scanAccept = "xpub";
+    scanHost.className = "text-scan-host";
     let pathLabel = document.createElement("label");
     pathLabel.className = "field msig-full-path-field";
     pathLabel.textContent = hodlTText("Full derivation path");
@@ -9207,7 +11336,7 @@ function hodlFillKeys(values, specs) {
     keyStatus.dataset.msigKeyStatus = "";
     keyStatus.setAttribute("role", "status");
     keyStatus.hidden = true;
-    content.append(chips, keyStatus, lab, specLabel, originFields, advanced);
+    content.append(chips, keyStatus, lab, scanHost, specLabel, originFields, advanced);
     box.appendChild(row);
     hodlSyncMsigRowSpec(row, specs?.[i] || previousSpecs.get(ta.value.trim()) || hodlMsigSpecForValue(ta.value));
     specSelect.addEventListener("change", () => hodlApplyMsigRowSpec(row));
@@ -9261,6 +11390,7 @@ function hodlFillKeys(values, specs) {
   hodlUpdateMsigAccount();
   hodlSyncMsigDescriptorImport();
   hodlRefreshMsigSessionPickers();
+  if (typeof hodlBindTextScans === "function") hodlBindTextScans();
 }
 function hodlMultisigPrefixCompatible(parsed, kind, purpose) {
   if (kind === "p2tr" || purpose === 87) return parsed.family === "x";
@@ -9274,8 +11404,8 @@ function hodlMultisigPrefixCompatible(parsed, kind, purpose) {
 function hodlMultisigAccountKeyError(parsed, kind, purpose, hardening = { purpose: true, coinType: true, account: true, address: false }) {
   if (kind === "p2tr" || purpose === 87 || purpose === 44 || purpose === 49 || purpose === 84) {
     let standard = purpose === 87 ? "BIP87" : kind === "p2tr" ? "Taproot" : `BIP${purpose}`;
-    if (parsed.depth !== 3) return `${standard} requires a depth-3 account key at m/purposeh/coinh/accounth; this key is depth ${parsed.depth}.`;
-    if ((parsed.childNumber >= 0x80000000) !== hardening.account) return `The account index must be ${hardening.account ? "hardened" : "unhardened"}.`;
+    if (parsed.depth !== 3) return hodlNote("{standard} requires a depth-3 account key at m/purposeh/coinh/accounth; this key is depth {depth}.", { standard, depth: parsed.depth });
+    if ((parsed.childNumber >= 0x80000000) !== hardening.account) return hodlNote(hardening.account ? "The account index must be hardened." : "The account index must be unhardened.");
     return ""
   }
   if (kind === "p2wsh" || kind === "p2sh-p2wsh") {
@@ -9285,13 +11415,13 @@ function hodlMultisigAccountKeyError(parsed, kind, purpose, hardening = { purpos
     return "";
   }
   if (purpose !== 45) {
-    if (parsed.depth !== 3) return `Account-based Legacy derivation requires a depth-3 key at m/purposeh/coinh/accounth; this key is depth ${parsed.depth}.`;
-    if ((parsed.childNumber >= 2147483648) !== hardening.account) return `The account index must be ${hardening.account ? "hardened" : "unhardened"}.`;
+    if (parsed.depth !== 3) return hodlNote("Account-based Legacy derivation requires a depth-3 key at m/purposeh/coinh/accounth; this key is depth {depth}.", { depth: parsed.depth });
+    if ((parsed.childNumber >= 2147483648) !== hardening.account) return hodlNote(hardening.account ? "The account index must be hardened." : "The account index must be unhardened.");
     return "";
   }
-  if (parsed.depth !== 1) return `Legacy P2SH requires the depth-1 BIP45 purpose key at m/45h; this key is depth ${parsed.depth}.`;
+  if (parsed.depth !== 1) return hodlNote("Legacy P2SH requires the depth-1 BIP45 purpose key at m/45h; this key is depth {depth}.", { depth: parsed.depth });
   let expected = hardening.purpose ? 2147483648 + 45 : 45; // 45h when hardened
-  if (parsed.childNumber !== expected) return `Legacy P2SH requires the ${hardening.purpose ? "hardened" : "unhardened"} BIP45 purpose child at m/${hodlPathComponent(45, hardening.purpose)}.`;
+  if (parsed.childNumber !== expected) return hodlNote(hardening.purpose ? "Legacy P2SH requires the hardened BIP45 purpose child at m/{path}." : "Legacy P2SH requires the unhardened BIP45 purpose child at m/{path}.", { path: hodlPathComponent(45, hardening.purpose) });
   return "";
 }
 function hodlMsigDerivedNode(parsed) {
@@ -9444,6 +11574,7 @@ function hodlResetMsigForm() {
   // MS Station starts on the import panel: a fresh station and a cleared one
   // both open it, since pasting a descriptor is the usual way in.
   if (descriptorPanel) descriptorPanel.open = true;
+  if (typeof hodlMsigBip138Reset === "function") hodlMsigBip138Reset();
   hodlSyncMsigDescriptorImport();
 }
 function hodlInitMsig() {
@@ -9549,6 +11680,7 @@ function hodlInitMsig() {
     hodlSyncMsigDescriptorImport();
     hodlSyncMsigClearButton(true);
   });
+  if (typeof hodlInitMsigBip138Open === "function") hodlInitMsigBip138Open();
 }
 // The multisig script type is a button group, not a field to read: the choice
 // lives here and the pressed segment reports it. "mixed" is a state the
@@ -9614,31 +11746,34 @@ function hodlMsigAddr(pubkeys, m, network, kind, sorted = !0) {
 }
 function hodlValidatedMsigInputs() {
   let coinType = hodlReadCoinType(document.getElementById("msig-network")), network = hodlNetworkFromCoinType(coinType), addressWindow = hodlReadAddressWindow("msig-"), branchWindow = hodlReadBranchWindow("msig-"), count = addressWindow.range, addressStart = addressWindow.start, branchStart = branchWindow.start, branchRange = branchWindow.range, hardening = hodlReadHardening("msig-"), n = Number(document.getElementById("msig-n")?.value), m = Number(document.getElementById("msig-m")?.value);
-  if (hardening.branch) throw new Error("Hardened address branches cannot be derived from the supplied multisig extended public keys. Turn off Harden for Starting address branch index.");
-  if (hardening.address) throw new Error("Hardened address indexes cannot be derived from multisig extended public keys. Turn off Harden for Starting address index.");
-  if (!(m >= 1 && n >= 1 && m <= n && n <= 15)) throw new Error("Pick how many signatures out of how many keys.");
+  if (hardening.branch) throw hodlError("Hardened address branches cannot be derived from the supplied multisig extended public keys. Turn off Harden for Starting address branch index.");
+  if (hardening.address) throw hodlError("Hardened address indexes cannot be derived from multisig extended public keys. Turn off Harden for Starting address index.");
+  if (!(m >= 1 && n >= 1 && m <= n && n <= 15)) throw hodlError("Pick how many signatures out of how many keys.");
   let kind = hodlScriptKind(), purpose = hodlReadMsigPurpose(), nodes = [], xpubs = [], keyTokens = [], accountNumbers = [], specs = [], customCosigners = [];
   if (kind === "mixed") throw hodlError("Co-signer keys indicate different script types. Export every key for the same multisig script type before deriving.");
   for (let index = 0; index < n; index++) {
     let field = document.getElementById("msig-x-" + index), row = field?.closest(".msig-key-row"), raw = row ? hodlMsigRowValue(row, true) : "";
     if (!raw) throw hodlError("Paste an origin and extended public key for co-signer {n}.", { n: index + 1 });
     let parsed = hodlParseMultisigCosigner(raw), spec = hodlMsigRowSpec(row), specPurpose = hodlMsigSpec(spec)?.purpose ?? null;
-    if (parsed.isPrivate) throw new Error("Co-signer " + (index + 1) + " is an extended private key. Paste only an extended public key.");
-    if (parsed.network !== network) throw new Error(`Co-signer ${index + 1}'s ${parsed.prefix} is for ${parsed.network}, but this multisig is set to ${network}.`);
-    if (!hodlMultisigPrefixCompatible(parsed, kind, specPurpose)) throw new Error(parsed.scope === "singlesig" ? `Co-signer ${index + 1} uses a singlesig ${parsed.prefix}. Use a generic ${hodlExtendedKeyVersions[network].x.pubName}, or the proper uppercase multisig export for this script type.` : `Co-signer ${index + 1}'s ${parsed.prefix} does not match the selected multisig script type.`);
-    if (!parsed.origin) throw new Error(`Co-signer ${index + 1} needs a key origin so a signer can recognize this key. Paste ${hodlMultisigKeyPlaceholder(kind, network, purpose, coinType, hardening)} as exported by the device.`);
+    if (parsed.isPrivate) throw hodlError("Co-signer {n} is an extended private key. Paste only an extended public key.", { n: index + 1 });
+    if (parsed.network !== network) throw hodlError("Co-signer {n}'s {prefix} is for {keyNetwork}, but this multisig is set to {walletNetwork}.", { n: index + 1, prefix: parsed.prefix, keyNetwork: parsed.network, walletNetwork: network });
+    if (!hodlMultisigPrefixCompatible(parsed, kind, specPurpose)) {
+      if (parsed.scope === "singlesig") throw hodlError("Co-signer {n} uses a singlesig {prefix}. Use a generic {xpub}, or the proper uppercase multisig export for this script type.", { n: index + 1, prefix: parsed.prefix, xpub: hodlExtendedKeyVersions[network].x.pubName });
+      throw hodlError("Co-signer {n}'s {prefix} does not match the selected multisig script type.", { n: index + 1, prefix: parsed.prefix });
+    }
+    if (!parsed.origin) throw hodlError("Co-signer {n} needs a key origin so a signer can recognize this key. Paste {placeholder} as exported by the device.", { n: index + 1, placeholder: hodlMultisigKeyPlaceholder(kind, network, purpose, coinType, hardening) });
     hodlMultisigPurposeIndex(parsed.origin);
     let originError = hodlOriginMatchesParsedKey(parsed.origin, parsed);
-    if (originError) throw new Error(`Co-signer ${index + 1}: ${hodlFormatNote(originError)}`);
+    if (originError) throw hodlError("Co-signer {n}: {reason}", { n: index + 1, reason: hodlFormatNote(originError) });
     // Each co-signer is held to its card's spec. A Custom card makes the
     // wallet a custom spec; only a spec path has an account number to compare.
     specs.push(spec);
     if (spec === "custom") customCosigners.push(index + 1);
     else {
       let foreign = hodlMsigForeignSpecNote(parsed.origin, kind);
-      if (foreign) throw new Error(`Co-signer ${index + 1}: ${foreign}`);
+      if (foreign) throw hodlError("Co-signer {n}: {reason}", { n: index + 1, reason: foreign });
       let departure = hodlMsigCustomPathReason(parsed, kind, network, specPurpose, coinType, hardening);
-      if (departure) throw new Error(`Co-signer ${index + 1}: ${departure}`);
+      if (departure) throw hodlError("Co-signer {n}: {reason}", { n: index + 1, reason: departure });
       let accountNumber = hodlMultisigAccountNumber(parsed.origin, kind, specPurpose, hodlMsigOriginHardening(parsed.origin, hardening).account);
       if (accountNumber != null) accountNumbers.push(accountNumber);
     }
@@ -9697,11 +11832,13 @@ async function hodlBuildMsig(progress, action = "derive") {
     }
     let receiveBranch = addressBranches.find((entry) => entry.branch === 0), changeBranch = addressBranches.find((entry) => entry.branch === 1);
     let notes = [];
-    if (bip45) notes.push("Legacy BIP45 addresses use co-signer branch 0 before the selected address branch.");
-    if (kind === "p2sh" && legacyStandard === "bip87") notes.push("Legacy P2SH uses the selected BIP87 account paths. Keep the descriptor with every seed backup.");
-    if (kind === "p2tr") notes.push("Taproot script-path multisig. The internal key is the BIP341 NUMS point, so spending is only possible through the " + (sorted ? "sortedmulti_a" : "multi_a") + " script path.");
-    if (!sorted) notes.push("This wallet uses " + hodlMsigPolicyOp(kind, !1) + ", so the listed co-signer order is part of the script. Reordering keys changes addresses.");
-    notes.push("This screen displays no private keys.");
+    // Notes, not strings: the wallet notes render through hodlFormatNote,
+    // which leaves a plain string in English.
+    if (bip45) notes.push(hodlNote("Legacy BIP45 addresses use co-signer branch 0 before the selected address branch."));
+    if (kind === "p2sh" && legacyStandard === "bip87") notes.push(hodlNote("Legacy P2SH uses the selected BIP87 account paths. Keep the descriptor with every seed backup."));
+    if (kind === "p2tr") notes.push(hodlNote("Taproot script-path multisig. The internal key is the BIP341 NUMS point, so spending is only possible through the {policy} script path.", { policy: sorted ? "sortedmulti_a" : "multi_a" }));
+    if (!sorted) notes.push(hodlNote("This wallet uses {policy}, so the listed co-signer order is part of the script. Reordering keys changes addresses.", { policy: hodlMsigPolicyOp(kind, !1) }));
+    notes.push(hodlNote("This screen displays no private keys."));
     hodlAssertDerivationActive(generation, control);
     hodlWalletResult = {
       kind: "msig",
@@ -9734,9 +11871,10 @@ async function hodlBuildMsig(progress, action = "derive") {
       warnings: [accountWarning, customWarning].filter(Boolean)
     };
     hodlCaptureMsig();
-    hodlJournalLog("derive", hodlWalletResult.m && hodlWalletResult.n ? `${hodlWalletResult.m}-of-${hodlWalletResult.n}` : "msig");
+    let logDetail = hodlWalletResult.m && hodlWalletResult.n ? `${hodlWalletResult.m}-of-${hodlWalletResult.n}` : "msig";
     hodlSnapshotMsigSummary();
     hodlCommitDerivedMsig(action);
+    hodlJournalLog("derive", logDetail, "msig");
     hodlFocusWalletResult();
     return true;
   } catch (exception) {
@@ -9747,7 +11885,7 @@ async function hodlBuildMsig(progress, action = "derive") {
     error.textContent = exception.message || String(exception);
     hodlSetWorkspaceError("msig", hodlErrorSpecFrom(exception));
     hodlCaptureMsig();
-    hodlJournalLog("derive-error");
+    hodlJournalLog("derive-error", "", "msig");
     return false;
   }
 }
@@ -9767,6 +11905,7 @@ function hodlShowMsig() {
       ${hodlMsigGroupMarkup("watch", hodlT("Watch-only wallet data"), `
         <p class="edge-note is-public">${hodlT("These descriptors reveal every address in the selected branches for this multisig, but cannot authorize spending. Descriptors can be imported into Sparrow or another wallet.")}</p>
         ${hodlWatchOnlyDescriptorExport(hodlWalletResult.receiveDescriptor, hodlWalletResult.changeDescriptor, branches, { collapsible: false })}
+        ${hodlMsigBip388Field()}
       `, "account-watch-section")}
       ${hodlMsigGroupMarkup("addresses", hodlT("Addresses"), `
         <p class="edge-note is-public">${hodlT("Verify the first selected address on every signing device before accepting bitcoin.")}</p>
@@ -9774,13 +11913,222 @@ function hodlShowMsig() {
         ${hodlAddressMatchMarkup()}
       `, "account-address-section")}
       ${hodlMsigCoreImportDescriptorsMarkup()}
+      ${hodlMsigPolicySheetMarkup()}
+      ${hodlMsigBip388Markup()}
+      ${typeof hodlMsigBip138HostMarkup === "function" ? hodlMsigBip138HostMarkup() : ""}
     </section>`;
   hodlBindAddressVirtualization(hodlAddressBranchVirtualConfigs(branches, false, "msig"));
   hodlWatchMsigGroups();
   hodlBindAddressMatch();
   hodlBindMsigCoreImportDescriptors();
+  if (typeof hodlMountMsigBip138Backup === "function") hodlMountMsigBip138Backup();
 }
-var hodlPsbtPriv = null, hodlPsbtHd = null, hodlPsbtSource = "", hodlPsbtSessionSpec = { key: "No session key. Inspect-only mode." }, hodlPsbtLast = null, hodlPsbtErrorSpec = null;
+// BIP-138 encrypted backups of the multisig descriptor. The module (and its
+// cipher) is imported on first use, not at load.
+var hodlBip138Import = null, hodlMsigBip138Backup = null, hodlMsigBip138Open = null, hodlMsigBip138Epoch = 0, hodlMsigBip138OpenEpoch = 0;
+function hodlLoadBip138() {
+  if (!hodlBip138Import) hodlBip138Import = import("./bip138.js").catch(() => null);
+  return hodlBip138Import;
+}
+function hodlMsigBip138HostMarkup() {
+  if (!hodlWalletResult || hodlWalletResult.kind !== "msig" || !hodlWalletResult.walletDescriptor) return "";
+  return '<div id="msig-bip138-host"></div>';
+}
+function hodlMsigBip138ReasonText(reason) {
+  if (reason === "literal") return hodlTText("it is a single public key, not an xpub");
+  if (reason === "nums") return hodlTText("it is a publicly known fixed key");
+  return hodlTText("its xpub becomes visible on the blockchain when coins are spent");
+}
+// One line per co-signer key that cannot open the backup (the Taproot
+// internal key is no co-signer and gets none), then the two downloads, shown
+// only for a backup that was opened again and matched.
+function hodlMsigBip138Markup(view) {
+  let lines = (view?.exclusions || []).filter((entry) => !entry.internal && Number.isSafeInteger(entry.index)).map((entry) => `<p class="edge-note is-private" data-bip138-excluded="${entry.index + 1}">${hodlT("Key {n} can't open this backup: {reason}. Whoever has only that key will need another cosigner's xpub, or a plain copy of the descriptor.", { n: String(entry.index + 1), reason: hodlMsigBip138ReasonText(entry.reason) })}</p>`).join("");
+  let actions = view?.ready
+    ? `<div class="row tool-actions"><button class="btn secondary" id="msig-bip138-download" type="button">${hodlT("Download encrypted backup")}</button><button class="btn secondary" id="msig-bip138-download-text" type="button">${hodlT("Download as text")}</button></div>`
+    : `<p class="edge-note is-private" data-bip138-none>${hodlT("Can't make this backup: none of this wallet's keys can open one. Keep a plain copy of the descriptor instead.")}</p>`;
+  return `<details class="wallet-advanced no-print" id="msig-bip138" data-bip138-backup><summary>${hodlT("Encrypted backup")}</summary><p class="edge-note is-info">${hodlT("Encrypts this wallet's watch-only details so a copy on a USB drive, in email or in cloud storage doesn't show strangers your addresses or keys. Anyone with one of this wallet's xpubs can open it. It is not a seed backup and cannot spend coins.")}</p><p class="edge-note is-muted">${hodlT("BIP-138 is a draft standard and may change; keep a plain copy of the descriptor too.")}</p>${lines}${actions}</details>`;
+}
+function hodlMountMsigBip138Backup() {
+  let host = document.getElementById("msig-bip138-host"), result = hodlWalletResult, epoch = ++hodlMsigBip138Epoch;
+  hodlMsigBip138Backup = null;
+  if (!host || !result || result.kind !== "msig" || !result.walletDescriptor) return;
+  hodlLoadBip138().then((module) => {
+    if (!module || epoch !== hodlMsigBip138Epoch || hodlWalletResult !== result || !host.isConnected) return;
+    let built = null;
+    try {
+      built = module.bip138CreateDescriptorBackup(result.walletDescriptor);
+    } catch {
+      return;
+    }
+    let ready = built?.status === "ok" && built.bytes instanceof Uint8Array;
+    hodlMsigBip138Backup = ready ? { result, bytes: built.bytes, module } : null;
+    host.innerHTML = hodlMsigBip138Markup({ exclusions: built?.exclusions || [], ready });
+    document.getElementById("msig-bip138-download")?.addEventListener("click", () => hodlDownloadMsigBip138(false));
+    document.getElementById("msig-bip138-download-text")?.addEventListener("click", () => hodlDownloadMsigBip138(true));
+  }).catch(() => {});
+}
+function hodlDownloadMsigBip138(asText) {
+  let backup = hodlMsigBip138Backup;
+  if (!backup || backup.result !== hodlWalletResult) return;
+  let blob = asText ? new Blob([backup.module.bip138ToBase64(backup.bytes)], { type: "text/plain" }) : new Blob([backup.bytes.slice()], { type: "application/octet-stream" });
+  let url = URL.createObjectURL(blob), link = document.createElement("a");
+  link.href = url;
+  link.download = asText ? "wallet-backup.txt" : "wallet-backup.bip138";
+  link.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1e3);
+}
+function hodlMsigBip138LooksLikeText(value) {
+  return String(value ?? "").replace(/\s+/g, "").startsWith("QklQMTM4");
+}
+// A pasted backup is ciphertext, not a descriptor: the import button stays
+// off until the backup has been opened into one.
+function hodlMsigBip138Pending() {
+  if (!document.getElementById("msig-backup-open")) return false;
+  return hodlMsigBip138LooksLikeText(document.getElementById("msig-descriptor")?.value);
+}
+function hodlMsigBip138StatusText(code) {
+  if (code === "prompt") return hodlTText("Enter one of this wallet's xpubs to open the backup. Never enter a seed or private key.");
+  if (code === "not-backup") return hodlTText("This isn't a BIP-138 backup. Choose a .bip138 file or its text version. Nothing was imported.");
+  if (code === "unsupported") return hodlTText("This backup uses a BIP-138 version EntropyLab doesn't support yet. Nothing was imported.");
+  if (code === "wrong-key") return hodlTText("Couldn't open this backup. The xpub may not be one of this wallet's keys, or the file may be damaged or changed. Nothing was imported.");
+  if (code === "private-key") return hodlTText("Refused: this backup contains private keys. Nothing was imported.");
+  return hodlTText("This backup looks incomplete or damaged. Try another copy. Nothing was imported.");
+}
+function hodlMsigBip138StatusCode(errorCode) {
+  if (errorCode === "magic" || errorCode === "too-large") return "not-backup";
+  if (errorCode === "unsupported-version" || errorCode === "unsupported-encryption" || errorCode === "unsupported-content") return "unsupported";
+  if (errorCode === "wrong-key" || errorCode === "private-key") return errorCode;
+  return "damaged";
+}
+// The status line carries its state in data-bip138-status for tests.
+function hodlMsigBip138Status(code) {
+  let status = document.getElementById("msig-backup-status");
+  if (!status) return;
+  let text = code ? hodlMsigBip138StatusText(code) : "";
+  status.textContent = text;
+  status.setAttribute("data-bip138-status", code || "");
+  status.hidden = !text;
+}
+function hodlMsigBip138Drop() {
+  hodlMsigBip138Open = null;
+  hodlMsigBip138OpenEpoch++;
+  let field = document.getElementById("msig-backup-xpub"), row = document.getElementById("msig-backup-xpub-row");
+  if (field) field.value = "";
+  if (row) row.hidden = true;
+}
+function hodlMsigBip138Hold(module, bytes, source) {
+  hodlMsigBip138Drop();
+  try {
+    module.bip138ParseBackup(bytes);
+  } catch (error) {
+    hodlMsigBip138Status(hodlMsigBip138StatusCode(error?.code));
+    return;
+  }
+  hodlMsigBip138Open = { module, bytes, source };
+  let row = document.getElementById("msig-backup-xpub-row");
+  if (row) row.hidden = false;
+  hodlMsigBip138Status("prompt");
+}
+function hodlMsigBip138CheckText() {
+  let field = document.getElementById("msig-descriptor");
+  if (!field || !document.getElementById("msig-backup-open")) return;
+  let text = field.value;
+  if (!hodlMsigBip138LooksLikeText(text)) {
+    // An edit drops a held backup whatever its source, and cancels a file
+    // still being read: opening either later would replace what was typed
+    // (K3.1, MiniMax, #1374 round 2).
+    let held = hodlMsigBip138Open;
+    hodlMsigBip138Drop();
+    if (held) hodlMsigBip138Status("");
+    return;
+  }
+  let epoch = ++hodlMsigBip138OpenEpoch;
+  hodlLoadBip138().then((module) => {
+    if (!module || epoch !== hodlMsigBip138OpenEpoch || field.value !== text) return;
+    let bytes = null;
+    try {
+      bytes = module.bip138BytesFromText(text);
+    } catch {
+      hodlMsigBip138Drop();
+      hodlMsigBip138Status("damaged");
+      return;
+    }
+    hodlMsigBip138Hold(module, bytes, "text");
+  }).catch(() => {});
+}
+function hodlMsigBip138TryOpen() {
+  let field = document.getElementById("msig-backup-xpub"), held = hodlMsigBip138Open;
+  if (!field || !held) return;
+  let parsed = held.module.bip138KeyFromXpubText(field.value);
+  if (parsed.status === "private-key") field.value = "";
+  if (parsed.status !== "ok") {
+    hodlMsigBip138Status("prompt");
+    return;
+  }
+  let opened = null;
+  try {
+    opened = held.module.bip138OpenDescriptorBackup(held.bytes, parsed.key);
+  } catch (error) {
+    let code = hodlMsigBip138StatusCode(error?.code);
+    if (code !== "wrong-key") hodlMsigBip138Drop();
+    hodlMsigBip138Status(code);
+    return;
+  } finally {
+    parsed.key.fill(0);
+  }
+  hodlMsigBip138Drop();
+  hodlMsigBip138Status("");
+  let descriptor = document.getElementById("msig-descriptor");
+  if (!descriptor) return;
+  descriptor.value = opened.descriptor;
+  descriptor.dispatchEvent(new Event("input", { bubbles: true }));
+}
+function hodlInitMsigBip138Open() {
+  let open = document.getElementById("msig-backup-open"), file = document.getElementById("msig-backup-file"), xpub = document.getElementById("msig-backup-xpub"), descriptor = document.getElementById("msig-descriptor");
+  if (!open || !file || !xpub || !descriptor) return;
+  open.addEventListener("click", () => file.click());
+  file.addEventListener("change", () => {
+    const chosen = file.files?.[0];
+    file.value = "";
+    if (!chosen) return;
+    hodlMsigBip138Drop();
+    hodlMsigBip138Status("");
+    let epoch = hodlMsigBip138OpenEpoch;
+    if (!(chosen.size <= 1048576)) {
+      hodlMsigBip138Status("not-backup");
+      return;
+    }
+    Promise.all([hodlLoadBip138(), chosen.arrayBuffer()]).then(([module, buffer]) => {
+      if (!module || epoch !== hodlMsigBip138OpenEpoch) return;
+      let raw = new Uint8Array(buffer), bytes = null;
+      try {
+        bytes = module.bip138BytesFromFile(raw);
+      } catch (error) {
+        hodlMsigBip138Status(hodlMsigBip138StatusCode(error?.code));
+        return;
+      } finally {
+        raw.fill(0);
+      }
+      hodlMsigBip138Hold(module, bytes, "file");
+    }).catch(() => {});
+  });
+  descriptor.addEventListener("input", hodlMsigBip138CheckText);
+  xpub.addEventListener("input", hodlMsigBip138TryOpen);
+}
+function hodlMsigBip138Reset() {
+  hodlMsigBip138Backup = null;
+  hodlMsigBip138Epoch++;
+  hodlMsigBip138Drop();
+  hodlMsigBip138Status("");
+  let file = document.getElementById("msig-backup-file");
+  if (file) file.value = "";
+  hodlMsigBip138CheckText();
+}
+// hodlPsbtLast and hodlNonceLast hold each inspector's last run (what was
+// parsed, and the network and transcript it was read with) so a language
+// switch can paint the same analysis again. A session change drops both.
+var hodlPsbtPriv = null, hodlPsbtHd = null, hodlPsbtSource = "", hodlPsbtSessionSpec = { key: "No session key. Inspect-only mode." }, hodlPsbtLast = null, hodlNonceLast = null, hodlPsbtErrorSpec = null;
 var hodlPsbtNonceHistory = [], hodlPsbtCurrentNonceRecords = [], hodlPsbtNonceVerdict = "", hodlPsbtNonceVerdictKind = "", hodlPsbtNonceHistoryVerdict = "", hodlPsbtNonceInspected = false;
 function hodlPsbtSessionText() {
   return hodlTText(hodlPsbtSessionSpec.key, hodlPsbtSessionSpec.vars);
@@ -9791,15 +12139,36 @@ function hodlSetPsbtError(spec) {
   if (!error) return;
   error.textContent = !spec ? "" : spec.key ? hodlTText(spec.key, spec.vars) : spec.raw || "";
 }
+
 function hodlRefreshPsbtLocale() {
   hodlPaintPsbtSession();
   hodlPaintPsbtKeyNotes();
   if (hodlPsbtErrorSpec) hodlSetPsbtError(hodlPsbtErrorSpec);
   if (hodlNonceErrorSpec) hodlSetNonceError(hodlNonceErrorSpec);
   hodlPsbtSyncNonceHistoryControls();
-  if (hodlPsbtLast) {
-    let output = document.getElementById("psbt-out");
-    if (output) output.innerHTML = hodlRenderPsbt(hodlPsbtLast);
+  for (let [last, id, view] of [[hodlPsbtLast, "psbt-out", "inspect"], [hodlNonceLast, "nonce-out", "nonce"]]) {
+    let output = document.getElementById(id);
+    if (!last || !output) continue;
+    let options = { network: last.network, transcript: last.transcript, record: false, ...(last.limits ? { limits: last.limits } : {}) };
+    try {
+      output.innerHTML = last.kind === "psbt" ? hodlRenderPsbt(last.parsed, last.sourceTag, last.checkedAt, view, options) : hodlRenderRawTx(last.parsed, last.sourceTag, last.checkedAt, view, options);
+      // The signer audit is painted again too, in the same answer-first
+      // order as a fresh render: a "Do not broadcast" verdict must not
+      // vanish on a language switch, and the combined overall line must
+      // come back with it.
+      if (last.audit) hodlPsbtPaintSignerAudit(output, last.audit);
+      if (last.rbf) hodlPsbtPaintRbf(output, last.rbf, last.network);
+      // A retired RBF verdict that had made the Overall line worse holds
+      // it off until the next Inspect: a repaint of the audit must not
+      // bring back a line milder than the one that was shown with the
+      // verdict (hodlPsbtClearRbfVerdict). A line at least that severe stays.
+      if (last.overallHeld) {
+        let rank = { bad: 2, warn: 1, ok: 0 }, line = output.querySelector?.("[data-psbt-overall]");
+        if (line && (rank[line.dataset?.psbtOverallState] ?? 0) < (rank[last.overallHeld] ?? 0)) line.remove?.();
+      }
+    } catch {
+      // The run rendered this once; if it cannot again, the shown result stays.
+    }
   }
 }
 function hodlPsbtNeed(bytes, offset, length, message) {
@@ -9860,6 +12229,7 @@ function hodlPsbtBytes(raw) {
   let value = raw.trim(), compact = value.replace(/\s/g, "");
   if (!value) throw new Error("Paste a PSBT v0 or a raw Bitcoin transaction.");
   if (compact.length > 7e6) throw new Error("This file is too large to inspect safely.");
+  if (/^(?:ur:|B\$)/i.test(value)) return hodlPsbtBytesFromText(value);
   let bytes;
   if (/^[0-9a-fA-F]+$/.test(compact) && compact.length % 2 === 0 && compact.length >= 10) bytes = hodlHex.decode(compact.toLowerCase());
   else try {
@@ -9995,9 +12365,12 @@ function hodlPsbtReferenceVerdict(psbt) {
     // The document's error count is taken before its list truncation: a
     // crafted file can pad the capped (64-entry) problem list with earlier
     // warnings so every error drops out of view, and the cross-check must
-    // still fail (audit C2-C).
-    let errorTotal = doc.errorCount ?? problems.length,
-      unlisted = Math.max(0, errorTotal - problems.length);
+    // still fail (audit C2-C). The rust-bitcoin line is not one of the
+    // crate's own problems, so only listed crate errors are subtracted from
+    // that count (#867).
+    let listedErrors = problems.length - (doc.rustBitcoinError ? 1 : 0),
+      errorTotal = doc.errorCount ?? listedErrors,
+      unlisted = Math.max(0, errorTotal - listedErrors);
     // No listed error to show: name what the cap hid, else the banner's
     // entry list would be empty (the row is counted, not repeated, so it is
     // not added to `unlisted` a second time).
@@ -10114,7 +12487,35 @@ function hodlSighashProblems(declared, suffix) {
   return problems;
 }
 function hodlFinalized(entries) {
-  return entries.some((entry) => entry.type === 7 || entry.type === 8);
+  // The consensus layer reads only the exact one-byte key; `07aa`/`08aa` are
+  // lookalikes that must not read as progress.
+  return entries.some((entry) => (entry.type === 7 || entry.type === 8) && entry.keydata.length === 0);
+}
+// Structural privacy observations for the Inspector's result. Commentary
+// only: nothing here feeds a check, a verdict or the glance line.
+function hodlPrivacySignalsHtml(signals) {
+  if (!signals) return "";
+  let html = ["<div data-privacy-signals><p class='label psbt-section-label'>" + hodlT("Privacy signals") + "</p>"];
+  let any = false;
+  if (signals.mixedFinalization) {
+    html.push("<p class='edge-note is-info' data-privacy-signal='proposal-shape'>" + hodlT("Some inputs are finalized and others are not. This is the shape of a payjoin proposal, and also of a transaction still being signed by several people. Check every input amount and the fee before signing.") + "</p>");
+    any = true;
+  }
+  if (signals.originGroups >= 2) {
+    html.push("<p class='edge-note is-muted' data-privacy-signal='origin-groups'>" + hodlT("Inputs carry key paths from {count} different master keys. These paths are claims written into the file, not proof of who owns the coins.", { count: signals.masterKeys }) + "</p>");
+    any = true;
+  }
+  for (const group of signals.equalOutputs) {
+    html.push("<p class='edge-note is-muted' data-privacy-signal='equal-outputs'>" + hodlT("{count} outputs pay exactly {amount}. Equal outputs are a coinjoin pattern; they also occur in batched payments.", { count: group.count, amount: hodlSats(group.amount) + " BTC" }) + "</p>");
+    any = true;
+  }
+  if (!signals.available) {
+    html.push("<p class='edge-note is-muted' data-privacy-signal='unavailable'>" + hodlT("Some checks could not run: a raw transaction carries no key paths or signing state.") + "</p>");
+  } else if (!any) {
+    html.push("<p class='edge-note is-muted' data-privacy-signal='none'>" + hodlT("No payjoin or coinjoin pattern found in this transaction's structure; this does not rule either out.") + "</p>");
+  }
+  html.push("</div>");
+  return html.join("");
 }
 // Finalized inputs carry ECDSA signatures in PSBT_IN_FINAL_SCRIPTSIG (0x07)
 // or PSBT_IN_FINAL_SCRIPTWITNESS (0x08) instead of partial-signature
@@ -10122,7 +12523,7 @@ function hodlFinalized(entries) {
 // finalized signatures still participate in repeated-nonce analysis; a
 // signature that cannot be decoded or associated must block a clean verdict
 // rather than pass silently (issue #87).
-function hodlScriptPushes(script) {
+function hodlScriptPushes(script, limit = 512) {
   let items = [], offset = 0;
   while (offset < script.length) {
     let opcode = script[offset++], length;
@@ -10143,6 +12544,7 @@ function hodlScriptPushes(script) {
     hodlPsbtNeed(script, offset, length, "A final script push is truncated.");
     items.push(script.slice(offset, offset + length));
     offset += length;
+    if (items.length >= limit) throw new Error("A script has too many pushes to analyze safely.");
   }
   return items;
 }
@@ -10166,6 +12568,60 @@ function hodlLooksSignature(item) {
   // DER sequence plus the appended sighash byte: 9 to 73 bytes.
   return item.length >= 9 && item.length <= 73 && item[0] === 48;
 }
+// The Schnorr signature of a finalized P2TR key-path input: the final
+// scriptWitness stack is exactly one element, or two with an annex (starting
+// with 0x50) second, which the key-path message does not commit to. The
+// record's key is the previous output's P2TR output key Q, exactly as for a
+// 0x13 record. Any other finalized Taproot witness (script path, odd stack
+// shapes, an unparseable signature) is not a key-path spend and stays
+// uninspected.
+function hodlFinalTapKeySig(entries, prevout) {
+  if (!prevout || !isP2tr(prevout.script)) return null;
+  let finals = hodlFind(entries, 8);
+  if (finals.length !== 1 || finals[0].keydata.length) return null;
+  let stack;
+  try {
+    stack = hodlWitnessStackItems(finals[0].val);
+  } catch {
+    return null;
+  }
+  let sig = stack.length === 1 ? stack[0] : stack.length === 2 && stack[1].length && stack[1][0] === 0x50 ? stack[0] : null;
+  if (!sig) return null;
+  let parsed = hodlParseSchnorr(sig);
+  // A key-path witness's one item is its signature, so one that does not
+  // parse under BIP341 (an undefined sighash byte, a wrong length) is kept with
+  // r null: a policy problem, as the same bytes in a 0x13 field are (#1479
+  // gate, Gemini, MiniMax).
+  if (!parsed) return { pubkey: prevout.script.slice(2), r: null, s: null, sighash: null, source: "tap-key" };
+  return { pubkey: prevout.script.slice(2), r: parsed.r, s: parsed.s, sighash: parsed.sighash, source: "tap-key" };
+}
+// The Schnorr signatures of a finalized P2TR script-path input whose leaf is
+// pk() or multi_a (psbt-schnorr.js reads the witness); null for any other
+// spend, which the caller counts as an unchecked Taproot input. The leaf
+// names the keys, so an unknown previous output is no obstacle; a known one
+// must be P2TR.
+function hodlFinalTapScriptSigs(entries, prevout) {
+  if (prevout && !isP2tr(prevout.script)) return null;
+  let finals = hodlFind(entries, 8);
+  if (finals.length !== 1 || finals[0].keydata.length) return null;
+  try {
+    return hodlTapScriptPathSigs(hodlWitnessStackItems(finals[0].val));
+  } catch {
+    return null;
+  }
+}
+// Whether a finalized input spends a Taproot output: by its resolved
+// previous output, or by its final witness's shape when that is unknown.
+function hodlFinalIsTaproot(entries, prevout) {
+  if (prevout) return isP2tr(prevout.script);
+  let finals = hodlFind(entries, 8);
+  if (finals.length !== 1 || finals[0].keydata.length) return false;
+  try {
+    return Boolean(hodlTapWitnessShape(hodlWitnessStackItems(finals[0].val)));
+  } catch {
+    return false;
+  }
+}
 function hodlFinalSigs(entries, witnessUtxo, tx, index, signatureChecks) {
   let items = [], candidates = [], malformed = false;
   for (let entry of hodlFind(entries, 7)) {
@@ -10176,23 +12632,65 @@ function hodlFinalSigs(entries, witnessUtxo, tx, index, signatureChecks) {
       malformed = true;
     }
   }
-  for (let entry of hodlFind(entries, 8)) {
+  // Tapscript has no ECDSA (BIP342): a P2TR final witness (known by its
+  // previous output, or by its shape when that is missing) is read by the
+  // Schnorr path only, where a signature starting 0x30 would otherwise pass
+  // for DER here.
+  let taproot = witnessUtxo && isP2tr(witnessUtxo.script);
+  for (let entry of taproot ? [] : hodlFind(entries, 8)) {
     if (entry.keydata.length) { malformed = true; continue; }
     try {
-      items.push(...hodlWitnessStackItems(entry.val));
+      let stack = hodlWitnessStackItems(entry.val);
+      if (!witnessUtxo && hodlTapWitnessShape(stack)) continue;
+      items.push(...stack);
     } catch {
       malformed = true;
     }
   }
-  for (let item of items) if (hodlLooksPubkey(item)) candidates.push(item);
+  if (items.length > 512) {
+    items.length = 512;
+    malformed = true;
+  }
+  // Candidates are untrusted bytes; cap the set so a hostile script cannot
+  // turn the ownership search into a large EC-verification job (audit M4).
+  let seenCandidates = new Set(), addCandidate = (item) => {
+    if (!hodlLooksPubkey(item)) return;
+    let key = hodlHex.encode(item);
+    if (seenCandidates.has(key)) return;
+    if (candidates.length >= 32) {
+      malformed = true;
+      return;
+    }
+    seenCandidates.add(key);
+    candidates.push(item);
+  };
+  for (let item of items) addCandidate(item);
   // Multisig co-signer keys live in the redeem/witness script, not the stack.
   for (let scriptEntry of hodlFind(entries, 4).concat(hodlFind(entries, 5))) {
     try {
-      for (let push of hodlScriptPushes(scriptEntry.val)) if (hodlLooksPubkey(push)) candidates.push(push);
+      for (let push of hodlScriptPushes(scriptEntry.val)) addCandidate(push);
     } catch {
+      malformed = true;
     }
   }
   let signatures = [], uninspected = 0, scriptCode = hodlInputScriptCode(entries, witnessUtxo);
+  // Its keys are safe candidates only because scriptCode matched the commitment,
+  // and they go through the same dedup/32 cap as every other untrusted push: a
+  // witnessScript can otherwise carry 511 pubkey-shaped pushes and defeat the
+  // EC-verification bound (audit follow-up).
+  if (scriptCode) {
+    try {
+      for (let push of hodlScriptPushes(scriptCode)) addCandidate(push);
+    } catch {
+      malformed = true;
+    }
+  }
+  // A script containing OP_CODESEPARATOR has no reconstructable digest here:
+  // BIP-143 commits from just past the last executed separator, which this
+  // full-script digest is not (audit C2-D). Such a digest must not pin a key
+  // the way a verified signature would; the render pass reports the
+  // signature as unverifiable.
+  let codeSeparated = scriptCode ? hodlScriptHasCodeSeparator(scriptCode) : false;
   for (let item of items) {
     if (!hodlLooksSignature(item)) continue;
     let signature = { pubkey: null, der: item.slice(0, -1), sighash: item[item.length - 1], raw: item };
@@ -10202,7 +12700,7 @@ function hodlFinalSigs(entries, witnessUtxo, tx, index, signatureChecks) {
     // the render's shared budget (audit C3-3): exhausted, ownership falls
     // back to the unambiguous-candidate rule below.
     let sighash = null;
-    if (witnessUtxo && scriptCode && signature.sighash === 1 && (!signatureChecks || signatureChecks.remaining > 0)) {
+    if (witnessUtxo && scriptCode && !codeSeparated && signature.sighash === 1 && (!signatureChecks || signatureChecks.remaining > 0)) {
       if (signatureChecks) signatureChecks.remaining -= 1;
       sighash = hodlBip143(tx, index, scriptCode, witnessUtxo.amount, signature.sighash);
     }
@@ -10216,40 +12714,87 @@ function hodlFinalSigs(entries, witnessUtxo, tx, index, signatureChecks) {
       }
     }
     if (!signature.pubkey) {
-      let unique = [];
-      for (let candidate of candidates) if (!unique.some((seen) => hodlEq(seen, candidate))) unique.push(candidate);
-      if (unique.length === 1) signature.pubkey = unique[0];
+      // candidates is already deduplicated and capped above.
+      if (candidates.length === 1) signature.pubkey = candidates[0];
     }
     if (signature.pubkey) signatures.push(signature);
     else uninspected += 1;
   }
   return { signatures, uninspected, malformed };
 }
+// Each BIP32 record is parsed once: signature rows re-read their input's
+// records, and re-parsing every record for each row still stalled the tab on
+// a large crafted PSBT (#1479 r4 gate, GLM). A row still filters by pubkey
+// before it parses, so a malformed record for another key leaves the row's
+// own records readable (#1479 r5 gate, MiniMax). Entries are built once per
+// parse and never changed in place, so a record can't go stale.
+var hodlBip32Parsed = new WeakMap();
 function hodlBip32(entries, pubkey) {
   return hodlFind(entries, 6).filter((entry) => !pubkey || hodlEq(entry.keydata, pubkey)).map((entry) => {
-    if (entry.val.length < 4 || (entry.val.length - 4) % 4) throw new Error("A BIP32 derivation path is malformed.");
-    let path = [];
-    for (let i = 4; i < entry.val.length; i += 4) path.push(new DataView(entry.val.buffer, entry.val.byteOffset + i, 4).getUint32(0, true));
-    return { pubkey: entry.keydata, fingerprint: entry.val.slice(0, 4), path };
+    let record = hodlBip32Parsed.get(entry);
+    if (!record) hodlBip32Parsed.set(entry, (record = hodlBip32Record(entry)));
+    return record;
   });
+}
+function hodlBip32Record(entry) {
+  if (entry.val.length < 4 || (entry.val.length - 4) % 4) throw new Error("A BIP32 derivation path is malformed.");
+  // A path past BIP32's 255 levels names no key, and every caller skips it,
+  // so it is left unparsed (path null). hodlPrivFromPath reads the records
+  // once per signature row, and re-walking a ~1.2M-step record for each of
+  // ~511 rows froze the tab (red-team sweep 0eed735, part07 #10).
+  if ((entry.val.length - 4) / 4 > 255) return { pubkey: entry.keydata, fingerprint: entry.val.slice(0, 4), path: null };
+  let view = new DataView(entry.val.buffer, entry.val.byteOffset, entry.val.length), path = [];
+  for (let i = 4; i < entry.val.length; i += 4) path.push(view.getUint32(i, true));
+  return { pubkey: entry.keydata, fingerprint: entry.val.slice(0, 4), path };
 }
 function hodlInputScriptCode(entries, witnessUtxo) {
   if (!witnessUtxo) return null;
-  let outputScript = witnessUtxo.script, redeem = (hodlFind(entries, 4).find((entry) => entry.keydata.length === 0) || {}).val, witnessScript = (hodlFind(entries, 5).find((entry) => entry.keydata.length === 0) || {}).val;
+  let unkeyed = (type) => (hodlFind(entries, type).find((entry) => entry.keydata.length === 0) || {}).val;
+  let outputScript = witnessUtxo.script, redeem = unkeyed(4), witnessScript = unkeyed(5), finalScriptSig = unkeyed(7), finalWitness = unkeyed(8);
+  // A final field can hold any script; only the hash the witness UTXO commits
+  // to ties one to this spend.
   try {
     let isP2sh = outputScript.length === 23 && outputScript[0] === 169 && outputScript[1] === 20 && outputScript[22] === 135;
     if (isP2sh) {
+      if (!redeem && finalScriptSig) redeem = hodlScriptPushes(finalScriptSig).pop();
       if (!redeem || !hodlEq(p2shScript(redeem), outputScript)) return null;
       outputScript = redeem;
     }
     if (outputScript.length === 22 && outputScript[0] === 0 && outputScript[1] === 20) return hodlConcatBytes(Uint8Array.of(118, 169, 20), outputScript.slice(2), Uint8Array.of(136, 172));
-    if (outputScript.length === 34 && outputScript[0] === 0 && outputScript[1] === 32 && witnessScript) {
+    if (outputScript.length === 34 && outputScript[0] === 0 && outputScript[1] === 32) {
+      if (!witnessScript && finalWitness) witnessScript = hodlWitnessStackItems(finalWitness).pop();
+      if (!witnessScript) return null;
       let committed = p2wshScript(witnessScript);
       return hodlEq(committed, outputScript) ? witnessScript : null;
     }
   } catch {
   }
   return null;
+}
+// Whether a script carries an OP_CODESEPARATOR (0xab) opcode. BIP-143 hashes
+// the script from just past the last one executed (the crate's code-start
+// walk, psbt-wasm/src/scriptcode.rs, decides which that is), so a full-script
+// digest reconstructed here commits to different bytes and no verdict drawn
+// from it is sound in either direction; such signatures are reported as
+// unverifiable instead. The walk mirrors next_op over there: direct pushes
+// (1..75) and PUSHDATA1/2/4 payloads are data, never opcodes — a 0xab byte
+// inside them is not a separator — and a truncated push ends the walk as
+// consensus GetOp failure does. Controls beyond locating 0xab (IF branches,
+// opcode counts) are intentionally not reproduced: any separator present is
+// enough to withhold the verdict.
+function hodlScriptHasCodeSeparator(script) {
+  let pc = 0;
+  while (pc < script.length) {
+    let op = script[pc], left = script.length - pc - 1, header = 0, data = 0;
+    if (op >= 1 && op <= 75) data = op;
+    else if (op === 0x4c) { if (left < 1) break; header = 1; data = script[pc + 1]; }
+    else if (op === 0x4d) { if (left < 2) break; header = 2; data = script[pc + 1] + script[pc + 2] * 256; }
+    else if (op === 0x4e) { if (left < 4) break; header = 4; data = script[pc + 1] + script[pc + 2] * 256 + script[pc + 3] * 65536 + script[pc + 4] * 16777216; }
+    else if (op === 0xab) return true;
+    if (data > left - header) break;
+    pc += 1 + header + data;
+  }
+  return false;
 }
 function hodlBip143(tx, index, scriptCode, amount, sighashType) {
   if (sighashType !== 1) return null;
@@ -10283,6 +12828,34 @@ function hodlCompressedPubkey(pubkey) {
     }
   } catch {}
   return pubkey
+}
+
+// The AEXB stage-4 slot that covers one PSBT signature: same input, same
+// compressed signer key, and the same (r, s) the transcript carries. A
+// low-s normalised copy of s names the same signature, so n - s matches too.
+function hodlAexbSlotVerdict(slots, inputIndex, pubkey33, r, s, sighash) {
+  const same = (a, b) => {
+    if (!(a instanceof Uint8Array) || !(b instanceof Uint8Array) || a.length !== b.length) return false;
+    for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false;
+    return true;
+  };
+  if (!Array.isArray(slots) || !(r instanceof Uint8Array) || r.length !== 32 || !(s instanceof Uint8Array) || s.length !== 32) return "no-slot";
+  const slot = slots.find((candidate) => candidate && candidate.inputIndex === inputIndex && same(candidate.signerPubkey, pubkey33));
+  if (!slot) return "no-slot";
+  if (!(slot.signature instanceof Uint8Array) || slot.signature.length !== 64) return "mismatch";
+  if (sighash && !same(slot.messageHash, sighash)) return "mismatch";
+  if (!same(slot.signature.slice(0, 32), r)) return "mismatch";
+  const slotS = slot.signature.slice(32);
+  if (same(slotS, s)) return "match";
+  let value = 0n;
+  for (const byte of s) value = (value << 8n) | BigInt(byte);
+  let rest = 0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEBAAEDCE6AF48A03BBFD25E8CD0364141n - value;
+  const negated = new Uint8Array(32);
+  for (let i = 31; i >= 0; i--) {
+    negated[i] = Number(rest & 0xffn);
+    rest >>= 8n;
+  }
+  return same(slotS, negated) ? "match" : "mismatch";
 }
 
 function hodlDerRLoose(der) {
@@ -10377,16 +12950,30 @@ function hodlPsbtNonceContext(sourceTag, input) {
   view.setUint32(sourceTag.length, Number(input) >>> 0, true);
   return context;
 }
-function hodlPsbtMasterFingerprint(entries, pubkey, sessionKeyMatched = false) {
-  if (sessionKeyMatched && hodlPsbtHd) return hodlFingerprintHex(hodlPsbtHd.fingerprint);
+// The master fingerprints an input's BIP32 records give each pubkey, read
+// once per input map. Rescanning every record for every signature row made a
+// map with thousands of each cost signatures × records point parses on the
+// main thread, with no session key needed (xflow sweep of cb18b09: DeepSeek
+// V4.1, GLM 5.3). null when any record does not parse, as the rescan was.
+function hodlPsbtDerivationFingerprints(entries) {
   try {
-    let compressed = hodlCompressedPubkey(pubkey), fingerprints = [];
+    let byPubkey = new Map();
     for (let derivation of hodlBip32(entries)) {
-      if (!hodlEq(hodlCompressedPubkey(derivation.pubkey), compressed)) continue;
-      let fingerprint = hodlHex.encode(derivation.fingerprint);
-      if (!fingerprints.includes(fingerprint)) fingerprints.push(fingerprint);
+      let key = hodlHex.encode(hodlCompressedPubkey(derivation.pubkey)), fingerprint = hodlHex.encode(derivation.fingerprint), list = byPubkey.get(key);
+      if (!list) byPubkey.set(key, (list = []));
+      if (!list.includes(fingerprint)) list.push(fingerprint);
     }
-    return fingerprints.length === 1 ? fingerprints[0] : null;
+    return byPubkey;
+  } catch {
+    return null;
+  }
+}
+function hodlPsbtMasterFingerprint(entries, pubkey, sessionKeyMatched = false, byPubkey) {
+  if (sessionKeyMatched && hodlPsbtHd) return hodlFingerprintHex(hodlPsbtHd.fingerprint);
+  if (byPubkey === undefined) byPubkey = hodlPsbtDerivationFingerprints(entries);
+  try {
+    let fingerprints = byPubkey?.get(hodlHex.encode(hodlCompressedPubkey(pubkey)));
+    return fingerprints?.length === 1 ? fingerprints[0] : null;
   } catch {
     return null;
   }
@@ -10395,6 +12982,12 @@ function hodlPsbtNonceHistoryPriorRecords() {
   let current = new Set(hodlPsbtCurrentNonceRecords.map(hodlPsbtNonceRecordIdentity));
   return hodlPsbtNonceHistory.filter((record) => !current.has(hodlPsbtNonceRecordIdentity(record)));
 }
+let hodlNonceHistoryConfirmDialog = null;
+function hodlNonceHistoryConfirm() {
+  if (!hodlNonceHistoryConfirmDialog) hodlNonceHistoryConfirmDialog = initNonceHistoryConfirm();
+  return hodlNonceHistoryConfirmDialog;
+}
+
 function hodlPsbtSyncNonceHistoryControls(message = "", error = false) {
   let count = hodlPsbtNonceHistory.length,
     download = document.getElementById("psbt-nonce-history-download"),
@@ -10487,13 +13080,23 @@ function hodlPrivForPub(pubkey) {
   }
   return null;
 }
-function hodlPrivFromPath(entries, pubkey) {
+function hodlPrivFromPath(entries, pubkey, budget = null) {
   if (!hodlPsbtHd) return null;
   let rootFingerprint = hodlFingerprintHex(hodlPsbtHd.fingerprint);
   for (let derivation of hodlBip32(entries, pubkey)) {
     if (hodlHex.encode(derivation.fingerprint) !== rootFingerprint) continue;
+    // Each step is a private CKD on the main thread, and anyone who has seen
+    // the wallet's key origins can name the session root's fingerprint. A path
+    // past BIP32's 255 levels names no key; the rest share the render's budget,
+    // as output paths do (audit M3), or a file with thousands of signature rows
+    // could spend 255 CKDs on each (xflow sweep of cb18b09: GLM 5.3, Kimi K3).
+    // A skipped path costs nothing and leaves the budget to later rows: zeroing
+    // it would let one free record turn off every later check (Muse Spark and
+    // DeepSeek V4.1 on b31504d). Every walked step is still counted.
+    if (!derivation.path || (budget && derivation.path.length > budget.remaining)) continue;
+    if (budget) budget.remaining -= derivation.path.length;
+    let node = hodlPsbtHd;
     try {
-      let node = hodlPsbtHd;
       for (let index of derivation.path) {
         let next = node.deriveChild(index);
         if (node !== hodlPsbtHd) node.wipePrivateData(); // dead intermediate
@@ -10506,6 +13109,12 @@ function hodlPrivFromPath(entries, pubkey) {
       }
       if (node !== hodlPsbtHd) node.wipePrivateData();
     } catch {
+      // A child derivation that throws partway down leaves the node reached
+      // so far; it is ours, so wipe it, as HDKey.derive does (#843, #867).
+      if (node !== hodlPsbtHd) try {
+        node.wipePrivateData();
+      } catch {
+      }
     }
   }
   return null;
@@ -10523,7 +13132,22 @@ function hodlPsbtWipeMem() {
   hodlPsbtHd = null;
   hodlPsbtSource = "";
   hodlPsbtSessionSpec = { key: "No session key. Inspect-only mode." };
+  // A stored run was read with the old session's key; painting it again
+  // under another key would change its analysis, not only its language.
+  hodlPsbtLast = null;
+  hodlNonceLast = null;
   hodlPsbtResetNonceInspection();
+}
+// A pasted single key becomes the session key only once it is a valid one;
+// a rejected one is zeroed.
+function hodlPsbtAcceptKey(priv) {
+  try {
+    hodlAssertPrivateKey(priv);
+  } catch (error) {
+    priv.fill(0);
+    throw error;
+  }
+  hodlPsbtPriv = priv;
 }
 function hodlLoadPsbtKey(text, passphrase) {
   hodlPsbtWipeMem();
@@ -10531,19 +13155,20 @@ function hodlLoadPsbtKey(text, passphrase) {
   if (!value) return;
   if (/^[5KL9c][1-9A-HJ-NP-Za-km-z]{50,51}$/.test(value)) {
     let decoded = hodlDecodeWif(value);
-    hodlPsbtPriv = decoded.priv;
-    hodlAssertPrivateKey(hodlPsbtPriv);
-    hodlPsbtSessionSpec = { key: "Session key: {network} WIF. Kept in page memory only.", vars: { network: decoded.network } };
+    // Checked before it becomes the session key: a rejected one stayed in
+    // hodlPsbtPriv, so the session line went red over "No session key" and
+    // every later Inspect threw (red-team sweep 0eed735, part07 #12).
+    hodlPsbtAcceptKey(decoded.priv);
+    hodlPsbtSessionSpec = hodlNote("Session key: {network} WIF. Kept in page memory only.", { network: decoded.network });
   } else if (/^[0-9a-fA-F]{64}$/.test(hex)) {
-    hodlPsbtPriv = hodlHex.decode(hex.toLowerCase());
-    hodlAssertPrivateKey(hodlPsbtPriv);
-    hodlPsbtSessionSpec = { key: "Session key: 32-byte private key. Kept in page memory only." };
+    hodlPsbtAcceptKey(hodlHex.decode(hex.toLowerCase()));
+    hodlPsbtSessionSpec = hodlNote("Session key: 32-byte private key. Kept in page memory only.");
   } else {
     try {
       let parsed = hodlParseExtendedKey(value);
       if (parsed && parsed.isPrivate && parsed.node) {
         hodlPsbtHd = parsed.node;
-        hodlPsbtSessionSpec = { key: "Session key: {prefix}. Kept in page memory only.", vars: { prefix: parsed.prefix || "xprv" } };
+        hodlPsbtSessionSpec = hodlNote("Session key: {prefix}. Kept in page memory only.", { prefix: parsed.prefix || "xprv" });
         hodlPsbtSource = "manual";
         return;
       }
@@ -10554,13 +13179,18 @@ function hodlLoadPsbtKey(text, passphrase) {
       if (mnemonic.error?.key) throw hodlError(mnemonic.error.key, mnemonic.error.vars);
       throw hodlError("Enter a BIP39 seed phrase, root xprv/tprv, WIF, or 64-character hex key.");
     }
-    let seed = hodlMnemonicToSeed(mnemonic.words.join(" "), passphrase || "");
+    let indices = hodlWordIndices(mnemonic.words), seed;
+    try {
+      seed = hodlSeedFromIndices(indices, passphrase || "");
+    } finally {
+      indices.fill(0);
+    }
     try {
       hodlPsbtHd = hodlHDKey.fromMasterSeed(seed);
     } finally {
       seed.fill(0);
     }
-    hodlPsbtSessionSpec = { key: passphrase ? "Session key: BIP39 seed + passphrase. Kept in page memory only." : "Session key: BIP39 seed. Kept in page memory only." };
+    hodlPsbtSessionSpec = hodlNote(passphrase ? "Session key: BIP39 seed + passphrase. Kept in page memory only." : "Session key: BIP39 seed. Kept in page memory only.");
   }
   hodlPsbtSource = "manual";
 }
@@ -10585,7 +13215,7 @@ function hodlUseActiveKeyForPsbt(state = hodlKeys[hodlActiveKey]) {
     throw new Error(hodlTText("The active key has no private material available for a session check."));
   }
   hodlPsbtSource = "key:" + state.id;
-  hodlPsbtSessionSpec = state.name ? { key: "Session key from {name}. Kept in page memory only.", vars: { name: state.name } } : { key: "Session key from the active key. Kept in page memory only." };
+  hodlPsbtSessionSpec = state.name ? hodlNote("Session key from {name}. Kept in page memory only.", { name: state.name }) : hodlNote("Session key from the active key. Kept in page memory only.");
 }
 function hodlDownloadBytes(bytes, name) {
   const url = URL.createObjectURL(new Blob([bytes], { type: "application/octet-stream" }));
@@ -10595,7 +13225,11 @@ function hodlDownloadBytes(bytes, name) {
   link.click();
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
+// Bumped whenever the history is emptied (Clear, End Session): an import still
+// reading or decrypting its file then drops its records instead of refilling it.
+var hodlPsbtNonceHistoryGeneration = 0;
 function hodlPsbtClearNonceHistory(all = false) {
+  hodlPsbtNonceHistoryGeneration += 1;
   hodlPsbtNonceHistory = [];
   if (all) hodlPsbtResetNonceInspection();
   hodlPsbtSyncNonceHistoryControls();
@@ -10615,15 +13249,23 @@ function hodlSetButtonEnabled(id, on) {
 }
 // The two cards that run an inspection, and what each one's run reads.
 var hodlPsbtCards = [
-  { text: "psbt-text", fields: ["psbt-key", "psbt-pass"], go: "psbt-go", download: "psbt-download", out: "psbt-out", session: "psbt-session" },
+  { text: "psbt-text", fields: ["psbt-key", "psbt-pass", "psbt-audit-before", "psbt-rbf-original"], go: "psbt-go", download: "psbt-download", out: "psbt-out", session: "psbt-session" },
   { text: "nonce-text", fields: ["nonce-key", "nonce-pass", "psbt-ax-transcript"], go: "nonce-go", out: "nonce-out", session: "nonce-session" },
 ];
 // A run is stamped with everything it read: the payload, the key fields and
 // the session. Running it again on the same stamp would only repeat the
 // result on screen, so the card's run button waits for one of them to change.
 var hodlPsbtInspected = {};
+// The key fields are stamped by a digest of their text, as the passphrases
+// are: the stamp outlives the field, and a rejected key (often a mistyped real
+// one) stayed here after the user deleted it (red-team sweep 0eed735, part08 #2).
+var hodlPsbtKeyFields = new Set(["psbt-key", "nonce-key"]);
 function hodlPsbtRunStamp(card) {
-  let value = (id) => id === "psbt-pass" || id === "nonce-pass" ? hodlStationPassphraseStamp(id) : String(document.getElementById(id)?.value || "").trim();
+  let value = (id) => {
+    if (id === "psbt-pass" || id === "nonce-pass") return hodlStationPassphraseStamp(id);
+    let text = String(document.getElementById(id)?.value || "").trim();
+    return hodlPsbtKeyFields.has(id) && text ? hodlHex.encode(hodlSha256(new TextEncoder().encode(text))) : text;
+  };
   return JSON.stringify([value(card.text), ...card.fields.map(value), hodlPsbtSessionSpec]);
 }
 function hodlMarkPsbtInspected(go) {
@@ -10634,6 +13276,8 @@ function hodlSyncPsbtControls() {
   let value = (id) => String(document.getElementById(id)?.value || "").trim();
   let decodes = (text) => {
     if (!text) return false;
+    // Assemble QR transports on Inspect/Download, not on every input event.
+    if (/^(?:ur:|B\$)/i.test(text)) return true;
     try {
       hodlPsbtBytes(text);
       return true;
@@ -10659,6 +13303,8 @@ function hodlSyncPsbtControls() {
     }
     anything ||= typed || Boolean(document.getElementById(card.out)?.childElementCount);
   }
+  // The key-reuse check holds a pasted descriptor too.
+  anything ||= Boolean(value("descriptor-reuse-text") || document.getElementById("descriptor-reuse-out")?.childElementCount);
   enable("psbt-wipe", anything);
   enable("nonce-wipe", anything);
 }
@@ -10677,19 +13323,30 @@ function hodlSetNonceError(spec) {
 }
 // Ending the session is one act wherever it starts: the shared key goes, and
 // so does everything either card holds.
+var hodlNonceQrCapture = null;
+var hodlPsbtInspectorUploadGeneration = 0;
+function hodlPsbtRetireInspectorUploads() {
+  hodlPsbtInspectorUploadGeneration += 1;
+}
 function hodlEndPsbtSession() {
+  // A camera failure must not skip the wipe below.
+  try { hodlNonceQrCapture?.clear(); } catch {}
   hodlPsbtWipeMem();
   hodlPsbtClearNonceHistory(true);
+  try { hodlNonceHistoryConfirmDialog?.close(); } catch {}
+  hodlPsbtRetireAuditUploads();
+  hodlPsbtRetireRbfUploads();
+  hodlPsbtRetireInspectorUploads();
   hodlPsbtLast = null;
   hodlPsbtInspected = {};
-  hodlPsbtSessionSpec = { key: "Accessible fields were cleared (best effort)." };
-  for (let id of ["psbt-key", "psbt-pass", "psbt-text", "psbt-ax-transcript", "nonce-key", "nonce-pass", "nonce-text"]) {
+  hodlPsbtSessionSpec = hodlNote("Accessible fields were cleared (best effort).");
+  for (let id of ["psbt-key", "psbt-pass", "psbt-text", "psbt-audit-before", "psbt-rbf-original", "psbt-ax-transcript", "nonce-key", "nonce-pass", "nonce-text", "descriptor-reuse-text"]) {
     let field = document.getElementById(id);
     if (field) field.value = "";
   }
   hodlClearStationPassphrase("psbt-pass");
   hodlClearStationPassphrase("nonce-pass");
-  for (let id of ["psbt-out", "nonce-out"]) {
+  for (let id of ["psbt-out", "nonce-out", "descriptor-reuse-out", "descriptor-reuse-error"]) {
     let output = document.getElementById(id);
     if (output) output.innerHTML = "";
   }
@@ -10705,6 +13362,7 @@ function hodlRunNonce() {
   let output = document.getElementById("nonce-out"), manual = document.getElementById("nonce-key").value;
   hodlSetNonceError(null);
   hodlPsbtResetNonceInspection();
+  hodlNonceLast = null;
   output.innerHTML = "";
   let prior = hodlPsbtErrorSpec;
   try {
@@ -10725,8 +13383,9 @@ function hodlRunNonce() {
     let bytes = hodlPsbtBytes(document.getElementById("nonce-text").value);
     let kind = isPsbtMagic(bytes) ? "psbt" : "transaction";
     let sourceTag = hodlSha256(bytes), checkedAt = new Date().toISOString();
-    if (kind === "psbt") output.innerHTML = hodlRenderPsbt(hodlParsePsbt(bytes), sourceTag, checkedAt, "nonce");
-    else output.innerHTML = hodlRenderRawTx(parseRawTx(bytes), sourceTag, checkedAt, "nonce");
+    let parsed = kind === "psbt" ? hodlParsePsbt(bytes) : parseRawTx(bytes), network = hodlInspectorNetwork(), transcript = document.getElementById("psbt-ax-transcript")?.value || "";
+    output.innerHTML = kind === "psbt" ? hodlRenderPsbt(parsed, sourceTag, checkedAt, "nonce", { network, transcript }) : hodlRenderRawTx(parsed, sourceTag, checkedAt, "nonce", { network });
+    hodlNonceLast = { kind, parsed, sourceTag, checkedAt, network, transcript };
     hodlJournalLog("inspect-nonces", kind, "psbt");
   } catch (exception) {
     hodlPsbtResetNonceInspection();
@@ -10736,7 +13395,1210 @@ function hodlRunNonce() {
     hodlJournalLog("inspect-error", "", "psbt");
   }
 }
+// A count in the page language ("2,000", "2.000"), for the Inspector's
+// "Show more" buttons.
+function hodlFormatCount(n) {
+  // A malformed locale tag makes Intl.NumberFormat throw; plain digits then
+  // (Kimi K3 review of #1031).
+  try {
+    return new Intl.NumberFormat(hodlGetLocale() || "en").format(n);
+  } catch {
+    return String(n);
+  }
+}
+// "Show 2,000 more inputs/outputs": grows the Inspector's window for the
+// last run by one step and adds that block; focus moves to the same list's
+// next button, or to the output when that list is complete.
+function hodlPsbtShowMore(event) {
+  let button = event.target?.closest?.("[data-psbt-more]"), last = hodlPsbtLast, output = document.getElementById("psbt-out");
+  if (!button || !last?.limits || !output) return;
+  let kind = button.dataset.psbtMore === "outputs" ? "outputs" : "inputs", from = last.limits[kind];
+  // The grown window is kept as soon as the page shows it, so a render that
+  // throws leaves the window and the page in step (Kimi K3 review of #1031;
+  // Muse Spark review of #1052: the other tail's refresh runs after that).
+  let limits = { ...last.limits, [kind]: from + last.limits.step };
+  let render = (options) => last.kind === "psbt" ? hodlRenderPsbt(last.parsed, last.sourceTag, last.checkedAt, "inspect", options) : hodlRenderRawTx(last.parsed, last.sourceTag, last.checkedAt, "inspect", options);
+  let options = { network: last.network, record: false, limits };
+  // A full repaint keeps the signer audit above the inspection (Wicked's
+  // review of #1118): it would otherwise vanish while its report stays cached.
+  let paintAll = () => {
+    let inputsOpen = output.querySelector?.("[data-psbt-inputs]")?.open;
+    output.innerHTML = render(options);
+    if (last.audit) hodlPsbtPaintSignerAudit(output, last.audit);
+    if (last.rbf) hodlPsbtPaintRbf(output, last.rbf, last.network);
+    // As on a language change: a line milder than the held one stays off.
+    if (last.overallHeld) {
+      let rank = { bad: 2, warn: 1, ok: 0 }, line = output.querySelector?.("[data-psbt-overall]");
+      if (line && (rank[line.dataset?.psbtOverallState] ?? 0) < (rank[last.overallHeld] ?? 0)) line.remove?.();
+    }
+    if (inputsOpen) {
+      let details = output.querySelector?.("[data-psbt-inputs]");
+      if (details) details.open = true;
+    }
+  };
+  // Only the new block is rendered and inserted above the list's tail, so a
+  // click costs one block however much is already shown. When the render
+  // cannot give a block (see hodlRenderPsbt) the whole run is painted again.
+  let tail = output.querySelector("[data-psbt-tail='" + kind + "']");
+  let part = tail ? render({ ...options, only: { kind, from } }) : null;
+  if (part && typeof part === "object") {
+    tail.insertAdjacentHTML("beforebegin", part.chunk);
+    tail.innerHTML = part.tail;
+    last.limits = limits;
+    // A chunk that reveals a problem must not stay hidden in a collapsed
+    // block: open the inputs block and mark it.
+    if (kind === "inputs") {
+      let inputsDetails = output.querySelector?.("[data-psbt-inputs]");
+      let revealed = part.chunk + String(part.tail ?? "");
+      // The renderer's own flag, never the rendered class names.
+      if (inputsDetails && revealed.includes("data-problem='true'")) {
+        inputsDetails.open = true;
+        inputsDetails.setAttribute?.("data-problem", "true");
+      }
+    }
+    // The grown window also grows the view's render budget, so the other
+    // list's tail (its collected warnings and their count) is rendered again
+    // at the new limits. When that render declines or would add a block, the
+    // whole run is painted again (GLM 5.3's review of #1031).
+    let otherKind = kind === "outputs" ? "inputs" : "outputs", otherTail = output.querySelector("[data-psbt-tail='" + otherKind + "']");
+    if (otherTail) {
+      let other = render({ ...options, only: { kind: otherKind, from: limits[otherKind] } });
+      if (other && typeof other === "object" && !other.chunk) otherTail.innerHTML = other.tail;
+      else paintAll();
+    }
+  } else {
+    paintAll();
+    last.limits = limits;
+  }
+  let next = output.querySelector("[data-psbt-more='" + kind + "']");
+  if (next) next.focus();
+  else {
+    if (!output.hasAttribute("tabindex")) output.setAttribute("tabindex", "-1");
+    output.focus();
+  }
+}
+// Preview builds define __ENTROPYLAB_PREVIEW__; release builds leave it
+// undeclared, so the typeof guard keeps them working.
+var PREVIEW = typeof __ENTROPYLAB_PREVIEW__ !== "undefined" && __ENTROPYLAB_PREVIEW__;
+// Secure entry (secure-entry.js): one session-wide switch, never persisted,
+// off on every load. Its entries live in hodlSecureSession, keyed by key id.
+var hodlSecureEntryOn = false, hodlSecureSession = createSecureSession();
+var hodlSecureEntryConfirm = null, hodlSecureEntryBusy = false, hodlSecureEntryConvertFailed = false;
+// P3b-2: the masked private-key field's vault binding, and whether its
+// read-only readout is showing. Both are released with the key form.
+var hodlSecureKeyField = null, hodlSecureKeyRevealed = false, hodlSecureKeyNetworkWatch = null;
+async function hodlSecureEntryDialog() {
+  if (!hodlSecureEntryConfirm) hodlSecureEntryConfirm = (await import("./secure-entry-confirm.js")).initSecureEntryConfirm();
+  return hodlSecureEntryConfirm;
+}
+async function hodlSecureEntryToggle(wanted) {
+  if (hodlSecureEntryBusy || hodlJournalKeyDerivation) {
+    hodlRenderSecureEntryControl();
+    return;
+  }
+  hodlSecureEntryBusy = true;
+  hodlSecureEntryConvertFailed = false;
+  let before = hodlSecureEntryOn, plan = null, committed = false;
+  let convertChosen = false;
+  let rollsMethodByKey = new Map();
+  try {
+    hodlRenderSecureEntryControl();
+    hodlCaptureKey();
+    if (wanted && !hodlSecureEntryOn) {
+      let keys = [], names = [], states = [], keyStates = [], diceStates = [];
+      for (const state of hodlKeys) {
+        // A key in another mode keeps any old seed text as text: secure entry
+        // converts only what the Seed form shows. hodlCaptureKey() has already
+        // saved the active key's mode at the top of the toggle.
+        if (state.mode === "seed" && hodlNormalizeSeedMethod(state.seedMethod) === "words") {
+          let phrase = String(state.fields?.seed ?? "").trim();
+          // An extended key in the seed field is not words: it stays text.
+          // A phrase longer than the key's length cannot be its words (the text
+          // path refuses it too): it stays text, with nothing to clear.
+          if (!phrase || hodlLooksExtendedKey(phrase) || phrase.split(/\s+/).length > (Number(state.targetWords) || 24)) continue;
+          keys.push({ keyId: hodlSecureKeyOf(state, true), methods: { seed: { phrase: state.fields.seed, length: Number(state.targetWords) || 24 } } });
+          names.push(state.name);
+          states.push(state);
+          continue;
+        }
+        // P3b-2: a key in key mode holds its private key as text until the
+        // switch converts it. Brain wallets stay text.
+        if (state.mode === "key") {
+          let typed = hodlSecureKeyTyped(state);
+          if (!typed) continue;
+          keys.push({ keyId: hodlSecureKeyOf(state, true), methods: { key: { text: typed.text } } });
+          names.push(state.name);
+          let values = hodlPrivateKeyValues(state.fields);
+          let otherFormats = ["wif", "hex-key", "minikey", "brain"].some((format) => format !== typed.kind && String(values[format] ?? "").trim());
+          keyStates.push({ state, kind: typed.kind, otherFormats });
+        }
+        if (state.mode === "dice" && hodlSecureSupported.rolls === true) {
+          let method = state.diceMethod ?? "coldcard";
+          if (method === "coldcard" || method === "coleman") {
+            let text = hodlStoredDiceValue(state.fields, method);
+            if (String(text ?? "").trim()) {
+              keys.push({ keyId: hodlSecureKeyOf(state, true), methods: { rolls: { text, method } } });
+              names.push(state.name);
+              let keptField = hodlDiceFieldName(method);
+              if (method === "coleman" && !Object.prototype.hasOwnProperty.call(state.fields || {}, "colemanDice")) keptField = "dice";
+              let otherFormats = ["dice", "colemanDice", "bitboxDice", "dplusDice"].some((name) => name !== keptField && String(state.fields?.[name] ?? "").trim());
+              diceStates.push({ state, method, otherFormats });
+            }
+          }
+        }
+      }
+      const converter = ({ phrase, length }) => {
+        let words = String(phrase).trim().toLowerCase().split(/\s+/).filter(Boolean);
+        if (words.length < 1 || words.length > length) throw new Error("bad seed length");
+        let entry = seedEntry(length);
+        try {
+          for (let i = 0; i < words.length; i += 1) {
+            let index = hodlBip39WordIndex.get(words[i]);
+            if (index === undefined) throw new Error("bad word");
+            seedSet(entry, i, index);
+          }
+          return entry;
+        } catch (error) {
+          try { entry.indices.fill(0); } catch {}
+          throw error;
+        }
+      };
+      // P3b-2: a typed private key moves into its vault as UTF-8 bytes. The
+      // temporary bytes are zeroed once the vault has its copy.
+      const keyConverter = ({ text }) => {
+        let entry = keyEntry();
+        let bytes = new TextEncoder().encode(String(text));
+        try {
+          entry.vault.setBytes(bytes);
+          return entry;
+        } catch (error) {
+          entry.vault.clear();
+          throw error;
+        } finally {
+          bytes.fill(0);
+        }
+      };
+      if (keys.length === 0) {
+        commitTurnOn(hodlSecureSession, planTurnOn(hodlSecureSession, [], {}));
+      } else {
+        plan = planTurnOn(hodlSecureSession, keys, { seed: converter, key: keyConverter, rolls: ({ text, method }) => hodlSecureDiceEntryFromText(text, method) });
+        // A seed held as words can also hold word numbers (each switch of the
+        // seed format saves both): Keep empties them too, so the note shows.
+        let seedOtherFormats = states.some((state) => String(state.fields?.seedNumbers ?? "").trim());
+        let choice = await (await hodlSecureEntryDialog()).open({ mode: "on", names, canKeep: plan.ok, otherFormats: seedOtherFormats || keyStates.some((item) => item.otherFormats) || diceStates.some((item) => item.otherFormats) });
+        if (choice === "keep" && plan.ok) {
+          commitTurnOn(hodlSecureSession, plan);
+          plan = null;
+          for (const state of states) {
+            // When the words were Global sync's source, every other field was
+            // computed from them: those copies go too, as at Clear, so the
+            // words are left only in Secure entry. Any other source (a hex
+            // key, dice, cards) can hold more than the words do, and a wallet
+            // made from a private key cannot be rebuilt from them, so those
+            // keys keep their fields (K3.1, Kimi, Astra).
+            if (state.globalSync && ["seed:words", "seed:numbers"].includes(state.globalSyncSource) && state.result?.kind !== "single") {
+              hodlClearGlobalSyncCopies(state);
+              state.lastWord = "";
+            }
+            state.fields.seed = "";
+            // The same seed saved as word numbers is hidden plain text too
+            // (B1): a switch of the seed format saves both (GLM, #1439 gate).
+            state.fields.seedNumbers = "";
+          }
+          for (const { state } of keyStates) {
+            // Global sync copies computed from this key go with it, as for
+            // words above (GLM, round 1). A private-key source in another
+            // format is this same key, so its copies go too (K3.1, round 6).
+            if (state.globalSync && String(state.globalSyncSource || "").startsWith("key:")) hodlClearGlobalSyncCopies(state);
+            // Keep empties every private-key slot the key holds, not only the
+            // one on screen: the others are hidden plain text (B1).
+            let values = hodlPrivateKeyValues(state.fields);
+            for (const format of ["wif", "hex-key", "minikey", "brain"]) values[format] = "";
+          }
+          for (const { state, method } of diceStates) {
+            // Keep empties every dice text field the key holds, not only the
+            // one on screen: the others are hidden plain text (B1). The BitBox
+            // coin positions and the D++/BitBox picked last words are parts of
+            // those transcripts, so they go too (Kimi, #1439 gate). lastWord is
+            // BitBox's pick only when BitBox rolls were there; otherwise it can
+            // belong to the key's other inputs, and Keep leaves it.
+            let bitboxWord = method === "bitbox" || Boolean(String(state.fields?.bitboxDice ?? "").trim());
+            for (const name of ["dice", "colemanDice", "bitboxDice", "dplusDice"]) state.fields[name] = "";
+            state.diceCoinPositions = [];
+            state.dplusLastWord = "";
+            if (bitboxWord) state.lastWord = "";
+            // Every dice field was just emptied, so Global sync copies made from
+            // any of them go, not only from the kept method's (#1439 red team).
+            if (state.globalSync && String(state.globalSyncSource || "").startsWith("dice:")) {
+              hodlClearGlobalSyncCopies(state);
+              state.lastWord = "";
+            }
+          }
+        } else if (choice === "clear") {
+          discardPlan(plan);
+          plan = null;
+          for (const state of states) {
+            if (state.result) state.secureCleared = true;
+            if (state.globalSync) hodlClearGlobalSyncCopies(state);
+            state.fields.seed = "";
+            state.fields.seedNumbers = "";
+            // The last-word helper's copy of the wiped words goes too (GLM).
+            state.lastWord = "";
+          }
+          for (const { state } of keyStates) {
+            if (state.result) state.secureCleared = true;
+            if (state.globalSync) hodlClearGlobalSyncCopies(state);
+            // Clear empties every private-key slot the key holds, not only the
+            // one on screen, the brain-wallet text included: each is a secret
+            // (Grok, round 4; K3.1, round 5).
+            let values = hodlPrivateKeyValues(state.fields);
+            for (const format of ["wif", "hex-key", "minikey", "brain"]) values[format] = "";
+          }
+          for (const { state } of diceStates) {
+            if (state.result) state.secureCleared = true;
+            if (state.globalSync) hodlClearGlobalSyncCopies(state);
+            // Clear empties every dice text field the key holds, not only the
+            // one on screen: each is a secret, as are the coin positions and
+            // picked last words that belong to them.
+            for (const name of ["dice", "colemanDice", "bitboxDice", "dplusDice"]) state.fields[name] = "";
+            state.diceCoinPositions = [];
+            state.dplusLastWord = "";
+            state.lastWord = "";
+          }
+          commitTurnOn(hodlSecureSession, planTurnOn(hodlSecureSession, [], {}));
+        } else {
+          discardPlan(plan);
+          plan = null;
+          hodlRenderSecureEntryControl();
+          return;
+        }
+      }
+      // Committed: from here the switch follows the session, even if a redraw
+      // below throws.
+      committed = true;
+      hodlSecureEntryOn = true;
+      // The last-word helper caches partial phrases as text: drop them with the field.
+      hodlLastWordCache.clear();
+      // Empty the field only when this key's words were kept or cleared above:
+      // an extended key or an over-length phrase stays text, and the redraw
+      // below saves the field back into the key.
+      if (states.includes(hodlKeys[hodlActiveKey])) {
+        let seedField = document.getElementById("seed");
+        if (seedField) {
+          seedField.value = "";
+          delete seedField.dataset.previousValue;
+        }
+        let highlight = document.getElementById("seed-highlight");
+        if (highlight) highlight.textContent = "";
+      }
+      if (keyStates.some((item) => item.state === hodlKeys[hodlActiveKey])) {
+        let keyField = document.getElementById("key");
+        if (keyField) {
+          keyField.value = "";
+          delete keyField.dataset.previousValue;
+        }
+        let keyHighlight = document.getElementById("private-key-highlight");
+        if (keyHighlight) keyHighlight.textContent = "";
+      }
+      if (diceStates.some((item) => item.state === hodlKeys[hodlActiveKey])) {
+        let diceField = document.getElementById("dice");
+        if (diceField) {
+          diceField.value = "";
+          delete diceField.dataset.previousValue;
+          delete diceField.hodlDiceBeforeInput;
+        }
+        for (let id of ["dice-highlight", "dice-words", "last-words", "dice-fairness", "dice-meta"]) {
+          let panel = document.getElementById(id);
+          if (panel) panel.textContent = "";
+        }
+      }
+      for (const state of hodlKeys) {
+        state.globalSync = false;
+        state.globalSyncBitCount = 0;
+        state.globalSyncSource = "";
+        state.globalSyncLengthRaised = false;
+      }
+      hodlSetMode(hodlKeyMode);
+      hodlSyncKeyClearButton();
+      hodlSyncDeriveButton();
+      hodlQueueMasterFingerprintPreview(0);
+    } else if (!wanted && hodlSecureEntryOn) {
+      if (!hodlKeys.some((state) => hodlSecureEntryHasData(hodlSecureKeyOf(state)))) {
+        commitTurnOff(hodlSecureSession, null, "clear");
+      } else {
+        const serializer = (entry) => {
+          let indices = seedIndices(entry);
+          try {
+            // The joined string is the one text copy turning off creates.
+            return Array.from(indices, (index) => hodlBip39Wordlist[index]).join(" ");
+          } finally {
+            indices.fill(0);
+          }
+        };
+        // P3b-2: a key's text is the vault's own text, built once for the
+        // Convert the user chose.
+        const keySerializer = (entry) => entry.vault.text();
+        // The texts are made only once the user chooses Convert: Clear and
+        // Cancel create no text copy of the words. The dialog needs nothing
+        // from the plan, and planning after it reads the session as it is now.
+        let choice = await (await hodlSecureEntryDialog()).open({ mode: "off" });
+        if (choice === "convert") convertChosen = true;
+        if (choice === "convert") {
+          // A key that never had secure entry has no id to look up.
+          for (const state of hodlKeys) {
+            let keyId = hodlSecureKeyOf(state);
+            if (keyId != null) rollsMethodByKey.set(keyId, sessionGet(hodlSecureSession, keyId, "rolls")?.method);
+          }
+          plan = planTurnOff(hodlSecureSession, { seed: serializer, key: keySerializer, rolls: hodlSecureDiceRollsText });
+        }
+        if (choice === "convert" && plan.ok) {
+          let texts = [];
+          try {
+            texts = commitTurnOff(hodlSecureSession, plan, "convert");
+            plan = null;
+          } catch (error) {
+            if (!Array.isArray(error.texts)) throw error;
+            texts = error.texts;
+            plan = null;
+          }
+          for (const { keyId, method, text } of texts) {
+            let state = hodlKeys.find((candidate) => hodlSecureKeyOf(candidate) === keyId);
+            if (!state) continue;
+            if (method === "seed") state.fields.seed = text;
+            // P3b-2: the key goes back into privateKeys. The stored kind wins
+            // when it is a key kind; otherwise the text is detected.
+            else if (method === "key") {
+              // An empty vault holds nothing to convert: it must not blank a
+              // key kept as text in that slot (Astra, round 2).
+              if (!text) continue;
+              let kind = hodlNormalizePrivateKeyKind(state.fields.keyKind);
+              if (kind !== "wif" && kind !== "hex-key" && kind !== "minikey") kind = hodlDetectPrivateKeyKind(text) || "wif";
+              hodlPrivateKeyValues(state.fields)[kind] = text;
+            } else if (method === "rolls") {
+              // An empty pad holds nothing to convert: it must not blank rolls
+              // kept as text in that field, as for keys above (Gemini, #1395).
+              if (!text) continue;
+              state.fields[hodlDiceFieldName(rollsMethodByKey.get(keyId) ?? state.diceMethod ?? "coldcard")] = text;
+            }
+          }
+        } else if (choice === "clear") {
+          // Clear wipes every secure entry: a key that keeps its wallet on screen but
+          // held its words only there would back up with no words (as at turn-on Clear).
+          // The keys are found before the wipe and marked by what it left, even when
+          // it throws: sessionWipe empties the session before it reports a partial
+          // wipe, so those words are gone (GLM, MiniMax), while a throw that wiped
+          // nothing leaves the words and no mark (Kimi).
+          let cleared = hodlKeys.filter((state) => state?.result && hodlSecureEntryHasData(hodlSecureKeyOf(state)));
+          try {
+            commitTurnOff(hodlSecureSession, null, "clear");
+          } finally {
+            for (const state of cleared) if (!hodlSecureEntryHasData(hodlSecureKeyOf(state))) state.secureCleared = true;
+          }
+        } else {
+          if (plan) discardPlan(plan);
+          plan = null;
+          hodlSecureEntryConvertFailed = convertChosen;
+          hodlRenderSecureEntryControl();
+          return;
+        }
+      }
+      committed = true;
+      hodlSecureEntryOn = false;
+      hodlSetMode(hodlKeyMode);
+      hodlSyncKeyClearButton();
+      hodlSyncDeriveButton();
+      hodlQueueMasterFingerprintPreview(0);
+    } else {
+      hodlRenderSecureEntryControl();
+    }
+  } catch (error) {
+    if (plan) discardPlan(plan);
+    if (!committed) hodlSecureEntryOn = before;
+    if (convertChosen && !committed) hodlSecureEntryConvertFailed = true;
+    hodlRenderSecureEntryControl();
+  } finally {
+    hodlSecureEntryBusy = false;
+  }
+}
+// Offered in every build once a method can be entered securely (Secure
+// entry unhide, owner 11-04: "Shouldn't that be a main feature by now?").
+function hodlSecureEntryAvailable() {
+  return Object.values(hodlSecureSupported).some(Boolean);
+}
+// Ends secure entry for the session: the switch goes off and every entry and
+// pending plan is wiped. Leaving the page and End Session (which dispatches
+// pagehide) both run it.
+function hodlSecureEntryEnd() {
+  hodlSecureEntryOn = false;
+  hodlSecureEntryConvertFailed = false;
+  // A page restored from the back/forward cache keeps its key tabs: a key that
+  // shows its wallet but held its words only in the session would back up
+  // with no words once the session is wiped, so it is marked first (GLM).
+  try {
+    for (const state of hodlKeys) {
+      if (state?.result && hodlSecureEntryHasData(hodlSecureKeyOf(state))) state.secureCleared = true;
+    }
+  } catch {}
+  try { sessionWipe(hodlSecureSession); } catch {}
+  try { hodlRenderSecureEntryControl(); } catch {}
+}
+// A key that leaves the station takes its secure entries with it.
+function hodlSecureEntryDropKey(keyId) {
+  if (keyId == null) return;
+  try { sessionDeleteKey(hodlSecureSession, keyId); } catch {}
+}
+// Secure entries belong to a key state object, never to its id: Journal can
+// fill the station's editor with a copy that keeps the editor's id (and a
+// batch parks the original to restore it afterwards), so an id would let one
+// copy's words decide the other's derivation. A copy never inherits the
+// token, so it starts without secure words.
+var hodlSecureKeys = new WeakMap(), hodlSecureKeyCount = 0;
+function hodlSecureKeyOf(state, create = false) {
+  if (!state || typeof state !== "object") return null;
+  let key = hodlSecureKeys.get(state) ?? null;
+  if (key == null && create) {
+    key = `k${++hodlSecureKeyCount}`;
+    hodlSecureKeys.set(state, key);
+  }
+  return key;
+}
+// Secure seed entry applies while the switch is on, the method is Seed and
+// the seed is typed as words (word numbers keep their own field for now).
+function hodlSecureSeedActive() {
+  return hodlSecureEntryOn && hodlKeyMode === "seed" && hodlSeedMethod === "words";
+}
+// The active key's secure seed entry, or null when secure seed entry does not
+// apply. With create, a key without one gets a fresh entry of the current word
+// count, and an empty entry of another count is replaced; an entry that holds
+// words is never replaced here.
+function hodlSecureSeedEntry(create = false) {
+  let state = hodlKeys[hodlActiveKey];
+  if (!hodlSecureSeedActive()) return null;
+  let key = hodlSecureKeyOf(state, create);
+  if (key == null) return null;
+  let entry = sessionGet(hodlSecureSession, key, "seed");
+  if (create && (!entry || entry.count === 0 && entry.length !== hodlTargetWordCount)) {
+    entry = seedEntry(hodlTargetWordCount);
+    sessionSet(hodlSecureSession, key, "seed", entry);
+  }
+  return entry;
+}
+// A fresh copy of the secure seed's indices once every word is in, the count
+// matches the chosen length and the checksum passes; otherwise null. The
+// caller owns the copy and zeroes it.
+function hodlSecureSeedIndices() {
+  let entry = hodlSecureSeedEntry();
+  if (!entry || entry.count !== entry.length || entry.length !== hodlTargetWordCount) return null;
+  let indices = seedIndices(entry);
+  try {
+    hodlEntropyFromWordIndices(indices).fill(0);
+    return indices;
+  } catch {
+    indices.fill(0);
+    return null;
+  }
+}
+// True when the secure seed is complete with a valid checksum. The copy it
+// checks is zeroed before returning.
+function hodlSecureSeedReady() {
+  let indices = hodlSecureSeedIndices();
+  if (!indices) return false;
+  indices.fill(0);
+  return true;
+}
+// True when the key holds securely entered seed words (routing: the seed path,
+// the picker, the length lock). A read that fails counts as holding words, so
+// the callers that guard against losing them stay closed.
+function hodlSecureSeedHasWords(keyId) {
+  if (keyId == null) return false;
+  try {
+    return (sessionGet(hodlSecureSession, keyId, "seed")?.count ?? 0) > 0;
+  } catch {
+    return true;
+  }
+}
+
+// True when the key's private-key vault holds anything (routing: the key path).
+function hodlSecureKeyHasData(keyId) {
+  if (keyId == null) return false;
+  try {
+    return (sessionGet(hodlSecureSession, keyId, "key")?.vault?.length ?? 0) > 0;
+  } catch {
+    return true;
+  }
+}
+
+function hodlSecureEntryHasData(keyId) {
+  if (keyId == null) return false;
+  // Any method: the protective callers (backup, detach, turn-off, Review,
+  // secureSource) must see secure data of either kind.
+  return hodlSecureSeedHasWords(keyId) || hodlSecureKeyHasData(keyId) || hodlSecureDiceHasRolls(keyId);
+}
+// Secure entry decides a seed key's words only when they were entered with it:
+// a key holding secure words, or one with nothing typed yet. A seed that came
+// in as text while the switch was on (a Journal import, Review inputs, a
+// vanity update) keeps the text path, so it still derives.
+function hodlSecureSeedApplies() {
+  if (!hodlSecureSeedActive()) return false;
+  let state = hodlKeys[hodlActiveKey];
+  if (hodlSecureSeedHasWords(hodlSecureKeyOf(state))) return true;
+  let typed = document.getElementById("seed")?.value ?? state?.fields?.seed ?? "";
+  return !String(typed).trim();
+}
+
+// The selected private-key kind, read from the picker only: never the key text.
+function hodlSecureKeyKind() {
+  return hodlNormalizePrivateKeyKind(document.querySelector('input[name="kk"]:checked')?.value);
+}
+
+// Secure entry covers private keys except brain wallets, which stay text.
+function hodlSecureKeyActive() {
+  return hodlSecureEntryOn && hodlSecureSupported.key === true && hodlKeyMode === "key" && hodlSecureKeyKind() !== "brain";
+}
+
+// The active key's vault entry, created on demand and never replaced.
+function hodlSecureKeyEntry(create = false) {
+  let state = hodlKeys[hodlActiveKey];
+  if (!hodlSecureKeyActive()) return null;
+  let key = hodlSecureKeyOf(state, create);
+  if (key == null) return null;
+  let entry = sessionGet(hodlSecureSession, key, "key");
+  if (create && !entry) {
+    entry = keyEntry();
+    sessionSet(hodlSecureSession, key, "key", entry);
+  }
+  return entry;
+}
+
+// Secure entry applies unless the key holds secure data or text is typed.
+function hodlSecureKeyApplies() {
+  if (!hodlSecureKeyActive()) return false;
+  let state = hodlKeys[hodlActiveKey];
+  if (hodlSecureKeyHasData(hodlSecureKeyOf(state))) return true;
+  // The masked field on screen is what Derive reads: emptied, it derives
+  // nothing, never a text key stored behind it (K3.1, round 6).
+  if (document.getElementById("secure-key")) return true;
+  // The vault field (P3b-2) is not #key, so #key here is only ever the
+  // standard text field.
+  let typed = document.getElementById("key")?.value ?? (state?.fields ? hodlPrivateKeyValues(state.fields)[hodlSecureKeyKind()] : "") ?? "";
+  return !String(typed).trim();
+}
+
+// P3b-2: which key form to draw. Render runs before the kind radios are
+// restored, so this reads the key's own kind, not the radio on screen.
+function hodlSecureKeyFormApplies(state) {
+  if (!hodlSecureEntryOn || hodlSecureSupported.key !== true || hodlKeyMode !== "key") return false;
+  let kind = hodlNormalizePrivateKeyKind(state?.fields?.keyKind);
+  if (kind === "brain") return false;
+  if (hodlSecureKeyHasData(hodlSecureKeyOf(state))) return true;
+  let typed = state?.fields ? hodlPrivateKeyValues(state.fields)[kind] : "";
+  return !String(typed ?? "").trim();
+}
+
+var hodlSecureDiceCapacity = 400;
+
+function hodlSecureDiceActive() {
+  return hodlSecureEntryOn && hodlSecureSupported.rolls === true && hodlKeyMode === "dice" && (hodlDiceMethod === "coldcard" || hodlDiceMethod === "coleman");
+}
+
+function hodlSecureDiceHasRolls(keyId) {
+  if (keyId == null) return false;
+  try {
+    return (sessionGet(hodlSecureSession, keyId, "rolls")?.count ?? 0) > 0;
+  } catch {
+    return true;
+  }
+}
+
+function hodlSecureDiceEntry(create = false) {
+  if (!hodlSecureDiceActive()) return null;
+  let state = hodlKeys[hodlActiveKey];
+  let key = hodlSecureKeyOf(state, create);
+  if (key == null) return null;
+  let entry = sessionGet(hodlSecureSession, key, "rolls");
+  if (create && (!entry || entry.count === 0 && entry.method !== hodlDiceMethod)) {
+    entry = rollsEntry(hodlDiceMethod, hodlSecureDiceCapacity);
+    sessionSet(hodlSecureSession, key, "rolls", entry);
+  }
+  return entry;
+}
+
+function hodlSecureDicePadShown(state) {
+  return hodlSecureDiceHasRolls(hodlSecureKeyOf(state)) || !String(hodlStoredDiceValue(state?.fields) ?? "").trim();
+}
+
+function hodlSecureDiceApplies() {
+  if (!hodlSecureDiceActive()) return false;
+  let state = hodlKeys[hodlActiveKey];
+  if (hodlSecureDiceHasRolls(hodlSecureKeyOf(state))) return true;
+  if (document.getElementById("secure-dice-host")) return true;
+  let typed = document.getElementById("dice")?.value ?? hodlStoredDiceValue(state?.fields);
+  return !String(typed ?? "").trim();
+}
+
+function hodlSecureDiceEntryFromText(text, method) {
+  let value = String(text ?? ""), found = 0;
+  for (let i = 0; i < value.length; i++) {
+    let code = value.charCodeAt(i);
+    if (code >= 0x31 && code <= 0x36) found += 1;
+    else if (/\s|,|;|\|/.test(value[i])) continue;
+    else throw new Error("bad roll");
+  }
+  if (!found) throw new Error("no rolls");
+  let entry = rollsEntry(method, Math.max(hodlSecureDiceCapacity, found));
+  try {
+    for (let i = 0; i < value.length; i++) {
+      let code = value.charCodeAt(i);
+      if (code >= 0x31 && code <= 0x36) rollsPush(entry, code - 0x30);
+    }
+    return entry;
+  } catch (error) {
+    try { entry.rolls.fill(0); } catch {}
+    throw error;
+  }
+}
+
+function hodlSecureDiceRollsText(entry) {
+  let bytes = new Uint8Array(entry.count);
+  try {
+    for (let i = 0; i < entry.count; i++) bytes[i] = 0x30 + rollAt(entry, i);
+    return new TextDecoder().decode(bytes);
+  } finally {
+    bytes.fill(0);
+  }
+}
+
+function hodlSecureDiceEntropyOf(entry, targetWords = hodlTargetWordCount) {
+  let config = hodlSeedConfig(targetWords), notes = [], warnings = [];
+  if (!entry || entry.count === 0 || (entry.method !== "coldcard" && entry.method !== "coleman")) return { ok: false, error: hodlNote("Enter at least one dice roll (faces 1–6)."), notes, warnings };
+  let count = entry.count, sourceBits = hodlDiceEntropyBits(count);
+  notes.push(hodlNote("{n} rolls of a fair six-sided die ≈ {bits} bits.", { n: count, bits: sourceBits.toFixed(1) }));
+  if (count < config.hashRolls) warnings.push(hodlNote("Only {have} of {need} recommended fair-die rolls were entered. The {words}-word phrase is deterministic, but its security cannot exceed the approximately {bits} bits supplied. Use only for testing until the recommendation is met.", { have: count, need: config.hashRolls, words: config.words, bits: sourceBits.toFixed(1) }));
+  else if (count > config.hashRolls) notes.push(hodlNote("All {n} rolls, including {extra} beyond the recommendation, are included in the hash.", { n: count, extra: count - config.hashRolls }));
+  let input = new Uint8Array(count), digest = null, bytes;
+  try {
+    for (let i = 0; i < count; i++) {
+      let face = rollAt(entry, i);
+      input[i] = entry.method === "coleman" && face === 6 ? 0x30 : 0x30 + face;
+    }
+    digest = hodlSha256(input);
+    bytes = digest.slice(0, config.bytes);
+  } finally {
+    input.fill(0);
+    if (digest) digest.fill(0);
+  }
+  if (entry.method === "coleman") notes.push(hodlNote("Hashed rolls / Base 6 [0-5]: convert every 6 to 0, SHA-256 hash the complete mapped digit string, then use the first {bits} bits for the selected {words}-word seed. This matches the method used by Keystone.", { bits: config.bits, words: config.words }));
+  else notes.push(hodlNote("Hashed rolls / Base 10 [1-6]: SHA-256 hash the complete original dice digit string, then use the first {bits} bits for the selected {words}-word seed. This matches COLDCARD and SeedSigner.", { bits: config.bits, words: config.words }));
+  return { ok: true, bytes, bits: config.bits, sourceBits, method: entry.method === "coleman" ? "ian-coleman-dice-sha256" : "coldcard-sha256", notes, warnings };
+}
+
+function hodlSecureDiceEntropy(targetWords = hodlTargetWordCount) {
+  return hodlSecureDiceEntropyOf(hodlSecureDiceEntry(), targetWords);
+}
+
+function hodlSecureDiceReady() {
+  let entropy = hodlSecureDiceEntropy();
+  let ok = Boolean(entropy?.ok);
+  try { entropy?.bytes?.fill(0); } catch {}
+  return ok;
+}
+
+function hodlSecureDiceLowEntropyWarning(count, targetWords = hodlTargetWordCount) {
+  let config = hodlSeedConfig(targetWords);
+  if (count && count < config.hashRolls) return { bits: hodlDiceEntropyBits(count).toFixed(1), recommended: config.bits, words: config.words, detail: hodlNote("{have} of {n} recommended rolls", { have: count, n: config.hashRolls }) };
+  return null;
+}
+
+function hodlSecureDiceFairnessReportsOf(entry) {
+  if (!entry || entry.count < hodlDiceMinimumRolls(6)) return [];
+  let faces = rollsCopy(entry);
+  try {
+    return [hodlDiceFairnessAssess(faces, ["1", "2", "3", "4", "5", "6"], "D6")];
+  } finally {
+    faces.fill(0);
+  }
+}
+
+function hodlDiceMethodChoicesMarkup(config) {
+  return `
+      <div class="choice-grid">
+      <label class="choice"><input type="radio" name="dm" value="coldcard" ${hodlDiceMethod === "coldcard" ? "checked" : ""} />
+        <span><strong>${hodlT("Base 10 [1-6] / Hashed rolls")}</strong><span class="desc">${hodlT("SHA-256 of the original dice digit string, matching the method used by COLDCARD and SeedSigner. The first {bits} bits become the selected {words}-word seed; {hashRolls} rolls are recommended, and every entered roll is included.", { bits: config.bits, words: config.words, hashRolls: config.hashRolls })}</span></span>
+      </label>
+      <label class="choice"><input type="radio" name="dm" value="coleman" ${hodlDiceMethod === "coleman" ? "checked" : ""} />
+        <span><strong>${hodlT("Base 6 [0-5] / Hashed rolls")}</strong><span class="desc">${hodlT("Convert each 6 to 0 and SHA-256 the complete mapped digit string, matching the method used by Keystone. Use the first {bits} bits; {hashRolls} rolls are recommended, and every entered roll is included.", { bits: config.bits, words: config.words, hashRolls: config.hashRolls })}</span></span>
+      </label>
+      <label class="choice"><input type="radio" name="dm" value="bitbox" ${hodlDiceMethod === "bitbox" ? "checked" : ""} />
+        <span><strong>${hodlT("BitBox diceware / Direct word selection")}</strong><span class="desc">${hodlT("Use five dice showing 1–4, then a coin (or 6th die: 1–3 heads, 4–6 tails). Build {partialWords} lookup-table words, then choose 1 of {candidates} valid final checksum words.", { partialWords: config.partialWords, candidates: config.candidates })}</span></span>
+      </label>
+      <label class="choice"><input type="radio" name="dm" value="dplus" ${hodlDiceMethod==="dplus"?"checked":""} />
+        <span><strong>${hodlT("D++ / Direct word selection")}</strong><span class="desc">${hodlT("Roll one D8 labeled 1–8 and two hexadecimal D16 dice labeled 0–F for each of the first {partialWords} words, then {final} to select the valid checksum final word.", { partialWords: config.partialWords, final: hodlDPlusFinalDescription(config.words) })}</span></span>
+      </label>
+      </div>`;
+}
+
+function hodlSyncSecureDiceLock() {
+  let entry = hodlSecureDiceEntry(), locked = Boolean(entry && entry.count > 0);
+  document.querySelectorAll("input[name=dm]").forEach((radio) => {
+    radio.disabled = locked ? radio.value !== entry.method : false;
+  });
+  let note = document.getElementById("secure-dice-lock-note");
+  if (note) note.hidden = !locked;
+}
+
+function hodlRenderSecureDiceMeta() {
+  let meta = document.getElementById("dice-meta");
+  if (!meta) return;
+  let count = hodlSecureDiceEntry()?.count ?? 0, config = hodlSeedConfig(), missing = Math.max(0, config.hashRolls - count), metaBitsValue = hodlDiceEntropyBits(count);
+  hodlRenderMeta("dice-meta", [
+    [missing ? hodlTText("{have} of {n} recommended rolls", { have: hodlMetaToken, n: config.hashRolls }) : hodlTText("{have} rolls", { have: hodlMetaToken }), hodlMetaValue(String(count), !missing)],
+    [hodlTText("{bits} bits estimated", { bits: hodlMetaToken }), hodlMetaValue(metaBitsValue.toFixed(1), metaBitsValue >= config.bits)],
+  ]);
+}
+
+function hodlSecureDiceChanged() {
+  hodlInvalidateLiveKeyResult();
+  hodlSetWorkspaceError("key", null);
+  hodlRenderSecureDiceMeta();
+  hodlSyncSecureDiceLock();
+  hodlRenderDiceFairness("", hodlDiceMethod, hodlSeedConfig().words);
+  hodlSyncKeyClearButton();
+  hodlSyncDeriveButton();
+  hodlQueueMasterFingerprintPreview();
+}
+
+function hodlMountSecureDicePad() {
+  let host = document.getElementById("secure-dice-host");
+  if (!host || !hodlSecureDiceActive()) return;
+  if (!hodlSecureDicePadImport) hodlSecureDicePadImport = import("./secure-dice-pad.js").catch(() => null);
+  hodlSecureDicePadImport.then((module) => {
+    if (!module) {
+      hodlSecureDicePadImport = null;
+      if (host.isConnected && host.childNodes.length === 0 && hodlSecureDiceActive()) {
+        host.innerHTML = `<p class="field-note edge-note is-private" id="secure-dice-load-error" role="alert">${hodlT("The dice pad could not load. Turn Secure entry off to use standard text entry.")}</p>`;
+      }
+      return;
+    }
+    if (hodlSecureDicePad || !host.isConnected || host.childNodes.length || !hodlSecureDiceActive()) return;
+    let entry = hodlSecureDiceEntry(true);
+    if (!entry) return;
+    try {
+      hodlSecureDicePad = module.mountSecureDicePad(host, {
+        entry, rollsPush, rollsUndo, rollAt, labelledBy: "dice-label",
+        onChange: hodlSecureDiceChanged,
+      });
+    } catch {
+      if (host.isConnected && hodlSecureDiceActive()) {
+        host.innerHTML = "";
+        host.innerHTML = `<p class="field-note edge-note is-private" id="secure-dice-load-error" role="alert">${hodlT("The dice pad could not load. Turn Secure entry off to use standard text entry.")}</p>`;
+      }
+    }
+  }).catch(() => {});
+}
+
+function hodlRenderSecureDiceForm(config) {
+  let state = hodlKeys[hodlActiveKey];
+  let existingKey = hodlSecureKeyOf(state), existing = existingKey == null ? null : sessionGet(hodlSecureSession, existingKey, "rolls");
+  if (existing && existing.count > 0 && (existing.method === "coldcard" || existing.method === "coleman") && existing.method !== hodlDiceMethod) {
+    hodlDiceMethod = existing.method;
+    if (state) state.diceMethod = existing.method;
+  }
+  hodlSecureDiceEntry(true);
+  let lockNote = hodlT("To change the method, undo or clear the rolls entered so far.");
+  let recommendation = hodlT("{n} rolls are recommended for a {words}-word seed: about {bits} bits from a fair die. Fewer rolls make a weaker seed. The count cannot tell you whether your die is fair.", { n: config.hashRolls, words: config.words, bits: hodlDiceEntropyBits(config.hashRolls).toFixed(1) });
+  let transcript = hodlT("Your rolls are not listed on the page. They stay in memory for derivation, Undo and single-roll review. Review one roll shows one roll you choose, with its position.");
+  hodlFormEl.innerHTML = `<p class="label">${hodlT("Dice roll options")}</p>${hodlDiceMethodChoicesMarkup(config)}
+      <p class="field-note" id="secure-dice-lock-note" hidden>${lockNote}</p>
+      <p class="label" id="dice-label">${hodlT("Dice rolls (D6)")}</p>
+      <p class="label-description" id="secure-dice-help">${hodlT("Roll a physical six-sided die. Enter its result once, using a button or the keys 1–6.")}</p>
+      ${hodlSeedMetaRowMarkup("dice-meta")}
+      <div id="secure-dice-host" data-secure-dice></div>
+      <p class="field-note" id="secure-dice-recommendation">${recommendation}</p>
+      <p class="field-note" id="secure-dice-transcript-note">${transcript}</p>
+      ${hodlDiceFairnessControlsMarkup(hodlDiceMethod, state?.showDiceFairness)}`;
+  let fairnessToggle = document.getElementById("dice-fairness-toggle");
+  if (fairnessToggle) fairnessToggle.onclick = () => hodlSetDiceFairnessOpen(!hodlDiceFairnessIsOpen());
+  hodlFormEl.querySelectorAll("input[name=dm]").forEach((radio) => {
+    radio.onchange = () => {
+      if (hodlSecureDiceHasRolls(hodlSecureKeyOf(hodlKeys[hodlActiveKey]))) {
+        let method = hodlSecureDiceEntry()?.method;
+        hodlFormEl.querySelectorAll("input[name=dm]").forEach((item) => { item.checked = item.value === method; });
+        return;
+      }
+      let previousMethod = hodlDiceMethod, nextState = hodlKeys[hodlActiveKey];
+      hodlDiceMethod = radio.value;
+      hodlDiceCoinPositions = nextState && hodlDiceMethod === "bitbox" ? hodlNormalizeDiceCoinPositions(nextState.diceCoinPositions) : [];
+      hodlManualCalculationsOpen = false;
+      if (nextState) {
+        nextState.diceMethod = hodlDiceMethod;
+        hodlPickedLastWord = hodlDiceMethod === "dplus" ? nextState.dplusLastWord || "" : hodlDiceMethod === "bitbox" ? nextState.lastWord || "" : "";
+      } else hodlPickedLastWord = previousMethod === hodlDiceMethod ? hodlPickedLastWord : "";
+      hodlSetMode(hodlKeyMode);
+      hodlQueueMasterFingerprintPreview(0);
+    };
+  });
+  hodlSyncSecureDiceLock();
+  hodlRenderSecureDiceMeta();
+  hodlRenderDiceFairness("", hodlDiceMethod, config.words);
+  hodlMountSecureDicePad();
+  hodlBindKeyFields();
+  hodlRenderPassphraseKeyboard();
+}
+
+// P3b-2: the code-point lengths at which a private key of this kind is
+// complete (WIF 51 or 52, hex 64, mini key 22, 26 or 30).
+function hodlSecureKeyLengths(kind) {
+  if (kind === "hex-key") return [64];
+  if (kind === "minikey") return [22, 26, 30];
+  return [51, 52];
+}
+
+// P3b-2: the kind and text of a key's typed private key, or null when it has
+// none. Only the key's own kind counts. Brain wallets stay text.
+function hodlSecureKeyTyped(state) {
+  if (!state?.fields) return null;
+  let kind = hodlNormalizePrivateKeyKind(state.fields.keyKind);
+  if (kind === "brain") return null;
+  let values = hodlPrivateKeyValues(state.fields);
+  let text = values?.[kind];
+  if (!String(text ?? "").trim()) return null;
+  return { text, kind };
+}
+
+// P3b-2: the status line under the masked private-key field. It never flashes
+// an error while the key is still being typed: below a complete length it
+// shows only the count, and the wrong-format hint when the text is already a
+// complete key of a shorter format. The bytes it parses are zeroed in a finally.
+function hodlSecureKeyClearFormatHint() {
+  document.getElementById("secure-key-format-hint")?.remove();
+  document.getElementById("secure-key-format-switch")?.remove();
+}
+
+function hodlSecureKeyFormatHint(entry, kind) {
+  if (!entry || kind === "brain") return;
+  let bytes = entry.vault.bytes();
+  let found = null;
+  try {
+    let parsed = null;
+    try {
+      parsed = parsePrivateKeyBytes(bytes, { kind: "wif" });
+      if (parsed.source === "wif" && kind !== "wif") found = "wif";
+      else if (parsed.source === "hex" && kind !== "hex-key") found = "hex-key";
+    } catch {
+      // not a WIF or hex key
+    } finally {
+      parsed?.priv?.fill(0);
+      parsed?.minikey?.fill(0);
+    }
+    if (!found) {
+      parsed = null;
+      try {
+        parsed = parsePrivateKeyBytes(bytes, { kind: "minikey" });
+        if (parsed.source === "minikey" && kind !== "minikey") found = "minikey";
+      } catch {
+        // not a mini key
+      } finally {
+        parsed?.priv?.fill(0);
+        parsed?.minikey?.fill(0);
+      }
+    }
+  } finally {
+    bytes.fill(0);
+  }
+  if (!found) return;
+  // Literal hodlTText calls (textContent below), so the translation sweep finds every string.
+  const label = found === "wif" ? { hint: hodlTText("This looks like a WIF key."), button: hodlTText("Switch to WIF") }
+    : found === "hex-key" ? { hint: hodlTText("This looks like a hex key."), button: hodlTText("Switch to hex") }
+    : found === "minikey" ? { hint: hodlTText("This looks like a mini key."), button: hodlTText("Switch to mini key") }
+    : null;
+  if (!label) return;
+  let line = document.getElementById("secure-key-status");
+  if (!line) return;
+  const note = document.createElement("p");
+  note.className = "field-note";
+  note.id = "secure-key-format-hint";
+  note.textContent = label.hint;
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "btn secondary";
+  button.id = "secure-key-format-switch";
+  button.textContent = label.button;
+  button.onclick = () => {
+    let state = hodlKeys[hodlActiveKey];
+    if (state?.fields) state.fields.keyKind = found;
+    hodlSetMode(hodlKeyMode);
+  };
+  line.after(note, button);
+}
+
+function hodlSecureKeyStatus() {
+  let line = document.getElementById("secure-key-status");
+  if (!line) return;
+  let entry = hodlSecureKeyEntry();
+  let kind = hodlSecureKeyKind();
+  let count = entry ? entry.vault.length : 0;
+  line.className = "field-note";
+  hodlSecureKeyClearFormatHint();
+  if (count === 0) {
+    line.textContent = "";
+    return;
+  }
+  let lengths = hodlSecureKeyLengths(kind);
+  if (!lengths.includes(count) && count < Math.max(...lengths)) {
+    line.textContent = hodlT("{count} characters", { count });
+    // A complete key of another format can be shorter than this one (a WIF
+    // under hex, a mini key under WIF or hex), so offer the switch here too
+    // (Kimi K3, Grok, GLM and MiniMax, round 1).
+    hodlSecureKeyFormatHint(entry, kind);
+    return;
+  }
+  // At a complete length the line says what Derive would: the same parse and
+  // the same kind, network and range checks (MiniMax, round 1).
+  let network = hodlSelectedNetwork(document.getElementById("network"));
+  let parsed = null;
+  try {
+    parsed = hodlSecureKeyParsed(network);
+  } catch (error) {
+    line.className = "field-note edge-note is-private";
+    line.textContent = String(error?.message ?? "");
+    hodlSecureKeyFormatHint(entry, kind);
+    return;
+  }
+  try {
+    if (kind === "hex-key") {
+      line.textContent = hodlT("Valid private-key value · Hex has no checksum to detect typing mistakes.");
+    } else if (kind === "minikey") {
+      line.textContent = hodlT("Mini key check passed");
+    } else {
+      line.textContent = parsed.compressed
+        ? hodlT("WIF checksum passed · {network} · Compressed public key", { network: parsed.network })
+        : hodlT("WIF checksum passed · {network} · Uncompressed public key", { network: parsed.network });
+    }
+  } finally {
+    parsed.priv?.fill(0);
+    parsed.minikey?.fill(0);
+  }
+}
+
+// P3b-2: show or hide the read-only readout of the vault's key. The text is
+// built only when asked for; the vault keeps its copy. Never unmask().
+function hodlSecureKeyShowReadout(show) {
+  let existing = document.querySelector("[data-secure-key-readout]");
+  if (existing) existing.remove();
+  hodlSecureKeyRevealed = false;
+  let status = document.getElementById("secure-key-status");
+  if (!show || !status) return;
+  let entry = hodlSecureKeyEntry();
+  if (!entry || entry.vault.length === 0) return;
+  let readout = document.createElement("div");
+  readout.setAttribute("data-secure-key-readout", "");
+  readout.innerHTML = hodlPrivateValue(entry.vault.text(), "mono private-field-value", true);
+  status.parentNode.insertBefore(readout, status.nextSibling);
+  hodlSecureKeyRevealed = true;
+}
+
+// P3b-2: hide the readout and put the reveal button back to "Show key".
+function hodlSecureKeyConceal() {
+  hodlSecureKeyShowReadout(false);
+  let reveal = document.getElementById("secure-key-reveal");
+  if (reveal) {
+    reveal.setAttribute("aria-pressed", "false");
+    reveal.textContent = hodlT("Show key");
+  }
+}
+
+// P3b-2: bind the masked private-key field to the key's vault. The field
+// shows only mask dots; the text lives in the vault, never in state.fields.
+function hodlBindSecureKeyField() {
+  let field = document.getElementById("secure-key");
+  let entry = hodlSecureKeyEntry(true);
+  if (!field || !entry) return;
+  hodlSecureKeyField = bindVaultField(field, entry.vault, { active: hodlSecureKeyActive });
+  const lockKinds = () => hodlSecureKeyLockKinds(document.querySelectorAll('input[name="kk"]'), hodlSecureKeyKind(), entry.vault.length > 0);
+  field.addEventListener("input", () => {
+    // Any edit hides the readout: it would otherwise show stale text.
+    hodlSecureKeyConceal();
+    hodlSecureKeyStatus();
+    lockKinds();
+    hodlSyncDeriveButton();
+    hodlSyncKeyClearButton();
+  });
+  let reveal = document.getElementById("secure-key-reveal");
+  if (reveal) reveal.onclick = () => {
+    hodlSecureKeyShowReadout(!hodlSecureKeyRevealed);
+    // The button follows what is shown: an empty vault shows nothing (Grok).
+    reveal.setAttribute("aria-pressed", hodlSecureKeyRevealed ? "true" : "false");
+    reveal.textContent = hodlSecureKeyRevealed ? hodlT("Hide key") : hodlT("Show key");
+  };
+  for (const radio of document.querySelectorAll('input[name="kk"]')) {
+    // Assignment, so a second bind cannot stack a listener on the same radio.
+    radio.onchange = () => {
+      hodlSecureKeyConceal();
+      let fields = hodlKeys[hodlActiveKey]?.fields;
+      if (fields) fields.keyKind = hodlNormalizePrivateKeyKind(radio.value, "");
+      hodlSetMode(hodlKeyMode);
+    };
+  }
+  document.removeEventListener("hodl:conceal", hodlSecureKeyConceal);
+  document.addEventListener("hodl:conceal", hodlSecureKeyConceal);
+  // The status line runs Derive's checks, the network included: a change of
+  // network re-runs it, so it never keeps a pass Derive would refuse (Grok,
+  // GLM, MiniMax, round 2).
+  let network = document.getElementById("network");
+  if (hodlSecureKeyNetworkWatch) {
+    network?.removeEventListener("change", hodlSecureKeyNetworkWatch);
+    document.removeEventListener("hodl:network-default", hodlSecureKeyNetworkWatch);
+  }
+  hodlSecureKeyNetworkWatch = hodlSecureKeyStatus;
+  network?.addEventListener("change", hodlSecureKeyNetworkWatch);
+  document.addEventListener("hodl:network-default", hodlSecureKeyNetworkWatch);
+  hodlSecureKeyStatus();
+  lockKinds();
+}
+
+// P3b-2: while the vault holds a key, the format it was typed as is fixed:
+// the other format radios are disabled until the field is emptied. One vault
+// serves the key, so a format change would read its text as another format
+// and Convert would file it under the wrong one (Astra, Grok, Kimi, GLM).
+function hodlSecureKeyLockKinds(radios, kind, locked) {
+  for (const radio of radios) radio.disabled = Boolean(locked) && radio.value !== kind;
+}
+
+// P3b-2: release the masked key field's binding and readout. Called before the
+// key form is rendered again and at End Session.
+function hodlReleaseSecureKeyField() {
+  document.removeEventListener("hodl:conceal", hodlSecureKeyConceal);
+  if (hodlSecureKeyNetworkWatch) {
+    document.removeEventListener("hodl:network-default", hodlSecureKeyNetworkWatch);
+    document.getElementById("network")?.removeEventListener("change", hodlSecureKeyNetworkWatch);
+    hodlSecureKeyNetworkWatch = null;
+  }
+  hodlSecureKeyField = null;
+  hodlSecureKeyRevealed = false;
+  let readout = document.querySelector("[data-secure-key-readout]");
+  if (readout) readout.remove();
+}
+
+// P3b-2: the refusal hodlSecureKeyParsed gives for a KeyBytesError. The status
+// line under the masked field reuses it, so both say the same thing.
+function hodlSecureKeyRefusal(error, kind, network, bytes) {
+  if (error.code === "EMPTY") return hodlError("Enter a private key.");
+  if (kind === "hex-key") return hodlError("Enter exactly 64 hexadecimal characters (0–9 and a–f).");
+  if (kind === "minikey") {
+    // The shape half of hodlDecodeMiniPrivateKey, on the same bytes: the
+    // hash half is what parsePrivateKeyBytes already checked.
+    let start = 0, end = bytes.length;
+    const space = (byte) => byte === 0x20 || (byte >= 0x09 && byte <= 0x0d);
+    while (start < end && space(bytes[start])) start++;
+    while (end > start && space(bytes[end - 1])) end--;
+    const length = end - start;
+    let shape = length === 22 || length === 26 || length === 30;
+    if (shape && bytes[start] !== 0x53) shape = false;
+    if (shape) {
+      for (let i = start; i < end; i++) {
+        const byte = bytes[i];
+        if (!(byte >= 0x31 && byte <= 0x39 || byte >= 0x41 && byte <= 0x48 || byte >= 0x4a && byte <= 0x4e || byte >= 0x50 && byte <= 0x5a || byte >= 0x61 && byte <= 0x6b || byte >= 0x6d && byte <= 0x7a)) { shape = false; break; }
+      }
+    }
+    if (!shape) return hodlError("Mini keys must start with S and contain 22, 26, or 30 Bitcoin Base58 characters.");
+    return hodlError("Not a valid Casascius mini private key.");
+  }
+  return hodlError("Enter a valid {network} WIF private key ({hint}).", { network, hint: hodlNetworkFamily(network) === "testnet" ? "9\u2026 or c\u2026" : "5\u2026, K\u2026, or L\u2026" });
+}
+
+// The vault's private key, parsed from bytes and checked exactly as the text
+// path checks it. The caller owns and zeroes the returned arrays.
+function hodlSecureKeyParsed(network) {
+  let entry = hodlSecureKeyEntry();
+  if (!entry || !entry.vault || entry.vault.length === 0) throw hodlError("Enter a private key.");
+  let kind = hodlSecureKeyKind();
+  let bytes = entry.vault.bytes();
+  let parsed = null;
+  try {
+    try {
+      parsed = parsePrivateKeyBytes(bytes, { kind });
+    } catch (error) {
+      if (!(error instanceof KeyBytesError)) throw error;
+      throw hodlSecureKeyRefusal(error, kind, network, bytes);
+    }
+    // The kind must match what was parsed, as on the text path.
+    if (kind === "hex-key" && parsed.source !== "hex") throw hodlError("Enter exactly 64 hexadecimal characters (0–9 and a–f).");
+    if (kind === "wif" && parsed.source !== "wif") throw hodlError("Enter a valid {network} WIF private key ({hint}).", { network, hint: hodlNetworkFamily(network) === "testnet" ? "9\u2026 or c\u2026" : "5\u2026, K\u2026, or L\u2026" });
+    if (parsed.source === "wif" && parsed.network !== hodlNetworkFamily(network)) throw hodlError("This WIF is for {have}; Network is set to {want}.", { have: parsed.network, want: network });
+    hodlAssertPrivateKey(parsed.priv);
+    return parsed;
+  } catch (error) {
+    if (parsed) {
+      parsed.priv?.fill(0);
+      parsed.minikey?.fill(0);
+    }
+    throw error;
+  } finally {
+    bytes.fill(0);
+  }
+}
+
+// True when the vault holds a private key the derive path accepts.
+function hodlSecureKeyReady(network) {
+  try {
+    let parsed = hodlSecureKeyParsed(network);
+    parsed.priv?.fill(0);
+    parsed.minikey?.fill(0);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+// The wallet for the vault's private key, built exactly as the text path
+// builds it. The wallet keeps its own copy of the key and mini-key bytes.
+function hodlSecureKeyWallet(network) {
+  let parsed = hodlSecureKeyParsed(network);
+  let notes = [], warnings = [];
+  if (parsed.source === "minikey") notes.push(hodlNote("Casascius mini private key decoded via SHA-256."));
+  else if (parsed.source === "wif") notes.push(hodlNote(parsed.compressed ? "Decoded a compressed WIF private key (starts with K or L on mainnet)." : "Decoded an uncompressed WIF private key (starts with 5 on mainnet)."));
+  else notes.push(hodlNote("Decoded a 32-byte hex private key."));
+  try {
+    return hodlSingleKeyWalletFromKey(parsed.priv, network, notes, warnings, parsed.minikey, parsed.source, parsed.compressed);
+  } catch (error) {
+    // A failure before the wallet takes its copies leaves both arrays here.
+    parsed.priv.fill(0);
+    parsed.minikey?.fill(0);
+    throw error;
+  }
+}
+// The seed form shows the picker for a key holding secure words or with no
+// seed text; a seed that is already text keeps the text field.
+function hodlSecureSeedPickerShown(state) {
+  return hodlSecureSeedHasWords(hodlSecureKeyOf(state)) || !String(state?.fields?.seed ?? "").trim();
+}
+// True when the key holds securely entered words, or was derived from words
+// held that way: a derived key keeps no copy of them (they stay with the
+// editor that held them), so Journal must refuse it as it refuses the editor.
+function hodlSecureEntryHeld(state) {
+  return Boolean(state?.secureSource) || hodlSecureEntryHasData(hodlSecureKeyOf(state));
+}
+// Journal cannot hold securely entered words yet (a later backup format will):
+// a backup taken now would keep such a key without its recovery words.
+function hodlSecureEntryBackupRefusal() {
+  if (hodlKeys.some((state) => hodlSecureEntryHeld(state))) return new Error(hodlTText("Journal cannot back up words entered with Secure entry yet. Turn Secure entry off and convert them to text, or clear those keys, then try again."));
+  if (hodlKeys.some((state) => state?.secureCleared)) return new Error(hodlTText("Journal cannot back up or export keys whose words were cleared by Secure entry. Enter their words again and derive their wallets, or clear those keys, then try again."));
+  return null;
+}
 function hodlInitPsbt() {
+  import("./nonce-qr-capture.js").then(async ({ initNonceQrCapture }) => {
+    await psbtWasmReady;
+    hodlNonceQrCapture = initNonceQrCapture({
+      translate: hodlTText,
+      onClear: () => {
+        document.getElementById("psbt-ax-transcript").value = "";
+        hodlNonceLast = null;
+        document.getElementById("nonce-out").innerHTML = "";
+        hodlPsbtResetNonceInspection();
+      }
+    });
+  });
+
   let go = document.getElementById("psbt-go");
   if (!go) return;
   go.onclick = () => {
@@ -10745,6 +14607,7 @@ function hodlInitPsbt() {
     hodlMarkPsbtInspected("psbt-go");
     hodlSyncPsbtControls();
   };
+  document.getElementById("psbt-out")?.addEventListener("click", hodlPsbtShowMore);
   document.getElementById("psbt-wipe").onclick = hodlEndPsbtSession;
   document.getElementById("nonce-wipe").onclick = hodlEndPsbtSession;
   document.getElementById("nonce-go").onclick = () => {
@@ -10759,12 +14622,19 @@ function hodlInitPsbt() {
     const chosen = nonceFile.files?.[0];
     nonceFile.value = "";
     if (!chosen) return;
+    const generation = hodlPsbtInspectorUploadGeneration;
     (async () => {
       try {
-        const bytes = hodlPsbtInspectorBytesFromUpload(new Uint8Array(await chosen.arrayBuffer()));
+        // Sized before it is read, like the editor's upload: the decoder's
+        // 5 MB bound must not be reached by first reading a far larger file.
+        if (chosen.size > 5e6) throw new Error("This file is too large to inspect safely.");
+        const upload = new Uint8Array(await chosen.arrayBuffer());
+        if (generation !== hodlPsbtInspectorUploadGeneration) return;
+        const bytes = hodlPsbtInspectorBytesFromUpload(upload);
         document.getElementById("nonce-text").value = hodlBytesToB64(bytes);
         hodlRunNonce();
       } catch (exception) {
+        if (generation !== hodlPsbtInspectorUploadGeneration) return;
         hodlSetNonceError({ raw: exception.message || String(exception) });
       }
       hodlSyncPsbtControls();
@@ -10779,17 +14649,43 @@ function hodlInitPsbt() {
     const chosen = file.files?.[0];
     file.value = "";
     if (!chosen) return;
+    const generation = hodlPsbtInspectorUploadGeneration;
     (async () => {
       try {
-        const bytes = hodlPsbtInspectorBytesFromUpload(new Uint8Array(await chosen.arrayBuffer()));
+        if (chosen.size > 5e6) throw new Error("This file is too large to inspect safely.");
+        const upload = new Uint8Array(await chosen.arrayBuffer());
+        if (generation !== hodlPsbtInspectorUploadGeneration) return;
+        const bytes = hodlPsbtInspectorBytesFromUpload(upload);
         document.getElementById("psbt-text").value = hodlBytesToB64(bytes);
         hodlRunPsbt();
       } catch (exception) {
+        if (generation !== hodlPsbtInspectorUploadGeneration) return;
         hodlSetPsbtError({ raw: exception.message || String(exception) });
       }
       hodlSyncPsbtControls();
     })();
   });
+  // The sent PSBT for the signer audit loads through the same upload path:
+  // a binary .psbt (Sparrow/Coldcard) or a base64/hex text export, mirrored
+  // into its field as base64. It runs nothing by itself — the next Inspect
+  // picks it up — but it retires a shown verdict.
+  const auditFile = document.getElementById("psbt-audit-file");
+  document.getElementById("psbt-audit-upload").onclick = () => auditFile.click();
+  auditFile.addEventListener("change", () => {
+    const chosen = auditFile.files?.[0];
+    auditFile.value = "";
+    if (chosen) hodlPsbtLoadAuditUpload(chosen);
+  });
+  // The RBF fee-bump check (released 2026-10-26).
+  const rbfFile = document.getElementById("psbt-rbf-file");
+  document.getElementById("psbt-rbf-upload").onclick = () => rbfFile.click();
+  rbfFile.addEventListener("change", () => {
+    const chosen = rbfFile.files?.[0];
+    rbfFile.value = "";
+    if (chosen) hodlPsbtLoadRbfUpload(chosen);
+  });
+  // Editing the original retires a verdict computed from the old one.
+  document.getElementById("psbt-rbf-original")?.addEventListener("input", hodlPsbtClearRbfVerdict);
   document.getElementById("psbt-download").onclick = () => {
     hodlSetPsbtError(null);
     try {
@@ -10807,23 +14703,58 @@ function hodlInitPsbt() {
     const chosen = historyFile.files?.[0];
     historyFile.value = "";
     if (!chosen) return;
+    const generation = hodlPsbtNonceHistoryGeneration;
     (async () => {
       try {
-        if (chosen.size > NONCE_HISTORY_MAX_TEXT) throw new Error("Nonce history file is too large.");
-        let imported = parseNonceHistory(await chosen.text());
-        hodlPsbtNonceHistory = mergeNonceHistory(hodlPsbtNonceHistory, imported);
-        hodlPsbtSyncNonceHistoryControls(hodlTText("Loaded {loaded} nonce history record(s); {total} record(s) are now in memory.", { loaded: imported.length, total: hodlPsbtNonceHistory.length }));
-        hodlPsbtRenderNonceHistoryComparison();
+        if (chosen.size > NONCE_HISTORY_ENCRYPTED_MAX_TEXT) throw new Error("Nonce history file is too large.");
+        const text = await chosen.text();
+        if (generation !== hodlPsbtNonceHistoryGeneration) return;
+        if (isEncryptedNonceHistory(text)) {
+          const passphrase = await hodlNonceHistoryConfirm().open({ mode: "import", opener: document.getElementById("psbt-nonce-history-upload") });
+          if (passphrase === null) return;
+          let imported;
+          try {
+            imported = await decryptNonceHistory(text, passphrase);
+          } catch (exception) {
+            if (exception?.code === "NONCE_HISTORY_WRONG_KEY") {
+              hodlPsbtSyncNonceHistoryControls(hodlTText("Nonce history was not loaded: the passphrase is wrong, or the file is damaged."), true);
+              return;
+            }
+            if (exception?.code === "NONCE_HISTORY_BAD_FILE") {
+              hodlPsbtSyncNonceHistoryControls(hodlTText("Nonce history was not loaded: {message}", { message: hodlTText("the file is not a valid encrypted nonce history.") }), true);
+              return;
+            }
+            throw exception;
+          }
+          if (generation !== hodlPsbtNonceHistoryGeneration) return;
+          hodlPsbtNonceHistory = mergeNonceHistory(hodlPsbtNonceHistory, imported);
+          hodlPsbtSyncNonceHistoryControls(hodlTText("Loaded {loaded} nonce history record(s); {total} record(s) are now in memory.", { loaded: imported.length, total: hodlPsbtNonceHistory.length }));
+          hodlPsbtRenderNonceHistoryComparison();
+        } else {
+          const imported = parseNonceHistory(text);
+          if (generation !== hodlPsbtNonceHistoryGeneration) return;
+          hodlPsbtNonceHistory = mergeNonceHistory(hodlPsbtNonceHistory, imported);
+          hodlPsbtSyncNonceHistoryControls(hodlTText("Loaded {loaded} nonce history record(s); {total} record(s) are now in memory.", { loaded: imported.length, total: hodlPsbtNonceHistory.length }) + hodlTText(" This file was not encrypted: download the history again to save an encrypted copy, and delete the plain file."), true);
+          hodlPsbtRenderNonceHistoryComparison();
+        }
       } catch (exception) {
         hodlPsbtSyncNonceHistoryControls(hodlTText("Nonce history was not loaded: {message}", { message: exception.message || String(exception) }), true);
       }
     })();
   });
-  document.getElementById("psbt-nonce-history-download").onclick = () => {
+  document.getElementById("psbt-nonce-history-download").onclick = async () => {
     try {
       if (!hodlPsbtNonceHistory.length) throw new Error("There is no nonce history to download.");
-      hodlDownloadBytes(new TextEncoder().encode(serializeNonceHistory(hodlPsbtNonceHistory)), "entropylab-nonce-history.json");
-      hodlPsbtSyncNonceHistoryControls(hodlTText("Downloaded {count} nonce history record(s).", { count: hodlPsbtNonceHistory.length }));
+      // The records as they were when Download was clicked: Clear or End
+      // Session during the dialog or the encryption cancels the download
+      // rather than saving what was just wiped.
+      const records = hodlPsbtNonceHistory, generation = hodlPsbtNonceHistoryGeneration;
+      const passphrase = await hodlNonceHistoryConfirm().open({ mode: "download", opener: document.getElementById("psbt-nonce-history-download") });
+      if (passphrase === null || generation !== hodlPsbtNonceHistoryGeneration) return;
+      const text = await encryptNonceHistory(records, passphrase);
+      if (generation !== hodlPsbtNonceHistoryGeneration) return;
+      hodlDownloadBytes(new TextEncoder().encode(text), "entropylab-nonce-history.json");
+      hodlPsbtSyncNonceHistoryControls(hodlTText("Downloaded {count} nonce history record(s).", { count: records.length }) + hodlTText(" The file is encrypted."));
     } catch (exception) {
       hodlPsbtSyncNonceHistoryControls(hodlTText("Nonce history was not downloaded: {message}", { message: exception.message || String(exception) }), true);
     }
@@ -10834,6 +14765,11 @@ function hodlInitPsbt() {
   };
   document.getElementById("nonce-text").addEventListener("input", hodlPsbtResetNonceInspection);
   document.getElementById("psbt-card").addEventListener("input", hodlSyncPsbtControls);
+  // An edit in the card either changes nothing the run read or it changes
+  // the result. While the fields still match the run stamp every verdict
+  // stays on screen; once they differ the whole result goes, because it was
+  // computed from fields that are no longer there.
+  document.getElementById("psbt-card").addEventListener("input", hodlPsbtCardEdited);
   document.getElementById("nonce-card").addEventListener("input", hodlSyncPsbtControls);
   hodlPsbtSyncNonceHistoryControls();
   // Page hide ends the whole session: the key bytes, the paste fields, and
@@ -10933,6 +14869,17 @@ function hodlBip85PrivateValue(read, length, words = 0) {
   let bullets = words ? hodlSeedPhraseMask(words) : "\u2022".repeat(Math.max(length, mask.length));
   return `<span class="secret private-field-value secret-placeholder"><span class="secret-placeholder-mask" aria-hidden="true">${bullets}</span><span class="secret-placeholder-message" aria-hidden="true">${mask}</span><span class="secret-placeholder-label">${hodlT("Private value hidden")}</span></span>`;
 }
+// bip85.js labels each child in English for any caller; the page names it in
+// the page language, one whole label per application.
+function hodlBip85SecretLabel(derived) {
+  if (derived.app === "bip39") return hodlTText("BIP-39 seed phrase · {count} English words", { count: derived.entropy.length * 3 / 4 });
+  if (derived.app === "wif") return derived.testnet ? hodlTText("Compressed WIF · testnet") : hodlTText("Compressed WIF · mainnet");
+  if (derived.app === "xprv") return derived.testnet ? "BIP-32 TPRV" : "BIP-32 XPRV";
+  if (derived.app === "hex") return hodlTText("Hex entropy · {count} bytes", { count: derived.entropy.length });
+  if (derived.app === "pwd-base64") return hodlTText("Password · Base64 · {count} characters", { count: derived.passwordLength });
+  if (derived.app === "pwd-base85") return hodlTText("Password · RFC1924 Base85 · {count} characters", { count: derived.passwordLength });
+  return derived.secretLabel;
+}
 function hodlBip85SecretField(label, read, length, words = 0, copyId = "") {
   return hodlPrivateFieldMarkup(`${hodlEscapeHtml(label)}${hodlPrivacyEyeMarkup(hodlBip85Reveal)}`, hodlBip85PrivateValue(read, length, words), { revealed: hodlBip85Reveal, copyId, copyAttribute: copyId ? "data-bip85-copy" : "data-private-copy" });
 }
@@ -10975,10 +14922,21 @@ function hodlBip85SyncOptions() {
   if (path) path.textContent = hodlBip85CurrentPath() || "\u2014";
 }
 function hodlBip85LoadXprv(text) {
-  let value = String(text || "").trim(), { xkey, isPrivate } = hodlParseExtendedKey(value);
-  if (!isPrivate) throw new Error("BIP-85 needs a private root (xprv/tprv), not an extended public key.");
-  let node = hodlHDKey.fromExtendedKey(xkey);
-  if (node.depth !== 0) throw new Error("BIP-85 starts at the BIP32 root. This extended key is not depth 0.");
+  let value = String(text || "").trim(), { isPrivate, scope, prefix, node } = hodlParseExtendedKey(value);
+  // The parse already built the key's node: it is the one kept, and it is
+  // wiped before every refusal. A second node was built from the same key,
+  // and both were dropped with their private keys (red-team sweep 0eed735,
+  // part08 #4).
+  let refuse = (message) => {
+    node?.wipePrivateData?.();
+    throw new Error(message);
+  };
+  if (!isPrivate) refuse("BIP-85 needs a private root (xprv/tprv), not an extended public key.");
+  // The same scope rule Key Station applies to an imported key: BIP-85
+  // children are defined from a BIP32 root, and a multisig-prefixed key is
+  // account-scoped, not a root to hang deterministic children on.
+  if (scope !== "singlesig") refuse(prefix + " is a multisig extended key. BIP-85 derives from a singlesig root xprv/tprv.");
+  if (node.depth !== 0) refuse("BIP-85 starts at the BIP32 root. This extended key is not depth 0.");
   hodlBip85WipeParent();
   hodlBip85Root = node;
   hodlBip85Testnet = /^[tuvn]prv/i.test(value);
@@ -11026,9 +14984,9 @@ function hodlCopyBip85Child(button) {
   if (!phrase) return;
   let done = () => {
     if (!button.isConnected || !hodlBip85Reveal) return;
-    hodlShowCopiedIcon(button, { copyIcon: hodlClipboardIconMarkup(), copiedIcon: hodlCopiedIconMarkup() });
+    hodlShowCopiedIcon(button, { copyIcon: hodlClipboardIconMarkup(), copiedIcon: hodlCopiedIconMarkup(), copiedLabel: hodlTText("Copied to EntropyLab's clipboard") });
   };
-  copyText(phrase).then((copied) => { if (copied) done(); });
+  if (appClipboardPut(phrase)) done();
 }
 function hodlRenderBip85Out() {
   let box = document.getElementById("bip85-out");
@@ -11040,7 +14998,8 @@ function hodlRenderBip85Out() {
     return;
   }
   let derived = hodlBip85Result;
-  let fingerprintLabel = state.fingerprintKind === "master" ? "Master fingerprint" : state.fingerprintKind === "key" ? "Key fingerprint" : "Child fingerprint";
+  let secretLabel = hodlBip85SecretLabel(derived), entropyLabel = hodlTText("Derived entropy");
+  let fingerprintLabel = state.fingerprintKind === "master" ? hodlTText("Master fingerprint") : state.fingerprintKind === "key" ? hodlTText("Key fingerprint") : hodlTText("Child fingerprint");
   box.innerHTML = `<section class="wallet-data-section" aria-label="${hodlTAttr("Derived child")}">
       <div class="key-summary bip85-child-summary">
         <div class="bip85-result-lineage">
@@ -11058,14 +15017,14 @@ function hodlRenderBip85Out() {
       </div>
       <section class="edge-note-titled" aria-labelledby="bip85-child-safety-heading">
         <h3 class="edge-note-title is-private" id="bip85-child-safety-heading">${hodlT("Safety notes")}</h3>
-        <p class="edge-note is-private" id="bip85-private-description">Anyone with the parent, application, and index can reproduce this child key.</p>
+        <p class="edge-note is-private" id="bip85-private-description">${hodlT("Anyone with the parent, application, and index can reproduce this child key.")}</p>
       </section>
       <div class="wallet-data-actions no-print">
         ${hodlPrivacyBarMarkup({ id: "bip85-reveal", revealed: hodlBip85Reveal, describedBy: "bip85-private-description" })}
       </div>
       <div class="wallet-data-fields">
-        ${hodlBip85SecretField(derived.secretLabel, () => derived.secret, bip85SecretLength(derived), derived.app === "bip39" ? derived.entropy.length * 3 / 4 : 0, "bip85-copy")}
-        ${hodlBip85SecretField("Derived entropy", () => derived.entropyHex, derived.entropy.length * 2)}
+        ${hodlBip85SecretField(secretLabel, () => derived.secret, bip85SecretLength(derived), derived.app === "bip39" ? derived.entropy.length * 3 / 4 : 0, "bip85-copy")}
+        ${hodlBip85SecretField(entropyLabel, () => derived.entropyHex, derived.entropy.length * 2)}
       </div>
 
     </section>`;
@@ -11117,6 +15076,7 @@ function hodlSyncStationDeleteButton(config) {
   button.setAttribute("aria-disabled", String(button.disabled));
 }
 function hodlRenderStationTabs(config) {
+  hodlSyncWorkspaceCounts();
   let box = document.getElementById(config.tabs), panel = document.getElementById(config.panel);
   if (!box || !panel) return;
   box.innerHTML = "";
@@ -11173,7 +15133,7 @@ var hodlBip85Tabs = {
   bench: () => hodlNewBip85BenchState(), syncView: () => hodlSyncBip85View(),
 };
 function hodlCreateBip85Tab(index) {
-  let { state, active, button, label } = hodlStationTabButton(hodlBip85Tabs, index), name = state.isLab ? "BIP-85 Station" : state.fingerprint;
+  let { state, active, button, label } = hodlStationTabButton(hodlBip85Tabs, index), name = state.isLab ? hodlTText("BIP-85 Station") : state.fingerprint;
   label.textContent = name;
   if (state.isLab) button.append(hodlCreateBip85BenchIcon(), label);
   else {
@@ -11181,12 +15141,16 @@ function hodlCreateBip85Tab(index) {
     button.append(label);
   }
   if (state.isLab) {
-    button.setAttribute("aria-label", "BIP-85 Station" + (active ? ", selected" : ". Activate to derive a BIP-85 child."));
-    button.title = "Derive a BIP-85 child";
+    button.setAttribute("aria-label", active ? hodlTText("BIP-85 Station, selected") : hodlTText("BIP-85 Station. Activate to derive a BIP-85 child."));
+    button.title = hodlTText("Derive a BIP-85 child");
   } else {
-    let kind = state.fingerprintKind === "master" ? "master fingerprint" : state.fingerprintKind === "key" ? "key fingerprint" : "child fingerprint";
-    button.setAttribute("aria-label", hodlBip85AppLabel(state.result?.app) + " " + hodlTText("child of parent {fingerprint}", { fingerprint: state.parentFingerprint }) + `, ${kind} ${name}${active ? ", selected" : ". Activate to select."}`);
-    button.title = `${hodlBip85AppLabel(state.result?.app)} · ${state.result?.path || ""}`;
+    let app = hodlTText(hodlBip85AppLabel(state.result?.app)), vars = { app, parent: state.parentFingerprint, name };
+    button.setAttribute("aria-label", state.fingerprintKind === "master"
+      ? hodlTText(active ? "{app} child of parent {parent}, master fingerprint {name}, selected" : "{app} child of parent {parent}, master fingerprint {name}. Activate to select.", vars)
+      : state.fingerprintKind === "key"
+      ? hodlTText(active ? "{app} child of parent {parent}, key fingerprint {name}, selected" : "{app} child of parent {parent}, key fingerprint {name}. Activate to select.", vars)
+      : hodlTText(active ? "{app} child of parent {parent}, child fingerprint {name}, selected" : "{app} child of parent {parent}, child fingerprint {name}. Activate to select.", vars));
+    button.title = `${app} · ${state.result?.path || ""}`;
   }
   return button;
 }
@@ -11230,31 +15194,7 @@ function hodlSelectBip85Bench() {
 }
 function hodlDeleteActiveBip85() {
   hodlDeleteStationTab(hodlBip85Tabs, (state) => {
-    let source = `key:bip85:${state.id}`;
-    if (hodlBip85Source === source) {
-      hodlBip85WipeParent();
-      document.getElementById("bip85-key").value = "";
-      hodlSyncBip85Parent();
-    }
-    hodlSpDropAddressesFrom(source);
-    if (hodlSpSource === source) {
-      hodlSpWipeKeys();
-      document.getElementById("sp-key").value = "";
-      document.getElementById("sp-pass").value = "";
-      hodlClearStationPassphrase("sp-pass");
-      document.getElementById("sp-out").replaceChildren();
-      document.getElementById("sp-session").textContent = hodlSpNote;
-    }
-    if (hodlPsbtSource === source) {
-      hodlPsbtWipeMem();
-      hodlPaintPsbtSession();
-      hodlSyncPsbtControls();
-    }
-    if (hodlVanitySource === source) {
-      hodlVanityCancel();
-      hodlVanityClearResults();
-      hodlVanitySource = "";
-    }
+    hodlReleaseBip85ChildSource(state);
     hodlBip85Result = null;
     hodlBip85DropChild(state);
   }, () => {
@@ -11274,13 +15214,18 @@ function hodlRunBip85() {
     result = deriveApplication(hodlBip85Root, hodlBip85Spec());
     let fingerprint = hodlBip85ChildFingerprint(result);
     let state = { isLab: false, id: hodlNextBip85ChildId++, name: fingerprint.value, result, reveal: false, fingerprint: fingerprint.value, fingerprintKind: fingerprint.kind, network: hodlBip85Testnet ? "testnet" : "mainnet",
-      parentFingerprint: hodlBip85Root ? hodlFingerprintHex(hodlBip85Root.fingerprint) : "" };
+      // The parent's identity, not just its fingerprint: two different roots
+      // can share a 32-bit fingerprint, and releasing one must not take the
+      // other's children (AR-05). The source names the Key Station tab or the
+      // BIP-85 child session the root came from.
+      parentFingerprint: hodlBip85Root ? hodlFingerprintHex(hodlBip85Root.fingerprint) : "",
+      parentSource: hodlBip85Source || "manual" };
     hodlBip85Children.push(state);
     hodlActiveBip85 = hodlBip85Children.length - 1;
     hodlBip85Result = state.result;
     result = null;
     hodlBip85Reveal = false;
-    hodlJournalLog("derive", fingerprint.value);
+    hodlJournalLog("derive", fingerprint.value, "bip85");
     if (session) session.textContent = hodlBip85Note;
     hodlRenderBip85Tabs();
     hodlSyncBip85View();
@@ -11328,6 +15273,418 @@ function hodlInitBip85() {
   }
   hodlBip85SyncOptions();
 }
+// The optional signer audit (the "PSBT you sent" field inside
+// #psbt-audit-options). When the field holds text, both PSBTs go through
+// the reference decoder and the signer-audit engine, and the report is
+// prepended to the Inspector's output so the live region announces the
+// verdict first. An empty field changes nothing — the Inspector output is
+// byte-identical to a run without the audit. A sent field that does not
+// decode fails closed: an error note, never a verdict. New signatures are
+// verified against the returned PSBT's own UTXO claims and the sent PSBT's
+// prevouts (psbt-signer-audit-verify.js) before the engine runs; a
+// signature that cannot be checked soundly is reported unverified, never
+// valid. Nonce, anti-exfil and wallet inputs are not wired here (the
+// Inspector's own results are not readable in this run path), so those
+// checks report "Not checked"/"Not available".
+// The audit is kept as data (the report and both documents, or the error
+// kind and detail) so a language change can paint it again in the new
+// language (Wicked's review of #1118); hodlPsbtSignerAuditMarkup renders
+// either. An error names the PSBT it is about: a raw transaction inspected
+// above is never blamed on the PSBT you sent (TC's review of #1118).
+function hodlPsbtSignerAuditMarkup(audit) {
+  return audit.error !== undefined ? hodlPsbtSignerAuditErrorHtml(audit.error) : hodlPsbtSignerAuditHtml(audit.report, audit.beforeDoc, audit.afterDoc, audit.network);
+}
+// The one-line overall verdict above the signer audit. It reads the audit's
+// own tier from the rendered section and the analysis's overall state from
+// the summary, so it can never disagree with either. It appears only when
+// the audit ran (an error section carries no tier).
+function hodlPsbtInsertOverall(output, rbfStored = "") {
+  let section = output.querySelector?.("[data-audit-section]"), tier = section?.dataset?.auditTier;
+  if (!tier) return;
+  // The RBF verdict counts as painted, or as handed in by a paint whose note
+  // could not be written, so a red one is never lost. Only "green", "neutral"
+  // and no verdict at all leave "no problems" open; anything else is at best
+  // a warning, as the note itself shows it.
+  let rbf = output.querySelector?.("[data-rbf-verdict]")?.dataset?.rbfVerdict || rbfStored || "",
+    rbfClear = rbf === "" || rbf === "green" || rbf === "neutral",
+    analysis = output.querySelector?.("[data-psbt-analysis-overall]")?.dataset?.psbtAnalysisOverall || "",
+    problem = analysis === "problem",
+    state = tier === "fail" || problem || rbf === "red" ? "bad" : tier === "pass" && analysis === "complete" && rbfClear ? "ok" : "warn",
+    text = state === "bad" ? hodlT("Overall: do not broadcast — see the checks below.") : state === "ok" ? hodlT("Overall: no problems in the listed checks.") : hodlT("Overall: review the warnings below.");
+  output.querySelector?.("[data-psbt-overall]")?.remove?.();
+  section.insertAdjacentHTML("beforebegin", "<p data-psbt-overall data-psbt-overall-state='" + state + "' class='psbt-" + state + "'><strong>" + text + "</strong></p>");
+}
+
+// Paints a signer audit into the Inspector's output in the answer-first
+// order: the answer block first, the audit after it, then the combined
+// overall line. Every repaint (Show more, a language change) goes through
+// here, so the order and the overall line never drift apart.
+function hodlPsbtPaintSignerAudit(output, audit) {
+  let markup = hodlPsbtSignerAuditMarkup(audit);
+  let answer = output.querySelector?.("[data-psbt-answer]");
+  if (answer) answer.insertAdjacentHTML("afterend", markup);
+  else output.insertAdjacentHTML("afterbegin", markup);
+  hodlPsbtInsertOverall(output);
+}
+function hodlPsbtPrependSignerAudit(output, returnedBytes, kind, network) {
+  let raw = String(document.getElementById("psbt-audit-before")?.value || "").trim();
+  if (!raw) return null;
+  let audit, stage = "sent-unreadable";
+  try {
+    if (kind !== "psbt") audit = { error: { kind: "returned-raw" } };
+    else {
+      let sentBytes = hodlPsbtBytesFromText(raw);
+      if (!isPsbtMagic(sentBytes)) audit = { error: { kind: "sent-raw" } };
+      else {
+        let beforeDoc = psbtInspectDoc(sentBytes), afterDoc, verification;
+        // Past the sent PSBT's decode, a throw is no longer about its text.
+        stage = "failed";
+        afterDoc = psbtInspectDoc(returnedBytes);
+        // Verification fails closed: an error here leaves the engine without
+        // its verification input, and every new signature is reported
+        // unverified rather than waved through.
+        try {
+          verification = hodlPsbtSignerAuditVerify(beforeDoc, afterDoc);
+        } catch {
+          verification = undefined;
+        }
+        audit = { report: hodlAuditSigner(beforeDoc, afterDoc, { verification }), beforeDoc, afterDoc, network };
+      }
+    }
+  } catch (exception) {
+    audit = { error: { kind: stage, detail: exception instanceof Error ? exception.message : String(exception) } };
+  }
+  // The audit sits after the answer block, never above it: the answer comes
+  // first, the audit's detail one click away.
+  hodlPsbtPaintSignerAudit(output, audit);
+  return audit;
+}
+// An audit upload belongs to the session it started in. Ending the session
+// bumps the generation, so a read still pending then can neither write the
+// sent PSBT back into the cleared field nor show a stale error (Wicked's
+// review of #1118).
+var hodlPsbtAuditUploadGeneration = 0;
+function hodlPsbtRetireAuditUploads() {
+  hodlPsbtAuditUploadGeneration += 1;
+}
+// An RBF-original upload belongs to the session it started in, exactly like
+// the audit upload: ending the session retires a read that is still pending.
+var hodlPsbtRbfUploadGeneration = 0;
+
+function hodlPsbtRetireRbfUploads() {
+  hodlPsbtRbfUploadGeneration += 1;
+}
+
+// The rendered verdict belongs to the exact pair of PSBTs it was computed
+// from: any change to either side retires it, so a green verdict can never
+// sit next to a different original. Typing in the original field that
+// leaves its trimmed text as it was inspected (a trailing space or line
+// break) changes neither side, so the verdict stays: a red one must not
+// vanish through an edit that changed nothing. The field's input listener
+// passes its event; every other caller retires unconditionally.
+function hodlPsbtClearRbfVerdict(event) {
+  if (event?.target?.id === "psbt-rbf-original" && hodlPsbtLast?.rbf
+    && String(event.target.value || "").trim() === hodlPsbtLast.rbfOriginal) return;
+  let output = document.getElementById("psbt-out"), note = output?.querySelector("[data-rbf-verdict]"),
+    retired = Boolean(note || hodlPsbtLast?.rbf);
+  note?.remove();
+  if (hodlPsbtLast) hodlPsbtLast.rbf = null;
+  if (output && retired) {
+    // The Overall line counted the verdict that is gone. It is worked out
+    // again without it, but never into something more favourable than what
+    // was on screen: a line that would go from "do not broadcast" or a
+    // warning to a milder one without a new Inspect is removed instead. Even
+    // an edit that leaves the same transactions (a trailing space) retires
+    // the verdict, so nothing here may read as a fresh result.
+    let rank = { bad: 2, warn: 1, ok: 0 }, shown = output.querySelector("[data-psbt-overall]")?.dataset?.psbtOverallState;
+    hodlPsbtInsertOverall(output);
+    let line = output.querySelector("[data-psbt-overall]"), now = line?.dataset?.psbtOverallState;
+    if (line && shown && (rank[now] ?? 0) < (rank[shown] ?? 0)) {
+      line.remove();
+      // Held off until the next Inspect, repaints included: the run keeps
+      // the state that was on screen, and a repaint only removes a line
+      // milder than that.
+      if (hodlPsbtLast) hodlPsbtLast.overallHeld = shown;
+    }
+  }
+  // A retired verdict must be one the user can compute again. The run stamp
+  // ignores surrounding whitespace, so an edit that is undone still matches
+  // it and Inspect would stay off: forget the stamp and let the ordinary
+  // input sync decide, as retiring the signer audit does.
+  if (retired) {
+    delete hodlPsbtInspected["psbt-go"];
+    hodlSyncPsbtControls();
+  }
+}
+
+function hodlPsbtLoadRbfUpload(file) {
+  // Each pick retires the reads still pending, so the last file chosen wins.
+  let generation = ++hodlPsbtRbfUploadGeneration;
+  (async () => {
+    try {
+      // Sized before it is read: the decoder's 5 MB bound must not be
+      // reached by first reading a far larger file into memory.
+      if (file.size > 5e6) throw new Error("This PSBT is too large to edit safely.");
+      let bytes = psbtBytesFromUpload(new Uint8Array(await file.arrayBuffer()));
+      if (generation !== hodlPsbtRbfUploadGeneration) return;
+      document.getElementById("psbt-rbf-original").value = hodlBytesToB64(bytes);
+      hodlPsbtClearRbfVerdict();
+      // A programmatic fill fires no input event: refresh Inspect and Clear
+      // like the audit upload does (typeof: narrow test slices).
+      if (typeof hodlSyncPsbtControls === "function") hodlSyncPsbtControls();
+    } catch (exception) {
+      if (generation !== hodlPsbtRbfUploadGeneration) return;
+      hodlSetPsbtError({ raw: exception.message || String(exception) });
+    }
+  })();
+}
+
+function hodlPsbtRbfAmount(value) {
+  if (typeof value === "bigint") return value;
+  if (Number.isInteger(value) && value >= 0) return BigInt(value);
+  throw new Error("An output amount must be a non-negative integer.");
+}
+
+function hodlPsbtRbfBtc(sats) {
+  let abs = sats < 0n ? -sats : sats;
+  return `${sats < 0n ? "-" : ""}${abs / 100000000n}.${String(abs % 100000000n).padStart(8, "0")}`;
+}
+
+function hodlPsbtRbfShowScript(scriptHex, network) {
+  try {
+    let address = addressFromScript(hodlHex.decode(scriptHex), network);
+    if (address) return address;
+  } catch {
+    // A script that does not decode on this network is shown as hex.
+  }
+  return scriptHex;
+}
+
+// checkRbfReplacement compares plain transaction descriptions. These build
+// them from the inspector's parsed shapes; input txids keep the byte order
+// the parser reports, the same on both sides of the comparison.
+function hodlPsbtRbfNormalizeTx(tx) {
+  return {
+    version: tx.version,
+    locktime: tx.locktime,
+    inputs: tx.inputs.map((input) => ({
+      txid: hodlHex.encode(input.txid),
+      vout: input.vout,
+      sequence: input.sequence,
+      sighash: null,
+      amount: null,
+      amountVerified: false,
+    })),
+    outputs: tx.outputs.map((output) => ({ script: hodlHex.encode(output.script), amount: hodlPsbtRbfAmount(output.amount) })),
+  };
+}
+
+function hodlPsbtRbfNormalizePsbt(doc) {
+  let normalized = hodlPsbtRbfNormalizeTx(doc.tx);
+  for (let i = 0; i < normalized.inputs.length; i++) {
+    let entries = doc.inputs[i] || [], input = normalized.inputs[i];
+    // BIP-174 input types: 0x00 non_witness_utxo, 0x01 witness_utxo,
+    // 0x03 sighash type.
+    let sighash = entries.find((entry) => entry.type === 3 && entry.keydata.length === 0);
+    if (sighash) {
+      if (sighash.val.length !== 4) throw new Error("A sighash type must be 4 bytes.");
+      input.sighash = hodlR32(sighash.val, 0);
+    }
+    let witness = entries.find((entry) => entry.type === 1 && entry.keydata.length === 0);
+    if (witness) {
+      if (witness.val.length < 8) throw new Error("A witness utxo is too short.");
+      input.amount = hodlPsbtRbfAmount(new DataView(witness.val.buffer, witness.val.byteOffset, witness.val.byteLength).getBigUint64(0, true));
+    }
+    let nonWitness = entries.find((entry) => entry.type === 0 && entry.keydata.length === 0);
+    if (nonWitness) {
+      let prevTx = parseRawTx(nonWitness.val), prevOutput = prevTx.outputs[input.vout];
+      if (!prevOutput) throw new Error("The non-witness utxo has no output at this input's index.");
+      input.amount = hodlPsbtRbfAmount(prevOutput.amount);
+      // Verified only when the previous transaction's txid — double SHA-256
+      // of its non-witness serialization — is the input's outpoint txid. A
+      // bare witness_utxo amount stays an unverified claim.
+      input.amountVerified = hodlHex.encode(hodlSha256(hodlSha256(serializeTx(prevTx)))) === input.txid;
+    }
+  }
+  return normalized;
+}
+
+function hodlPsbtRbfItemLine(item, network) {
+  let dest = item.script !== undefined ? hodlPsbtRbfShowScript(item.script, network) : "";
+  switch (item.code) {
+    case "payment-changed": return hodlT("A payment to {dest} changed from {before} BTC to {after} BTC.", { dest, before: hodlPsbtRbfBtc(item.before), after: hodlPsbtRbfBtc(item.after) });
+    case "payment-removed": return hodlT("A payment of {before} BTC to {dest} was removed.", { dest, before: hodlPsbtRbfBtc(item.before) });
+    case "change-removed": return hodlT("Your change output of {before} BTC was removed.", { before: hodlPsbtRbfBtc(item.before) });
+    case "change-decreased": return hodlT("Your change decreased from {before} BTC to {after} BTC.", { before: hodlPsbtRbfBtc(item.before), after: hodlPsbtRbfBtc(item.after) });
+    case "output-decreased-unverified": return hodlT("One output decreased. Check that it is your change.");
+    case "own-output-increased": return hodlT("An output this key derives increased from {before} BTC to {after} BTC.", { before: hodlPsbtRbfBtc(item.before), after: hodlPsbtRbfBtc(item.after) });
+    case "new-own-output": return hodlT("A new output of {after} BTC goes to an address this key derives.", { after: hodlPsbtRbfBtc(item.after) });
+    case "new-output-unverified": return hodlT("A new output of {after} BTC to {dest} appeared.", { dest, after: hodlPsbtRbfBtc(item.after) });
+    case "multiple-decreases": return hodlT("More than one output decreased.");
+    case "input-dropped": return hodlT("An input from the original transaction was dropped.");
+    case "input-added": return hodlT("An input was added.");
+    case "fee-incomplete": return hodlT("Fee comparison incomplete.");
+    case "fee-not-increased": return hodlT("The fee did not increase.");
+    case "version-changed": return hodlT("The transaction version changed.");
+    case "locktime-changed": return hodlT("The transaction locktime changed.");
+    case "sequence-changed": return hodlT("An input's sequence changed.");
+    case "sighash-changed": return hodlT("An input's sighash type changed.");
+    case "sighash-not-all": return hodlT("An input does not sign with SIGHASH_ALL.");
+    case "change-redirected": return hodlT("Your change was redirected: your own output went down or disappeared while a new output this key cannot derive appeared.");
+    default: return hodlT("A change this check does not recognize.");
+  }
+}
+
+function hodlPsbtRbfNote(verdict, lines) {
+  let cls = { green: "is-public", red: "is-private", amber: "is-caution", neutral: "is-muted" }[verdict] || "is-caution";
+  let headline = {
+    green: hodlT("Payments preserved; fee increased."),
+    red: hodlT("A payment was changed or removed."),
+    amber: hodlT("Additional review needed."),
+    neutral: hodlT("No shared inputs."),
+  }[verdict] || hodlT("Additional review needed.");
+  let html = `<div class="edge-note ${cls}" data-rbf-verdict="${verdict}"><p><strong>${headline}</strong></p>`;
+  if (verdict === "neutral") html += `<p>${hodlT("This does not directly replace the supplied transaction.")}</p>`;
+  if (lines.length > 0) html += `<ul>${lines.map((line) => `<li data-rbf-item="${line.code}">${line.message}</li>`).join("")}</ul>`;
+  html += `<p>${hodlT("This compares the supplied transactions. It does not confirm that the network will accept the replacement.")}</p></div>`;
+  return html;
+}
+
+// Paints a stored RBF verdict. The lines are built here, at paint time, so a
+// language switch re-translates them; the record itself holds no text.
+function hodlPsbtPaintRbf(output, rbf, network) {
+  let verdict = rbf.verdict;
+  try {
+    output.querySelector?.("[data-rbf-verdict]")?.remove?.();
+    let lines;
+    try {
+      lines = rbf.entries.map((entry) => {
+        if (entry.item) return { code: entry.code, message: hodlPsbtRbfItemLine(entry.item, network) };
+        if (entry.code === "replacement-raw") return { code: entry.code, message: hodlT("Inspect the fee-bump PSBT, not a raw transaction.") };
+        if (entry.code === "original-unreadable") return { code: entry.code, message: hodlT("The original transaction could not be read. Check the paste and Inspect again.") };
+        return null;
+      }).filter(Boolean);
+    } catch {
+      // A line that cannot be written must not take the verdict with it: the
+      // note is painted without its list, and a green one is not kept. The
+      // record keeps the downgrade, so a later repaint cannot turn the note
+      // or the Overall line more favourable without a new Inspect.
+      lines = [];
+      if (verdict === "green") verdict = rbf.verdict = "amber";
+    }
+    output.insertAdjacentHTML("afterbegin", hodlPsbtRbfNote(verdict, lines));
+  } finally {
+    // Even if the note itself could not be painted, the Overall line counts
+    // the verdict it stands for.
+    hodlPsbtInsertOverall(output, verdict);
+  }
+}
+
+// The fee-bump check (preview): compare the transaction the user broadcast
+// with the replacement PSBT being inspected and fail closed — a bump is
+// clean only when the payments are provably intact and the extra fee comes
+// out of the user's own change (Electrum GHSA-6jp4-8v48-cc5v).
+function hodlPsbtPrependRbfCheck(output, returnedBytes, kind, network, keep) {
+  let raw = String(document.getElementById("psbt-rbf-original")?.value || "").trim();
+  if (!raw) {
+    if (keep && typeof keep === "object") {
+      keep.rbf = null;
+      keep.original = "";
+    }
+    return null;
+  }
+  let result = null, record = { verdict: "amber", entries: [] };
+  if (kind !== "psbt") {
+    record = { verdict: "amber", entries: [{ code: "replacement-raw", item: null }] };
+  } else {
+    let original = null;
+    try {
+      let originalBytes = hodlPsbtBytesFromText(raw);
+      original = isPsbtMagic(originalBytes) ? hodlPsbtRbfNormalizePsbt(hodlParsePsbt(originalBytes)) : hodlPsbtRbfNormalizeTx(parseRawTx(originalBytes));
+    } catch {
+      // The original is the only side this failure can be blamed on.
+      result = null;
+      record = { verdict: "amber", entries: [{ code: "original-unreadable", item: null }] };
+    }
+    if (original) {
+      try {
+        let replacement = hodlPsbtRbfNormalizePsbt(hodlParsePsbt(returnedBytes));
+        let ownership = hodlSessionOwnership(network);
+        let ownsScript = ownership.size === 0 ? null : (scriptHex) => matchOwnership(ownership, hodlHex.decode(scriptHex)).state === "ours";
+        result = hodlCheckRbfReplacement({ original, replacement, ownsScript });
+        record = { verdict: result.verdict, entries: result.verdict === "neutral" ? [] : result.items.map((item) => ({ code: item.code, item })) };
+      } catch {
+        // The inspected PSBT failed to normalize or compare: never blame the
+        // original, and never pass.
+        result = null;
+        record = { verdict: "amber", entries: [] };
+      }
+    }
+  }
+  if (keep && typeof keep === "object") {
+    keep.rbf = record;
+    // The trimmed text the verdict was computed from, so the retire can
+    // tell an edit that changed it from one that did not.
+    keep.original = raw;
+  }
+  hodlPsbtPaintRbf(output, record, network);
+  return result;
+}
+async function hodlPsbtLoadAuditUpload(chosen) {
+  const generation = ++hodlPsbtAuditUploadGeneration;
+  try {
+    if (chosen.size > 5e6) throw new Error("This PSBT is too large to edit safely.");
+    const bytes = psbtBytesFromUpload(new Uint8Array(await chosen.arrayBuffer()));
+    if (generation !== hodlPsbtAuditUploadGeneration) return;
+    document.getElementById("psbt-audit-before").value = hodlBytesToB64(bytes);
+    hodlPsbtClearSignerAudit();
+  } catch (exception) {
+    if (generation !== hodlPsbtAuditUploadGeneration) return;
+    hodlSetPsbtError({ raw: exception.message || String(exception) });
+  }
+  hodlSyncPsbtControls();
+}
+// A shown signer-audit verdict belongs to the exact pair of PSBTs it was
+// computed from: any edit inside the card retires it on the spot, so a
+// stale verdict is never left on screen. The next Inspect re-runs it.
+function hodlPsbtClearSignerAudit() {
+  const output = document.getElementById("psbt-out");
+  const section = output?.querySelector("[data-audit-section]");
+  // The RBF verdict is retired for the same reasons, and before the early
+  // return below: it must go even when no audit section is on screen.
+  hodlPsbtClearRbfVerdict();
+  // The cached report counts as a shown verdict even when a repaint left it
+  // out of the DOM: both are retired together (Wicked's review of #1118).
+  if (!section && !hodlPsbtLast?.audit) return;
+  section?.remove();
+  // The combined overall line was computed from the verdict: it goes with it.
+  output?.querySelector("[data-psbt-overall]")?.remove();
+  // Nor may a language change paint the retired verdict again.
+  if (hodlPsbtLast) hodlPsbtLast.audit = null;
+  // The verdict belonged to the exact pair of PSBTs it was computed from, so
+  // retiring it must also let the user re-run Inspect on those same inputs.
+  // The run stamp ignores surrounding whitespace, so an edit that is undone
+  // (or a trailing space) still matches it: forget the stamp, then let the
+  // ordinary input sync decide, so a field that does not decode never
+  // enables Inspect (Wicked's review of #1118).
+  delete hodlPsbtInspected["psbt-go"];
+  hodlSyncPsbtControls();
+}
+
+// An input event in the Inspector card either changes nothing the run read
+// or it changes the result. While the fields still match the stamp the run
+// was made with, every verdict stays on screen. Once they differ the whole
+// result goes: it was computed from fields that are no longer there.
+function hodlPsbtCardEdited() {
+  let output = document.getElementById("psbt-out"), stamp = hodlPsbtInspected["psbt-go"];
+  if (stamp === undefined && !hodlPsbtLast && !output?.childElementCount) return;
+  if (stamp !== undefined && stamp === hodlPsbtRunStamp(hodlPsbtCards.find((entry) => entry.go === "psbt-go"))) return;
+  hodlPsbtClearSignerAudit();
+  output?.replaceChildren?.();
+  hodlPsbtLast = null;
+  delete hodlPsbtInspected["psbt-go"];
+  hodlSyncPsbtControls();
+}
 function hodlRunPsbt() {
   let output = document.getElementById("psbt-out"), manual = document.getElementById("psbt-key").value;
   hodlSetPsbtError(null);
@@ -11351,8 +15708,15 @@ function hodlRunPsbt() {
     let bytes = hodlPsbtBytes(document.getElementById("psbt-text").value);
     let kind = isPsbtMagic(bytes) ? "psbt" : "transaction";
     let sourceTag = hodlSha256(bytes), checkedAt = new Date().toISOString();
-    if (kind === "psbt") output.innerHTML = hodlRenderPsbt(hodlParsePsbt(bytes), sourceTag, checkedAt, "inspect");
-    else output.innerHTML = hodlRenderRawTx(parseRawTx(bytes), sourceTag, checkedAt, "inspect");
+    let parsed = kind === "psbt" ? hodlParsePsbt(bytes) : parseRawTx(bytes), network = hodlInspectorNetwork();
+    let limits = { inputs: PSBT_INSPECTOR_LIMIT, outputs: PSBT_INSPECTOR_LIMIT, step: PSBT_INSPECTOR_LIMIT, format: hodlFormatCount };
+    output.innerHTML = kind === "psbt" ? hodlRenderPsbt(parsed, sourceTag, checkedAt, "inspect", { network, limits }) : hodlRenderRawTx(parsed, sourceTag, checkedAt, "inspect", { network, limits });
+    let audit = hodlPsbtPrependSignerAudit(output, bytes, kind, network);
+    // The RBF verdict is prepended after the audit so it
+    // renders above it (Electrum GHSA-6jp4-8v48-cc5v).
+    let keep = {};
+    hodlPsbtPrependRbfCheck(output, bytes, kind, network, keep);
+    hodlPsbtLast = { kind, parsed, sourceTag, checkedAt, network, limits, audit, rbf: keep.rbf ?? null, rbfOriginal: keep.original ?? "" };
     hodlJournalLog("inspect", kind, "psbt");
   } catch (exception) {
     hodlPsbtLast = null;
@@ -11362,7 +15726,17 @@ function hodlRunPsbt() {
   }
 }
 
-var hodlSpHd = null, hodlSpKeys = null, hodlSpNote = "No session key. Receive and verify need a seed or root xprv.", hodlSpMode = "receive", hodlSpReveal = false, hodlSpSource = "";
+var hodlSpHd = null, hodlSpKeys = null, hodlSpNote = hodlNote("No session key. Receive and verify need a seed or root xprv."), hodlSpMode = "receive", hodlSpReveal = false, hodlSpSource = "";
+// The SP session line keeps the note it shows, so a language switch paints
+// that same note again rather than whatever the station holds by then.
+var hodlSpSessionShown = null;
+function hodlPaintSpSession(note) {
+  if (note === undefined) note = hodlSpSessionShown;
+  if (!note) return;
+  hodlSpSessionShown = note;
+  let session = document.getElementById("sp-session");
+  if (session) session.textContent = hodlFormatNote(note);
+}
 function hodlSpWipeKeys() {
   if (hodlSpKeys) {
     try { hodlSpKeys.scanPriv && hodlSpKeys.scanPriv.fill(0); } catch {}
@@ -11375,12 +15749,13 @@ function hodlSpWipeKeys() {
   hodlSpHd = null;
   hodlSpSource = "";
   hodlSpParentFingerprint = "";
-  hodlSpNote = "No session key. Receive and verify need a seed or root xprv.";
+  hodlSpNote = hodlNote("No session key. Receive and verify need a seed or root xprv.");
 }
 function hodlSpWipeMem() {
   hodlSpWipeKeys();
   hodlSpReveal = false;
   hodlSpVerifyMatches = null;
+  hodlSpSendLast = null;
   // Address tabs hold their own scan and spend keys: a page-wide clear takes
   // them too, back to the bare station.
   for (let state of hodlSpAddresses) if (!state.isLab) hodlSpWipeAddress(state);
@@ -11407,8 +15782,9 @@ function hodlSpResetStation(message) {
   if (account) account.value = "0";
   document.getElementById("sp-out").innerHTML = "";
   hodlSpVerifyMatches = null;
+  hodlSpSendLast = null;
   document.getElementById("sp-error").textContent = "";
-  document.getElementById("sp-session").textContent = message;
+  hodlPaintSpSession(message);
   hodlRefreshStationKeyPickers();
 }
 // Silent Payments address tabs. The station is the bench; each Derive files
@@ -11435,19 +15811,20 @@ function hodlSpWipeAddress(state) {
   state.keys = null;
 }
 function hodlCreateSpTab(index) {
-  let { state, active, button, label } = hodlStationTabButton(hodlSpTabs, index), name = state.isLab ? "SP Station" : hodlSpTabName(state);
+  let { state, active, button, label } = hodlStationTabButton(hodlSpTabs, index), name = state.isLab ? hodlTText("SP Station") : hodlSpTabName(state);
   label.textContent = name;
   if (state.isLab) {
     button.append(hodlCreateSilentPaymentsIcon(), label);
-    button.setAttribute("aria-label", "SP Station" + (active ? ", selected" : ". Activate to derive a silent payment address."));
-    button.title = "Derive a silent payment address";
+    button.setAttribute("aria-label", active ? hodlTText("SP Station, selected") : hodlTText("SP Station. Activate to derive a silent payment address."));
+    button.title = hodlTText("Derive a silent payment address");
   } else {
     hodlAppendSessionKeyLifehashes(button, state, state.fingerprint);
     button.append(label);
     let lineage = state.parentFingerprint ? " " + hodlTText("child of parent {fingerprint}", { fingerprint: state.parentFingerprint }) : "";
     let shared = hodlSpTabCollides(state) ? hodlTText(", shares its fingerprint with another wallet") : "";
-    button.setAttribute("aria-label", `Silent payment address ${name}` + lineage + shared + `${state.network === "mainnet" ? "" : ", testnet"}${active ? ", selected" : ". Activate to select."}`);
-    button.title = `Account ${state.account}${state.label === null ? " · unlabeled" : ` · label m = ${state.label}`}`;
+    let vars = { name, lineage, shared, network: state.network === "mainnet" ? "" : hodlTText(", testnet") };
+    button.setAttribute("aria-label", hodlTText(active ? "Silent payment address {name}{lineage}{shared}{network}, selected" : "Silent payment address {name}{lineage}{shared}{network}. Activate to select.", vars));
+    button.title = hodlTText(state.label === null ? "Account {account} · unlabeled" : "Account {account} · label m = {label}", { account: state.account, label: state.label });
   }
   return button;
 }
@@ -11496,14 +15873,14 @@ function hodlSpCoinType() {
 function hodlSpLoadKey(text, passphrase) {
   hodlSpWipeKeys();
   let value = String(text || "").trim();
-  if (!value) throw new Error("Paste a BIP39 seed phrase or a BIP32 root xprv/tprv.");
+  if (!value) throw hodlError("Paste a BIP39 seed phrase or a BIP32 root xprv/tprv.");
   if (/^[xt]prv[1-9A-HJ-NP-Za-km-z]+$/.test(value.replace(/\s/g, ""))) {
     let parsed = hodlParseExtendedKey(value.replace(/\s/g, ""));
     if (!parsed.isPrivate) throw new Error("Watch-only extended keys cannot derive BIP-352 scan/spend paths.");
     if (parsed.node.depth !== 0) throw new Error("Silent Payments needs a BIP32 root private key (depth 0), not an account xprv.");
     hodlSpHd = parsed.node;
     hodlSpSource = "manual";
-    hodlSpNote = `Session key: root ${parsed.prefix}. Kept in page memory only.`;
+    hodlSpNote = hodlNote("Session key: root {prefix}. Kept in page memory only.", { prefix: parsed.prefix });
     return;
   }
   let mnemonic = hodlValidateMnemonic(value);
@@ -11511,14 +15888,19 @@ function hodlSpLoadKey(text, passphrase) {
     if (mnemonic.error?.key) throw hodlError(mnemonic.error.key, mnemonic.error.vars);
     throw hodlError("Enter a BIP39 seed phrase or a BIP32 root xprv/tprv.");
   }
-  let seed = hodlMnemonicToSeed(mnemonic.words.join(" "), passphrase || "");
+  let indices = hodlWordIndices(mnemonic.words), seed;
+  try {
+    seed = hodlSeedFromIndices(indices, passphrase || "");
+  } finally {
+    indices.fill(0);
+  }
   try {
     hodlSpHd = hodlHDKey.fromMasterSeed(seed);
   } finally {
     seed.fill(0);
   }
   hodlSpSource = "manual";
-  hodlSpNote = "Session key: BIP39 seed" + (passphrase ? " + passphrase" : "") + ". Kept in page memory only.";
+  hodlSpNote = passphrase ? hodlNote("Session key: BIP39 seed + passphrase. Kept in page memory only.") : hodlNote("Session key: BIP39 seed. Kept in page memory only.");
 }
 function hodlSpUseKey(state) {
   if (!state || !state.result) throw new Error("Derive a key in Key Station first, then return to SP Station.");
@@ -11526,10 +15908,10 @@ function hodlSpUseKey(state) {
   hodlSpWipeKeys();
   if (result.kind === "hd" && hodlResultHasSeed(result)) {
     hodlSpHd = hodlSeedSessionRoot(result, state.fields.pass || "");
-    hodlSpNote = "Session key from " + (state.name || "existing key") + " (BIP39 seed). Kept in page memory only.";
+    hodlSpNote = hodlNote("Session key from {name} (BIP39 seed). Kept in page memory only.", { name: state.name || hodlNote("existing key") });
   } else if (result.kind === "hd" && hodlResultHasRoot(result)) {
     hodlSpHd = hodlResultRootNode(result);
-    hodlSpNote = "Session key from " + (state.name || "existing key") + " (root xprv). Kept in page memory only.";
+    hodlSpNote = hodlNote("Session key from {name} (root xprv). Kept in page memory only.", { name: state.name || hodlNote("existing key") });
   } else throw new Error("SP Station needs a seed or root xprv. Account-level and single keys cannot derive m/352'.");
   hodlSpSource = "key:" + state.id;
   // A BIP-85 child remembers its parent, so its address tabs show the lineage.
@@ -11543,7 +15925,7 @@ function hodlPickSpSessionKey(state) {
     // The station's key field shows the words, as the user would type them.
     document.getElementById("sp-key").value = hodlResultMnemonic(state.result) || hodlResultRootXprv(state.result) || "";
     hodlSetStationPassphrase("sp-pass", hodlResultHasSeed(state.result) ? state.fields?.pass : "");
-    document.getElementById("sp-session").textContent = hodlSpNote;
+    hodlPaintSpSession(hodlSpNote);
   } catch (exception) {
     if (error) error.textContent = exception.message || String(exception);
   }
@@ -11562,8 +15944,8 @@ function hodlSpEnsureHd() {
     }
     hodlRefreshStationKeyPickers();
   }
-  if (!hodlNodeHasPrivateKey(hodlSpHd)) throw new Error("Choose a compatible existing key, or enter a BIP39 seed or root xprv.");
-  document.getElementById("sp-session").textContent = hodlSpNote;
+  if (!hodlNodeHasPrivateKey(hodlSpHd)) throw hodlError("Choose a compatible existing key, or enter a BIP39 seed or root xprv.");
+  hodlPaintSpSession(hodlSpNote);
 }
 function hodlSpDeriveSessionKeys() {
   hodlSpEnsureHd();
@@ -11593,12 +15975,21 @@ function hodlSpDeriveSessionKeys() {
   scanNode.wipePrivateData();
   spendNode.wipePrivateData();
 }
+// A paste is parsed as one string and then derived per item. Both bounds are
+// well past a real transaction or the largest practical scan while keeping a
+// pasted wall of text, or an array of tiny items, from locking the tab.
+const hodlSpMaxVinText = 4 * 1024 * 1024;
+const hodlSpMaxVins = 100000;
+const hodlSpMaxOutputText = 8 * 1024 * 1024;
+const hodlSpMaxOutputs = 100000;
 function hodlSpParseVins(text) {
   let raw = String(text || "").trim();
   if (!raw) throw new Error("Paste BIP-352 vin JSON.");
+  if (raw.length > hodlSpMaxVinText) throw new Error("The pasted vin JSON is too large.");
   let parsed = JSON.parse(raw);
   if (parsed && Array.isArray(parsed.vin)) parsed = parsed.vin;
   if (!Array.isArray(parsed) || !parsed.length) throw new Error("Vin JSON must be a non-empty array.");
+  if (parsed.length > hodlSpMaxVins) throw new Error(`Vin JSON holds at most ${hodlSpMaxVins} inputs.`);
   return parsed;
 }
 function hodlSpParseRecipients(text) {
@@ -11607,12 +15998,17 @@ function hodlSpParseRecipients(text) {
 function hodlSpParseOutputs(text) {
   let raw = String(text || "").trim();
   if (!raw) throw new Error("Paste at least one 32-byte x-only taproot output key.");
+  if (raw.length > hodlSpMaxOutputText) throw new Error("The pasted output list is too large.");
+  let outputs;
   if (raw.startsWith("[")) {
     let parsed = JSON.parse(raw);
     if (!Array.isArray(parsed)) throw new Error("Output JSON must be an array of hex strings.");
-    return parsed.map(String);
+    outputs = parsed.map(String);
+  } else {
+    outputs = raw.split(/\s+/).map((item) => item.replace(/^0x/i, "")).filter(Boolean);
   }
-  return raw.split(/\s+/).map((item) => item.replace(/^0x/i, "")).filter(Boolean);
+  if (outputs.length > hodlSpMaxOutputs) throw new Error(`At most ${hodlSpMaxOutputs} outputs are scanned at once.`);
+  return outputs;
 }
 function hodlSpParseLabels(text) {
   let raw = String(text || "").trim();
@@ -11723,16 +16119,16 @@ function hodlRenderSpAddress(state) {
     <div class="sp-result">
       ${collision}
       <div class="sp-copy sp-address" data-copy-group>
-        <p class="label copy-field-label">${hodlT("Your new Silent Payment address")}${labeled ? ` · label m = ${m}${m === 0 ? " (change)" : ""}` : ""}<span class="copy-status copy-field-status" data-copy-status aria-live="polite"></span></p>
+        <p class="label copy-field-label">${hodlT("Your new Silent Payment address")}${labeled ? " · " + (m === 0 ? hodlT("label m = {m} (change)", { m }) : hodlT("label m = {m}", { m })) : ""}<span class="copy-status copy-field-status" data-copy-status aria-live="polite"></span></p>
         <button type="button" class="mono copy-field-value sp-address-value" id="sp-address-value" data-copy-field data-public-value data-i18n-skip translate="no" title="${hodlTAttr("Copy")}">${hodlSpEscape(address)}</button>
         <button type="button" class="sp-qr" data-copy-field data-copy-value="${hodlSpEscape(address)}" aria-label="${hodlTAttr("Copy address")}" title="${hodlTAttr("Copy")}">${hodlQrSvg(address)}</button>
       </div>
       ${copyGroup(hodlT("BIP-321 URI"), "sp-bip321-uri", uri)}
       ${copyGroup(hodlT("BIP-353 DNS TXT"), "sp-bip353-txt", txt)}
-      <p class="edge-note is-public">${named ? `Create a TXT record at <code>${hodlSpEscape(named.lookup)}</code> for <code>${hodlSpEscape(named.name)}</code>.` : "Name the record <code>you@yourdomain</code> above and this prints its lookup, e.g. <code>you.user._bitcoin-payment.yourdomain</code>."} This page does not resolve DNS.</p>
+      <p class="edge-note is-public">${named ? hodlT("Create a TXT record at <code>{lookup}</code> for <code>{name}</code>. This page does not resolve DNS.", { lookup: named.lookup, name: named.name }) : hodlT("Name the record <code>you@yourdomain</code> above and this prints its lookup, e.g. <code>you.user._bitcoin-payment.yourdomain</code>. This page does not resolve DNS.")}</p>
       ${copyGroup(hodlT("Scan public key"), "sp-scan-pub", hodlSpBytesToHex(keys.scanPub))}
       ${copyGroup(hodlT("Spend public key"), "sp-spend-pub", hodlSpBytesToHex(keys.spendPub))}
-      <p class="edge-note is-muted">Scan path ${hodlPublicInlineHtml(keys.scanPath, { clipboard: false })} · Spend path ${hodlPublicInlineHtml(keys.spendPath, { clipboard: false })}</p>
+      <p class="edge-note is-muted">${hodlT("Scan path")} ${hodlPublicInlineHtml(keys.scanPath, { clipboard: false })} · ${hodlT("Spend path")} ${hodlPublicInlineHtml(keys.spendPath, { clipboard: false })}</p>
       <div class="wallet-data-actions no-print">${hodlPrivacyBarMarkup({ id: "sp-reveal", revealed: secrets, describedBy: "" })}</div>
       <div class="wallet-data-fields">
         ${privateField(`${hodlT("BIP-392 watch-only")}\u00a0<code>spscan</code>`, "sp-spscan", spscan)}
@@ -11762,7 +16158,11 @@ function hodlSpDeriveVinKeys(vins) {
   const derived = [];
   let complete = false;
   try {
-    const resolved = vins.map((vin, i) => {
+    const resolved = vins.map((rawVin, i) => {
+      // A pasted witness array may carry hex-string items (JSON); read them
+      // as bytes before anything reads the witness, exactly as the library
+      // path does in normalizeVin, so both flows see the same input.
+      const vin = normalizeVinWitness(rawVin);
       // The published BIP-352 vectors carry raw per-input scalars; the UI flow
       // derives from the session instead. (The library function keeps vector
       // support for the test suite.)
@@ -11771,8 +16171,16 @@ function hodlSpDeriveVinKeys(vins) {
       }
       // Only inputs of the eligible script types take part; anything else is
       // skipped by the sender and needs no key.
-      const extracted = extractInputPubKey(vin);
-      if (!extracted) return vin;
+      if (vinHasSpendData(vin)) {
+        const extracted = extractInputPubKey(vin);
+        if (!extracted) return vin;
+      } else {
+        // A sender has no signatures yet: an input with no spend data (empty
+        // scriptSig and witness) is eligible on its prevout script type
+        // alone, and the lie check below verifies the derived key against it.
+        const prevoutScript = vinPrevoutScript(vin);
+        if (!isP2pkh(prevoutScript) && !isP2wpkh(prevoutScript) && !isP2sh(prevoutScript) && !isP2tr(prevoutScript)) return vin;
+      }
       if (vin.fingerprint !== undefined && String(vin.fingerprint).toLowerCase().replace(/^0x/, "") !== fingerprint) {
         throw new Error(`Input ${i}: origin fingerprint ${vin.fingerprint} is not this session's ${fingerprint}.`);
       }
@@ -11785,6 +16193,7 @@ function hodlSpDeriveVinKeys(vins) {
         }
         path = hit.path;
       }
+      if (/^m'?$/.test(path)) throw new Error(`Input ${i}: path must name a child of the session root ("m/…").`);
       if (!/^m(\/|$)/.test(path)) throw new Error(`Input ${i}: path must start at the session root ("m/…").`);
       let node = null, nodePrivateKey = null;
       try {
@@ -11817,7 +16226,9 @@ function hodlSpDeriveVinKeys(vins) {
         return resolved;
       } finally {
         if (nodePrivateKey) nodePrivateKey.fill(0);
-        if (node) node.wipePrivateData();
+        // The root belongs to the session; never wipe it as if it were a
+        // disposable child.
+        if (node && node !== root) node.wipePrivateData();
       }
     });
     complete = true;
@@ -11843,35 +16254,58 @@ function hodlRenderSpSend() {
   } finally {
     hodlSpWipeVinKeys(keyedVins);
   }
-  if (!result.outputs.length) {
-    document.getElementById("sp-out").innerHTML = `<p class="psbt-warn">No silent payment outputs. Eligible inputs may be missing, the private-key sum may be zero, or a scan-key group exceeded K<sub>max</sub> = 2323.</p>`;
+  // Only the public result is kept (output keys and what the URI asked for),
+  // so a language switch paints it again without deriving any input key.
+  hodlSpSendLast = {
+    network: hodlSpNetwork(),
+    outputs: result.outputs,
+    alternatives: parsed.alternatives,
+    lightning: parsed.lightning,
+    recipients: parsed.recipients.map((recipient) => ({ address: recipient.address, fallbackAddress: recipient.fallbackAddress, amountSats: recipient.amountSats })),
+  };
+  hodlPaintSpSend();
+}
+// The last send's public result; cleared with the results.
+var hodlSpSendLast = null;
+function hodlPaintSpSend() {
+  let out = document.getElementById("sp-out"), sent = hodlSpSendLast;
+  if (!out || !sent) return;
+  if (!sent.outputs.length) {
+    // <sub> is not catalog markup, so K_max stays outside the translated
+    // sentence: {kmax} survives translation and is filled in after it.
+    out.innerHTML = `<p class="psbt-warn">${hodlT("No silent payment outputs. Eligible inputs may be missing, the private-key sum may be zero, or a scan-key group exceeded {kmax}.").replace("{kmax}", "K<sub>max</sub> = 2323")}</p>`;
     return;
   }
-  let network = hodlSpNetwork();
+  let network = sent.network;
   // A URI's payment intent is surfaced, never silently dropped (issues #321,
   // #326): requested amounts are shown for the sender to enter manually —
   // this page builds output scripts only — and a URI that offered several
   // payment instructions says which one was selected.
   let notes = "";
-  if (parsed.alternatives) notes += `<p class="psbt-warn">The URI offered ${parsed.alternatives} alternative payment instructions. The first silent-payment address was selected; the rest are not paid.</p>`;
-  parsed.recipients.forEach((recipient, index) => {
+  if (sent.alternatives) notes += `<p class="psbt-warn">${hodlT("The URI offered {count} alternative payment instructions. The first silent-payment address was selected; the rest are not paid.", { count: sent.alternatives })}</p>`;
+  sent.recipients.forEach((recipient, index) => {
     if (recipient.fallbackAddress) {
       notes += `<p class="psbt-warn">${hodlT("Recipient {n}: using Silent Payments. The URI's fallback address {address} was not used.", { n: index + 1, address: recipient.fallbackAddress })}</p>`;
     }
     if (recipient.amountSats !== null) {
-      notes += `<p class="psbt-warn">The URI requested ${hodlSats(BigInt(recipient.amountSats))} BTC for recipient ${index + 1} (${hodlSpEscape(recipient.address.slice(0, 20))}…). This page builds output scripts only — enter the amount yourself when funding.</p>`;
+      notes += `<p class="psbt-warn">${hodlT("The URI requested {amount} BTC for recipient {n} ({address}…). This page builds output scripts only — enter the amount yourself when funding.", { amount: hodlSats(BigInt(recipient.amountSats)), n: index + 1, address: recipient.address.slice(0, 20) })}</p>`;
     }
   });
   // BIP352 keeps every generated output, duplicates included (issue #332);
   // say so only when a repeat actually occurs.
-  const repeated = result.outputs.length - new Set(result.outputs).size;
-  document.getElementById("sp-out").innerHTML = `<p class="psbt-ok">${result.outputs.length} taproot output${result.outputs.length === 1 ? "" : "s"}.</p>` + (repeated ? `<p class="muted">${repeated} repeated output${repeated === 1 ? "" : "s"} kept on purpose: every generated BIP352 output belongs in the transaction.</p>` : "") + notes + (parsed.lightning ? `<p class="muted">Lightning parameters in the URI were ignored. This page does not pay invoices or offers.</p>` : "") + result.outputs.map((xonly, index) => {
-    let address = p2trAddressFromXonly(xonly, network), publicKeyLabel = hodlTText("Output public key");
-    return hodlSpCopyGroupHtml(hodlT("Output {n}", { n: index + 1 }), `sp-out-addr-${index}`, address, `<p>${hodlPublicInlineHtml(xonly, { id: `sp-out-xonly-${index}`, className: "psbt-kv", label: publicKeyLabel })}</p>`);
-  }).join("");
+  const count = sent.outputs.length, repeated = count - new Set(sent.outputs).size;
+  out.innerHTML = `<p class="psbt-ok">${hodlT(count === 1 ? "{count} taproot output." : "{count} taproot outputs.", { count })}</p>`
+    + (repeated ? `<p class="muted">${hodlT(repeated === 1 ? "{count} repeated output kept on purpose: every generated BIP352 output belongs in the transaction." : "{count} repeated outputs kept on purpose: every generated BIP352 output belongs in the transaction.", { count: repeated })}</p>` : "")
+    + notes
+    + (sent.lightning ? `<p class="muted">${hodlT("Lightning parameters in the URI were ignored. This page does not pay invoices or offers.")}</p>` : "")
+    + sent.outputs.map((xonly, index) => {
+      let address = p2trAddressFromXonly(xonly, network), publicKeyLabel = hodlTText("Output public key");
+      return hodlSpCopyGroupHtml(hodlT("Output {n}", { n: index + 1 }), `sp-out-addr-${index}`, address, `<p>${hodlPublicInlineHtml(xonly, { id: `sp-out-xonly-${index}`, className: "psbt-kv", label: publicKeyLabel })}</p>`);
+    }).join("");
 }
-// The last scan's matches, kept so the reveal switch repaints without
-// scanning again; cleared with the results. One switch covers every match.
+// The last scan's matches, kept so the reveal switch and a language switch
+// repaint without scanning again; cleared with the results. One switch
+// covers every match.
 var hodlSpVerifyMatches = null;
 function hodlRenderSpVerify() {
   hodlSpDeriveSessionKeys();
@@ -11883,24 +16317,32 @@ function hodlRenderSpVerify() {
     outputs: hodlSpParseOutputs(document.getElementById("sp-verify-outputs")?.value),
     labels,
   });
-  if (!result.outputs.length) {
-    document.getElementById("sp-out").innerHTML = `<p class="muted">No matching silent payment outputs for this scan key and label set.</p>`;
-    return;
-  }
   hodlSpVerifyMatches = { network: hodlSpNetwork(), rows: result.outputs, reveal: false };
   hodlPaintSpVerify();
 }
 function hodlPaintSpVerify() {
   let out = document.getElementById("sp-out"), matches = hodlSpVerifyMatches;
   if (!out || !matches) return;
-  let revealed = matches.reveal;
+  if (!matches.rows.length) {
+    out.innerHTML = `<p class="muted">${hodlT("No matching silent payment outputs for this scan key and label set.")}</p>`;
+    return;
+  }
+  let revealed = matches.reveal, count = matches.rows.length;
   // The switch sits between the status line and the matches it controls.
   let bar = `<div class="wallet-data-actions no-print">${hodlPrivacyBarMarkup({ id: "sp-verify-reveal", revealed, describedBy: "" })}</div>`;
-  out.innerHTML = `<p class="psbt-ok">${matches.rows.length} matching output${matches.rows.length === 1 ? "" : "s"}.</p>${bar}` + matches.rows.map((row, index) => {
+  out.innerHTML = `<p class="psbt-ok">${hodlT(count === 1 ? "{count} matching output." : "{count} matching outputs.", { count })}</p>${bar}` + matches.rows.map((row, index) => {
     let address = p2trAddressFromXonly(row.pub_key, matches.network);
     // The spend key is only computed while revealed.
-    let spend = revealed && hodlSpKeys ? hodlSpBytesToHex(spendPrivForOutput(hodlSpKeys.spendPriv, row.priv_key_tweak)) : "";
-    let labelNote = row.label === null ? "" : ` · label m = ${row.label}${row.label === 0 ? " (change)" : ""}`;
+    let spend = "";
+    if (revealed && hodlSpKeys) {
+      let spendBytes = spendPrivForOutput(hodlSpKeys.spendPriv, row.priv_key_tweak);
+      try {
+        spend = hodlSpBytesToHex(spendBytes);
+      } finally {
+        spendBytes.fill(0);
+      }
+    }
+    let labelNote = row.label === null ? "" : " · " + (row.label === 0 ? hodlT("label m = {m} (change)", { m: row.label }) : hodlT("label m = {m}", { m: row.label }));
     return hodlSpCopyGroupHtml(hodlT("Matched output {n}", { n: index + 1 }) + labelNote, "", address,
       `${hodlPrivateFieldHtml("BIP-352 tweak", row.priv_key_tweak, undefined, "label", true)}${hodlPrivateFieldMarkup(`${hodlT("Spend private key")}${hodlPrivacyEyeMarkup(revealed)}`, hodlPrivateValue(spend, undefined, revealed), { revealed })}`);
   }).join("");
@@ -11910,11 +16352,21 @@ function hodlPaintSpVerify() {
     requestAnimationFrame(() => document.getElementById("sp-verify-reveal")?.focus({ preventScroll: true }));
   });
 }
+// A language switch paints the station's session line, its address view and
+// its last send or scan again, from what each kept; nothing is re-derived.
+function hodlRefreshSpLocale() {
+  hodlPaintSpSession();
+  if (hodlSpSendLast) hodlPaintSpSend();
+  else if (hodlSpVerifyMatches) hodlPaintSpVerify();
+  let state = hodlSpAddresses[hodlActiveSp], view = document.getElementById("sp-address-view");
+  if (state && !state.isLab && view && !view.hidden) hodlRenderSpAddress(state);
+}
 function hodlRunSp() {
   let error = document.getElementById("sp-error"), output = document.getElementById("sp-out"), mode = hodlSpMode;
   error.textContent = "";
   output.innerHTML = "";
   hodlSpVerifyMatches = null;
+  hodlSpSendLast = null;
   let run = () => {
     try {
       if (mode === "send") hodlRenderSpSend();
@@ -11944,19 +16396,20 @@ function hodlInitSp() {
     if (!hodlSpSource.startsWith("key:")) return;
     hodlSpWipeKeys();
     hodlSpSource = document.getElementById("sp-key").value.trim() ? "manual" : "";
-    document.getElementById("sp-session").textContent = hodlSpSource ? "Manual session key entered. It will be validated when you use this Station." : hodlSpNote;
+    if (hodlSpSource) hodlSpNote = hodlNote("Manual session key entered. It will be validated when you use this Station.");
+    hodlPaintSpSession(hodlSpNote);
     hodlRefreshStationKeyPickers();
   };
   document.getElementById("sp-key").addEventListener("input", detachStationKey);
   document.getElementById("sp-pass").addEventListener("input", detachStationKey);
   document.querySelectorAll("#sp-modes [data-sp-mode]").forEach((button) => {
-    button.onclick = () => { hodlSpSetMode(button.dataset.spMode); hodlSpVerifyMatches = null; document.getElementById("sp-out").innerHTML = ""; document.getElementById("sp-error").textContent = ""; hodlSyncSpControls(); };
+    button.onclick = () => { hodlSpSetMode(button.dataset.spMode); hodlSpVerifyMatches = null; hodlSpSendLast = null; document.getElementById("sp-out").innerHTML = ""; document.getElementById("sp-error").textContent = ""; hodlSyncSpControls(); };
   });
   document.getElementById("sp-derive").onclick = () => { hodlSpMode = "receive"; hodlRunSp(); };
   document.getElementById("sp-send-go").onclick = () => { hodlSpMode = "send"; hodlRunSp(); };
   document.getElementById("sp-verify-go").onclick = () => { hodlSpMode = "verify"; hodlRunSp(); };
   document.getElementById("sp-wipe").onclick = () => {
-    hodlSpResetStation("Accessible fields were cleared (best effort).");
+    hodlSpResetStation(hodlNote("Accessible fields were cleared (best effort)."));
   };
   document.getElementById("add-sp").onclick = () => hodlSelectStationBench(hodlSpTabs);
   document.getElementById("delete-sp").onclick = hodlDeleteActiveSp;
@@ -11998,6 +16451,8 @@ function hodlPointBytes(point, compressed = true) {
   if (typeof point.toRawBytes === "function") return point.toRawBytes(compressed);
   throw new Error("Unsupported curve point encoding.");
 }
+// The page no longer calls this Jade-only parser (hodlReadNonceTranscript
+// detects every format); the tests keep it as an independent Jade reference.
 function hodlParseAntiExfil(raw) {
   if (!raw || !String(raw).trim()) return null;
   let text = String(raw).replace(/0x/gi, ""), tokens = text.split(/[^0-9a-fA-F]+/).filter((token) => token.length), host = null, openings = [];
@@ -12021,12 +16476,51 @@ function hodlParseAntiExfil(raw) {
   if (!host || !openings.length) throw new Error("Jade anti-exfil needs both the host nonce \u03C1 and the signer opening R.");
   return { host, openings };
 }
+// Verifies the AEXB/AEXT messages of one session, pasted in any order: the
+// stage-4 signatures against the stage-3 reveal and the stage-2 (else
+// stage-1) commitment. A stage that appears twice is refused.
+function hodlVerifyAexbMessages(messages) {
+  const seen = new Set();
+  for (const message of messages) {
+    if (seen.has(message.stage)) return { ok: false, reason: "DUPLICATE_STAGE", slots: [] };
+    seen.add(message.stage);
+  }
+  const stage4 = messages.find((message) => message.stage === 4);
+  const stage3 = messages.find((message) => message.stage === 3);
+  const commitment = messages.find((message) => message.stage === 2) || messages.find((message) => message.stage === 1) || null;
+  if (stage4) return aexbVerify(stage4, stage3 ?? null, commitment);
+  if (stage3) {
+    const verdict = aexbVerify(stage3, null, commitment);
+    if (!verdict.ok) return verdict;
+    return { ok: false, reason: "MISSING_SIGNATURES", slots: [] };
+  }
+  return aexbVerify(messages[0]);
+}
+// Reads the Nonce Inspector's transcript field: detects the format (Jade,
+// BitBox02 or AEXB/AEXT) and verifies an AEXB transcript's math. Every
+// build takes this path since the anti-exfil box was unhidden (8e1b9a1a,
+// owner-approved); the Jade-only release parser and its flag are gone.
+function hodlReadNonceTranscript(raw) {
+  const result = readAntiExfil(raw);
+  if (!result) return { transcript: null };
+  if (result.kind === "jade" || result.kind === "bitbox02") {
+    return { transcript: result.transcript, kind: result.kind, warningCode: result.warningCode, warning: result.warning };
+  }
+  if (result.kind === "aexb") {
+    const messages = result.transcript.messages || [result.transcript.decoded];
+    const aexb = hodlVerifyAexbMessages(messages);
+    return { transcript: null, kind: "aexb", aexb, aexbSignatures: aexb.ok ? messages.find((message) => message.stage === 4) || null : null };
+  }
+  return { error: result.error };
+}
+
 function hodlAntiExfilCommitOk(r, opening, host) {
-  const n = 0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEBAAEDCE6AF48A03BBFD25E8CD0364141n;
-  let tweak = hodlTaggedSha256("s2c/ecdsa/point", opening, host), tweakInt = hodlBytesToBig(tweak);
-  if (tweakInt >= n || tweakInt === 0n) return false;
-  let committed = hodlPointFrom(opening).add(hodlSecp256k1.Point.BASE.multiply(tweakInt)), xBytes = hodlPointBytes(committed, true).slice(1);
-  return hodlBytesToBig(r) % n === hodlBytesToBig(xBytes) % n;
+  // The relation (tweak = TaggedHash("s2c/ecdsa/point", opening, host),
+  // committed = opening + tweak*G, r mod n == x(committed) mod n) lives in
+  // s2c.js. A malformed opening still throws so the caller's try/catch
+  // reports it as an error rather than as a mismatch.
+  hodlPointFrom(opening);
+  return s2cSignatureMatches(r, opening, host);
 }
 function hodlLe32Counter(n) {
   let b = new Uint8Array(32);
@@ -12061,9 +16555,76 @@ function hodlSessionOwnership(network) {
   if (hodlPsbtPriv) return indexSingleKey(hodlPsbtPriv, network, (key, compressed) => hodlSecp256k1.getPublicKey(key, compressed));
   return new Map();
 }
-function hodlDeclaredOutput(entries, script, network) {
+// Raw byte scan: any script that a key can spend from embeds that key (or its
+// hash160 in key-hash constructions) literally, whatever template wraps it.
+function hodlBytesContain(haystack, needle) {
+  if (!needle.length || needle.length > haystack.length) return false;
+  for (let i = 0; i + needle.length <= haystack.length; i++) {
+    let match = true;
+    for (let j = 0; j < needle.length; j++) if (haystack[i + j] !== needle[j]) { match = false; break; }
+    if (match) return true;
+  }
+  return false;
+}
+// PSBT_OUT_REDEEM_SCRIPT (0x00) / PSBT_OUT_WITNESS_SCRIPT (0x01) carry the
+// construction script of a script-hash output — multisig coordinators attach
+// them to change along with the per-cosigner derivation records. Only a
+// script that hashes to the output script itself is this output's
+// construction; anything else is an unattached claim and proves nothing.
+function hodlScriptMembership(entries, script, pubkey) {
+  let keyHash = hodlHash160(pubkey), member = false;
+  let scan = (construction) => {
+    if (hodlBytesContain(construction, pubkey) || hodlBytesContain(construction, keyHash)) member = true;
+  };
+  for (let entry of hodlFind(entries, 1)) {
+    if (entry.keydata.length || !entry.val.length) continue;
+    try {
+      if (hodlEq(script, p2wshScript(entry.val)) || hodlEq(script, p2shScript(p2wshScript(entry.val)))) scan(entry.val);
+    } catch {
+    }
+  }
+  for (let entry of hodlFind(entries, 0)) {
+    if (entry.keydata.length || !entry.val.length) continue;
+    try {
+      if (hodlEq(script, p2shScript(entry.val))) scan(entry.val);
+    } catch {
+    }
+  }
+  return member;
+}
+// A record is a lie only when it is provably false: the output pays one key
+// and it is not the verified one (destination-swap). The P2PKH/P2WPKH/P2TR
+// scriptPubKeys are the whole template, so their shape alone proves the
+// construction; P2SH is ambiguous — it may wrap a multisig — until its
+// redeem script reveals a single-key program. Reaching this helper at all
+// means the output is not one of the verified key's own templates (that was
+// checked first), so a matched shape is a matched *other* key.
+function hodlForeignSingleKeyScript(entries, script) {
+  if (script.length === 25 && script[0] === 0x76 && script[1] === 0xa9 && script[2] === 0x14 && script[23] === 0x88 && script[24] === 0xac) return true;
+  if (script.length === 22 && script[0] === 0x00 && script[1] === 0x14) return true;
+  if (script.length === 34 && script[0] === 0x51 && script[1] === 0x20) return true;
+  if (script.length === 23 && script[0] === 0xa9 && script[1] === 0x14 && script[22] === 0x87) {
+    for (let entry of hodlFind(entries, 0)) {
+      if (entry.keydata.length || !entry.val.length) continue;
+      let linked = false;
+      try {
+        linked = hodlEq(script, p2shScript(entry.val));
+      } catch {
+      }
+      if (linked && entry.val.length === 22 && entry.val[0] === 0x00 && entry.val[1] === 0x14) return true;
+    }
+  }
+  return false;
+}
+function hodlDeclaredOutput(entries, script, network, budget = null) {
   if (!hodlPsbtHd || !entries || !script) return null;
   let fingerprint = hodlFingerprintHex(hodlPsbtHd.fingerprint), declared = null;
+  // This output's own reserve for when the shared budget is spent: up to 16
+  // steps, more than any real wallet path (5-7), drawn from the render's
+  // capped reserve pool (budget.reserve). So an ordinary claim here is still
+  // checked after other records spend the main budget (#1457 gate, MiniMax),
+  // and the render stays bounded by remaining + reserve (#1457 r2 red team).
+  let reserve = budget ? 16 : 0;
   for (let entry of hodlFind(entries, 2)) {
     if (entry.val.length < 4 || (entry.val.length - 4) % 4) continue;
     let fp = hodlHex.encode(entry.val.slice(0, 4));
@@ -12079,9 +16640,37 @@ function hodlDeclaredOutput(entries, script, network) {
       if (!declared) declared = { state: "other-wallet", path: label, fingerprint: fp };
       continue;
     }
+    // A PSBT is untrusted. Deriving an attacker-named path costs one CKD per
+    // step and creates live private nodes; bound the whole render and mark an
+    // exhausted claim unverified instead of deriving it (audit M3). A skipped
+    // record costs nothing and leaves the budget to later records, as on the
+    // input side: zeroing it let one free 256-step record under this wallet's
+    // fingerprint turn every later output's "PSBT lies" into "cannot be
+    // verified" (red-team sweep of 0eed735).
+    // A path past BIP32's 255 levels names no key, so a claim that this
+    // wallet's key is there is false.
+    if (path.length > 255) return { state: "lie", path: label };
+    if (budget && path.length > budget.remaining) {
+      // The shared budget is spent: the output's reserve pays for an ordinary
+      // claim while the pool lasts. Anything left unchecked, which only a
+      // padded PSBT causes, renders red ("Not checked: ... Do not sign.").
+      let pool = Number(budget.reserve) || 0;
+      if (path.length > reserve || path.length > pool) {
+        if (!declared || declared.state !== "ours") declared = { state: "unknown", path: label, budget: true, deep: path.length > 16 };
+        continue;
+      }
+      reserve -= path.length;
+      budget.reserve = pool - path.length;
+    } else if (budget) {
+      budget.remaining -= path.length;
+    }
+    let node = hodlPsbtHd, derived = [];
     try {
-      let node = hodlPsbtHd;
-      for (let index of path) node = node.deriveChild(index);
+      for (let index of path) {
+        let next = node.deriveChild(index);
+        if (node !== hodlPsbtHd) derived.push(node);
+        node = next;
+      }
       if (!node.publicKey || !hodlEq(node.publicKey, entry.keydata)) return { state: "lie", path: label };
       let address = hodlAddr(script, network);
       let encoded = false;
@@ -12091,16 +16680,39 @@ function hodlDeclaredOutput(entries, script, network) {
         } catch {
         }
       }
-      if (!encoded) return { state: "lie", path: label };
-      let chain = path.length >= 2 ? path[path.length - 2] : null;
-      declared = { state: "ours", path: label, role: chain === 1 ? "change" : chain === 0 ? "receive" : "key" };
+      if (encoded) {
+        let chain = path.length >= 2 ? path[path.length - 2] : null;
+        declared = { state: "ours", path: label, role: chain === 1 ? "change" : chain === 0 ? "receive" : "key" };
+        continue;
+      }
+      // A script-hash output (multisig change; audit B8) pays a script, not
+      // a key. Finding the key in its script is membership, not control —
+      // <user> OP_DROP <attacker> OP_CHECKSIG contains the key and the
+      // attacker spends alone (#851 review) — so membership only rides the
+      // unverifiable verdict as a muted note; it never verifies.
+      let member = hodlScriptMembership(entries, script, node.publicKey);
+      if (hodlForeignSingleKeyScript(entries, script)) return { state: "lie", path: label };
+      // Otherwise the claim is unverifiable from this map — which is not a
+      // lie. A later record may still prove ownership. A claim left unchecked
+      // by the budget keeps its red verdict: a later unverifiable record must
+      // not turn it grey, or record order would decide the warning (#1457 r3
+      // gate, GLM and Kimi).
+      if (!declared || (declared.state !== "ours" && !declared.budget)) {
+        let noted = member || Boolean(declared && declared.state === "unknown" && declared.member);
+        declared = { state: "unknown", path: label, member: noted };
+      }
     } catch {
       return { state: "lie", path: label };
+    } finally {
+      // The root belongs to the session; every node this record created is
+      // disposable and holds a private key.
+      for (let derivedNode of derived) derivedNode.wipePrivateData();
+      if (node !== hodlPsbtHd) node.wipePrivateData();
     }
   }
   return declared;
 }
-function hodlRenderOutputHtml(output, index, network, map, entries) {
+function hodlRenderOutputHtml(output, index, network, map, entries, derivationBudget = null) {
   let opReturn = parseOpReturn(output.script);
   if (opReturn) {
     let amount = typeof output.amount === "bigint" ? output.amount : BigInt(output.amount || 0);
@@ -12115,7 +16727,7 @@ function hodlRenderOutputHtml(output, index, network, map, entries) {
       let named = line.match(/^(text|hex): /);
       return named ? "<span class='muted'>" + hodlEscapeHtml(named[0]) + "</span>" + hodlEscapeHtml(line.slice(named[0].length)) : hodlEscapeHtml(line);
     };
-    return "<p class='psbt-kv'><strong>Output " + index + "</strong><br><span class='psbt-amount'>" + hodlSats(output.amount) + " BTC</span><br>" + lines.map((line, at) => flagged(line, at) ? "<span class='psbt-opreturn-flag" + (at === 0 ? " psbt-opreturn-head" : "") + "'>" + hodlEscapeHtml(line) + "</span>" : plain(line)).join("<br>") + "</p>";
+    return "<p class='psbt-kv'><strong>" + hodlT("Output {n}", { n: index }) + "</strong><br><span class='psbt-amount'>" + hodlSats(output.amount) + " BTC</span><br>" + lines.map((line, at) => flagged(line, at) ? "<span class='psbt-opreturn-flag" + (at === 0 ? " psbt-opreturn-head" : "") + "'>" + hodlEscapeHtml(line) + "</span>" : plain(line)).join("<br>") + "</p>";
   }
   let scan = matchOwnership(map, output.script);
   let address = hodlAddr(output.script, network);
@@ -12123,62 +16735,119 @@ function hodlRenderOutputHtml(output, index, network, map, entries) {
   if (scan.state === "ours" && address.startsWith("script ") && scan.address) address = scan.address;
   let declared = null;
   try {
-    declared = hodlDeclaredOutput(entries, output.script, network);
+    declared = hodlDeclaredOutput(entries, output.script, network, derivationBudget);
   } catch {
   }
   let extra = "", className = "psbt-kv";
   if (declared && declared.state === "lie") {
-    extra = "<br><strong>PSBT lies:</strong> claims " + hodlEscapeHtml(declared.path) + " but this session key does not produce this output. Do not sign.";
+    extra = "<br><strong>" + hodlT("PSBT lies:") + "</strong> " + hodlT("claims {path} but this session key does not produce this output. Do not sign.", { path: declared.path });
     className = "psbt-bad";
   } else if (scan.state === "ours") {
-    let label = scan.role === "change" ? "change" : scan.role === "receive" ? "receive (this wallet)" : "this session key";
-    extra = "<br>" + hodlEscapeHtml(label + " \xB7 " + scan.path);
+    let vars = { path: scan.path };
+    extra = "<br>" + (scan.role === "change" ? hodlT("change · {path}", vars) : scan.role === "receive" ? hodlT("receive (this wallet) · {path}", vars) : hodlT("this session key · {path}", vars));
     className = scan.role === "change" || scan.role === "key" ? "psbt-ok" : "psbt-kv";
   } else if (declared && declared.state === "ours") {
-    extra = "<br>" + hodlEscapeHtml((declared.role === "change" ? "change" : "this wallet") + " \xB7 " + declared.path + " (verified)");
+    let vars = { path: declared.path };
+    extra = "<br>" + (declared.role === "change" ? hodlT("change · {path} (verified)", vars) : hodlT("this wallet · {path} (verified)", vars));
     className = "psbt-ok";
+  } else if (declared && declared.state === "unknown" && declared.budget) {
+    // A claim on this wallet left unchecked: only a PSBT padded with deep
+    // records gets here, so it reads as a red stop, not a grey note. Wording
+    // agreed by Claude, Astra, Fable and Grok (11-05).
+    extra = "<br><strong>" + hodlT("Not checked:") + "</strong> " + (declared.deep
+      ? hodlT("claims {path}, an unusually deep path, and this PSBT used up the checks. Do not sign.", { path: declared.path })
+      : hodlT("claims {path}, but this PSBT used up the checks. Do not sign.", { path: declared.path }));
+    className = "psbt-bad";
+  } else if (declared && declared.state === "unknown") {
+    let vars = { path: declared.path };
+    extra = "<br><span class='muted'>" + (declared.member
+      ? hodlT("claims {path} · your key appears in this output's script; its other keys are not verified", vars)
+      : hodlT("claims {path} · cannot be verified for this script type", vars)) + "</span>";
   } else if (scan.state === "external") {
-    extra = "<br>not in this wallet (accounts 0\u20132, 50 receive + 50 change, four script types)";
+    extra = "<br>" + hodlT("not in this wallet (accounts 0–2, 50 receive + 50 change, four script types)");
   } else if (scan.state === "no-session") {
-    extra = "<br><span class='muted'>Load a session key to see if this output is yours.</span>";
+    extra = "<br><span class='muted'>" + hodlT("Load a session key to see if this output is yours.") + "</span>";
   }
   let addressHtml = address.startsWith("script ") ? `<span class="psbt-address">${hodlEscapeHtml(address)}</span>` : hodlPublicInlineHtml(address, { className: "psbt-address", label: hodlTText("Address") });
-  return "<p class='" + className + "'><strong>Output " + index + "</strong><br><span class='psbt-amount'>" + hodlSats(output.amount) + " BTC</span><br>" + addressHtml + extra + "</p>";
+  return "<p class='" + className + "'><strong>" + hodlT("Output {n}", { n: index }) + "</strong><br><span class='psbt-amount'>" + hodlSats(output.amount) + " BTC</span><br>" + addressHtml + extra + "</p>";
 }
 function hodlOwnershipWarning(outputs, network, map) {
   if (!map || !map.size) return "";
   let ours = outputs.some((output) => matchOwnership(map, output.script).state === "ours" || matchOwnership(map, hodlAddr(output.script, network)).state === "ours");
-  if (ours) return "<p class='muted'>Session key: outputs compared against " + map.size + " derived scripts (accounts 0\u20132, 50 receive + 50 change, four types).</p>";
-  if (outputs.length < 2) return "<p class='muted'>This output is not in the session wallet (accounts 0\u20132, 50 receive + 50 change, four script types).</p>";
-  return "<p class='psbt-bad'><strong>No output belongs to this session wallet.</strong> If you expected change, do not sign. A destination-swap can replace both the payment and the change.</p>";
+  if (ours) return "<p class='muted'>" + hodlT("Session key: outputs compared against {count} derived scripts (accounts 0\u20132, 50 receive + 50 change, four types).", { count: map.size }) + "</p>";
+  if (outputs.length < 2) return "<p class='muted'>" + hodlT("This output is not in the session wallet (accounts 0\u20132, 50 receive + 50 change, four script types).") + "</p>";
+  return "<p class='psbt-bad'><strong>" + hodlT("No output belongs to this session wallet.") + "</strong> " + hodlT("If you expected change, do not sign. A destination-swap can replace both the payment and the change.") + "</p>";
+}
+// The one-line overall verdict in the answer block. A check that is
+// incomplete only for want of a session key does not count toward it (the
+// owner's option (b)); it still shows as its own row in the summary. A
+// problem outranks incomplete coverage, and both are named when both hold.
+function hodlPsbtOverallLine(checks) {
+  let counted = checks.filter((check) => check.incompleteReason !== "no-key" && check.incompleteReason !== "nothing-to-compare"),
+    incomplete = counted.some((check) => check.state === "incomplete"),
+    problem = counted.some((check) => check.state === "problem"),
+    text = problem && incomplete ? hodlT("ISSUES FOUND — ANALYSIS ALSO INCOMPLETE") : problem ? hodlT("ISSUES FOUND") : incomplete ? hodlT("ANALYSIS INCOMPLETE") : hodlT("LISTED CHECKS COMPLETE"),
+    className = problem ? "psbt-bad" : incomplete ? "psbt-warn" : "psbt-ok";
+  return {
+    state: problem ? "problem" : incomplete ? "incomplete" : "complete",
+    html: "<p class='" + className + "'><strong>" + text + "</strong></p>",
+  };
 }
 function hodlPsbtAnalysisSummary(checks) {
-  let incomplete = checks.some((check) => check.state === "incomplete"),
-    problem = checks.some((check) => check.state === "problem"),
-    overall = problem && incomplete ? "ISSUES FOUND — ANALYSIS ALSO INCOMPLETE" : problem ? "ISSUES FOUND" : incomplete ? "ANALYSIS INCOMPLETE" : "LISTED CHECKS COMPLETE",
-    overallClass = problem ? "psbt-bad" : incomplete ? "psbt-warn" : "psbt-ok";
+  // A completed check's detail is coverage, not a problem: it moves into the
+  // one collapsed block below the list. A problem or an incomplete check
+  // keeps its detail inline, where collapsing can never hide it. The overall
+  // verdict and the glance line live in the answer block above.
+  let covered = [];
   let rows = checks.map((check) => {
-    let label = check.state === "complete" ? "Completed" : check.state === "problem" ? "Problem found" : "Incomplete",
-      className = check.state === "complete" ? "psbt-ok" : check.state === "problem" ? "psbt-bad" : "psbt-warn";
-    return "<li><span class='label'>" + hodlEscapeHtml(check.label) + "</span> — <span class='" + className + "'>" + label + "</span><br><span class='muted'>" + hodlEscapeHtml(check.detail) + "</span></li>";
+    let state = check.state === "complete" ? "complete" : check.state === "problem" ? "problem" : "incomplete",
+      label = state === "complete" ? hodlT("Completed") : state === "problem" ? hodlT("Problem found") : hodlT("Incomplete"),
+      className = state === "complete" ? "psbt-ok" : state === "problem" ? "psbt-bad" : "psbt-warn";
+    // The row's own reason, so the overall rule reads a flag, never the text.
+    let reason = check.incompleteReason === "no-key" ? " data-incomplete-reason='no-key'" : check.incompleteReason === "nothing-to-compare" ? " data-incomplete-reason='nothing-to-compare'" : "";
+    if (state === "complete") {
+      covered.push("<li><span class='label'>" + hodlEscapeHtml(check.label) + "</span>: " + hodlEscapeHtml(check.detail) + "</li>");
+      return "<li data-psbt-check-state='complete'><span class='label'>" + hodlEscapeHtml(check.label) + "</span> — <span class='" + className + "'>" + label + "</span></li>";
+    }
+    return "<li data-psbt-check-state='" + state + "'" + reason + "><span class='label'>" + hodlEscapeHtml(check.label) + "</span> — <span class='" + className + "'>" + label + "</span><br><span class='muted'>" + hodlEscapeHtml(check.detail) + "</span></li>";
   }).join("");
-  return "<section class='psbt-analysis-summary' aria-label='PSBT security analysis status'><p class='label psbt-section-label'>PSBT security analysis</p><p class='" + overallClass + "'><strong>" + overall + "</strong></p><ul>" + rows + "</ul><p class='edge-note is-private'>Completed means only that the named check ran on the information available here. It does not prove that the PSBT claims are true or that the transaction is safe to sign.</p></section>";
+  let coveredBlock = covered.length
+    ? "<details class='derivation-advanced' data-psbt-analysis-details><summary>" + hodlT("Show what each completed check covered") + "</summary><ul>" + covered.join("") + "</ul></details>"
+    : "";
+  return "<section class='psbt-analysis-summary' aria-label='" + hodlTAttr("PSBT security analysis") + "'><ul>" + rows + "</ul>" + coveredBlock + "<p class='edge-note is-private'>" + hodlT("Completed means only that the named check ran on the information available here. It does not prove that the PSBT claims are true or that the transaction is safe to sign.") + "</p></section>";
 }
-function hodlPsbtNonceCheck(reused, possible, nonceIncomplete) {
-  if (reused.length) return { label: "Nonce analysis", state: "problem", detail: "A repeated ECDSA nonce was detected; open the Nonce Inspector for the affected signatures." };
-  if (possible.length) return { label: "Nonce analysis", state: "incomplete", detail: "A possible repeated ECDSA nonce for the same public key could not be confirmed from this file; open the Nonce Inspector and verify the signatures independently." };
-  if (nonceIncomplete) return { label: "Nonce analysis", state: "incomplete", detail: "Coverage is partial: unreadable signatures, fewer than two comparable ECDSA signatures, missing key/digest data, unsupported scripts, or Taproot/Schnorr signatures prevented one or more nonce checks." };
-  return { label: "Nonce analysis", state: "complete", detail: "All ECDSA signatures in this PSBT had comparable nonce values; no repeated r was found for the same key within this file." };
+// The Taproot nonce-reuse warning: the same key, or different keys (a
+// reused nonce leaks related keys; DeepSeek's red-team of #1051, F1).
+function hodlSchnorrReuseHtml(schnorrReused) {
+  return schnorrReused.some((pair) => pair.sameKey)
+    ? "<p class='psbt-bad'><strong>" + hodlT("Reused Schnorr nonce detected for the same key.") + "</strong> " + hodlT("The same R value appears on two Taproot signatures that sign different messages. If both signatures are valid, the private key can be recovered. Do not broadcast this transaction.") + "</p>"
+    : "<p class='psbt-bad'><strong>" + hodlT("Reused Schnorr nonce across different keys.") + "</strong> " + hodlT("The same R value appears on Taproot signatures under different keys, so their nonce was reused. If the keys are related, as a Taproot output key is to its internal key or as keys from one wallet are, the private key can be recovered. Do not broadcast this transaction.") + "</p>";
+}
+function hodlPsbtNonceCheck(reused, possible, nonceIncomplete, schnorrReused = [], ecdsaCompared = 2, schnorrCompared = 0, rfc6979Note = "", incompleteReason = "") {
+  let label = hodlTText("Nonce analysis"), row;
+  if (reused.length) row = { label, state: "problem", detail: hodlTText("A repeated ECDSA nonce was detected; open the Nonce Inspector for the affected signatures.") };
+  else if (schnorrReused.length) row = { label, state: "problem", detail: schnorrReused.some((pair) => pair.sameKey) ? hodlTText("Two Taproot signatures reuse a nonce under the same key, which can reveal the private key. Open the Nonce Inspector to see which ones.") : hodlTText("Two Taproot signatures share a nonce under different keys, which can reveal a private key. Open the Nonce Inspector to see which ones.") };
+  else if (possible.length) row = { label, state: "incomplete", detail: hodlTText("A possible repeated ECDSA nonce for the same public key could not be confirmed from this file; open the Nonce Inspector and verify the signatures independently.") };
+  else if (nonceIncomplete) row = { label, state: "incomplete", detail: hodlTText("Coverage is partial: unreadable signatures, fewer than two comparable ECDSA signatures, missing key/digest data, unsupported scripts, or Taproot/Schnorr signatures prevented one or more nonce checks."), incompleteReason: incompleteReason || undefined };
+  // The completed line names the signatures that were compared (DeepSeek's
+  // red-team of #1051, F4).
+  else if (schnorrCompared) row = { label, state: "complete", detail: ecdsaCompared ? hodlTText("All ECDSA and Taproot signatures in this PSBT had comparable nonce values; no repeated nonce was found for the same key within this file.") : hodlTText("All Taproot signatures in this PSBT had comparable nonce values; no repeated R value was found for the same key within this file.") };
+  else row = { label, state: "complete", detail: hodlTText("All ECDSA signatures in this PSBT had comparable nonce values; no repeated r was found for the same key within this file.") };
+  if (rfc6979Note) row.detail += " " + rfc6979Note;
+  return row;
 }
 // One analysis, two views. "inspect" is the PSBT Inspector: everything but the
 // per-signature nonce detail, with the nonce verdict kept as a summary row.
 // "nonce" is the Nonce Inspector: that detail alone. "all" is both, in the
 // original order. The computation is identical in every view; only what is
 // emitted differs, so a verdict can never depend on which tab asked.
-function hodlRenderPsbt(psbt, nonceSourceTag = new Uint8Array(), nonceCheckedAt = new Date().toISOString(), view = "all") {
+// A repaint after a language switch passes `options` from the run it repeats:
+// that run's network and Jade transcript, and record: false, so the nonce
+// history is not written twice.
+function hodlRenderPsbt(psbt, nonceSourceTag = new Uint8Array(), nonceCheckedAt = new Date().toISOString(), view = "all", options) {
   // The inspector follows the header network picker (mainnet/testnet); there
   // is no per-tool network control.
-  let network = hodlNetworkDefault,
+  let network = options?.network ?? hodlInspectorNetwork(),
     transcript = null,
     transcriptError = "",
     tx = psbt.tx,
@@ -12186,19 +16855,97 @@ function hodlRenderPsbt(psbt, nonceSourceTag = new Uint8Array(), nonceCheckedAt 
     knownInputs = 0,
     conflictedInputs = [],
     html = [],
+    warnings = [],
+    splitShown = false,
+    shownInputs = 0,
     rValues = [],
+    schnorrRecords = [],
     rows = [],
     tapSignatureCount = 0,
+    tapUninspected = 0,
     ecdsaIndex = 0,
+    aexbMatched = 0,
     uninspected = 0,
     policyProblems = 0,
     policyIncomplete = 0,
     unsupportedNonceChecks = 0,
+    // Signatures whose digest was reconstructed and whose r value was
+    // compared, but whose RFC 6979 nonce could not be recomputed because no
+    // session key matches. That is the no-key case, not an unsupported
+    // script: it keeps the row Incomplete without blocking the "nothing to
+    // compare" exclusion (owner, 2026-10-26).
+    nonceKeyMissing = 0,
+    rfcTotal = 0,
+    rfcChecked = 0,
+    rfcMismatched = 0,
+    rfcKeyFound = false,
     feeInconsistent = 0,
     // One digest-reconstruction budget per render, shared by the partial
     // signatures and the finalized-field scan (audit C3-3); 256 mirrors the
     // consensus layer's MAX_SIGNATURE_CHECKS.
-    signatureChecks = { remaining: 256 };
+    signatureChecks = { remaining: 256 },
+    // One PSBT output-derivation budget per render. An attacker-named path
+    // costs one CKD per step; the inspector must not derive an unbounded
+    // private subtree from an untrusted file (audit M3).
+    // The 4096 steps are split: 3072 shared, and a 1024-step reserve that
+    // each output can draw up to 16 from once the shared part is spent
+    // (#1457), so an ordinary claim stays checked after padding while the
+    // render stays bounded at 4096 in all.
+    derivationBudget = { remaining: 3072, reserve: 1024 },
+    // The same for the session-key lookup on the input side. Only the rows a
+    // digest was rebuilt for (signatureChecks) can use the key, so 4096 steps
+    // covers 256 rows of ordinary paths.
+    inputDerivationBudget = { remaining: 4096 };
+  // One render budget per view (red-team F7, round 4): the per-list caps
+  // bound each list on its own, but the lists together must not exceed what
+  // the DOM survives either. Every rendered output block, input section,
+  // warning paragraph and nonce row spends from it; the per-list elision
+  // lines count whatever it cuts. (The test suites evaluate this function
+  // with stubs for the helpers it closes over; a harness predating the
+  // budget gets an unbounded one, which renders exactly like the pre-budget
+  // source.)
+  // A view spends budget only on what it actually renders (red-team F7,
+  // round 6): the nonce view discards the inspector's output blocks, input
+  // sections and warnings, so they must not spend its budget — a large PSBT
+  // elided every nonce row for content the view never shows. The nonce
+  // view's own lists (r-values, per-signature rows) stay bounded by their
+  // per-list caps; the inspector views keep the one shared budget, which
+  // scales with the window: two units per shown element, its section and one
+  // warning (2,000 at the default 500 + 500).
+  // The window of inputs and outputs this render may show. The Inspector
+  // passes its own (PSBT_INSPECTOR_LIMIT each, grown by its "Show more"
+  // buttons; `step` is the growth, `format` writes a count in the page
+  // language); every other caller gets the shared PSBT_RENDER_LIMIT.
+  const limits = { inputs: options?.limits?.inputs ?? PSBT_RENDER_LIMIT, outputs: options?.limits?.outputs ?? PSBT_RENDER_LIMIT, step: options?.limits?.step ?? 0, format: options?.limits?.format };
+  // A "Show more" click asks only for the block it adds: `only` names the
+  // list and where the shown part ends. The render then runs as a full render
+  // with the grown window would, emits that list's new sections and its tail
+  // (the note, the button and, for inputs, the collected warnings), and
+  // returns { chunk, tail } instead of the page. Each list's tail sits in its
+  // own data-psbt-tail wrapper, so the click can insert the chunk above it.
+  const only = options?.only && (options.only.kind === "inputs" || options.only.kind === "outputs") ? { kind: options.only.kind, from: Math.max(0, options.only.from | 0) } : null;
+  const chunk = [];
+  const budget = view === "nonce"
+    ? { take: (count = 1) => count, get left() { return Infinity; }, get spent() { return false; } }
+    : typeof renderBudget === "function" ? renderBudget(2 * (limits.inputs + limits.outputs)) : { take: (count = 1) => count, get left() { return Infinity; }, get spent() { return false; } };
+  // "Show more" buttons go only where the caller can grow the window (the
+  // Inspector passes `step`); each names how many the next step adds.
+  const moreButton = (kind, remaining) => {
+    if (!limits.step || remaining <= 0) return "";
+    let n = Math.min(limits.step, remaining);
+    let label = kind === "inputs"
+      ? (n === 1 ? hodlT("Show 1 more input") : hodlT("Show {n} more inputs", { n: count(n) }))
+      : (n === 1 ? hodlT("Show 1 more output") : hodlT("Show {n} more outputs", { n: count(n) }));
+    return "<div class='row tool-actions'><button class='btn secondary' type='button' data-psbt-more='" + kind + "'>" + label + "</button></div>";
+  };
+  // The note under a capped input or output list. Those inputs and outputs
+  // are still in the transaction being signed (and in its fee and totals), so
+  // the note says so, as a warning: the person cannot review all of it here.
+  const count = (n) => (typeof limits.format === "function" ? limits.format(n) : String(n));
+  const elidedNote = (kind, n) => "<p class='psbt-warn'>" + (kind === "inputs"
+    ? (n === 1 ? hodlT("1 more input not shown, still included in this transaction.") : hodlT("{n} more inputs not shown, still included in this transaction.", { n: count(n) }))
+    : (n === 1 ? hodlT("1 more output not shown, still included in this transaction.") : hodlT("{n} more outputs not shown, still included in this transaction.", { n: count(n) }))) + "</p>";
+
   let inscriptionReport = { inputs: [], envelopes: [] }, inscriptionScanIncomplete = false;
   try {
     inscriptionReport = inspectPsbtInscriptions(psbt);
@@ -12213,8 +16960,18 @@ function hodlRenderPsbt(psbt, nonceSourceTag = new Uint8Array(), nonceCheckedAt 
   // neither shows it nor verifies anti-exfil, so it must not read it: the
   // transcript steers signatures away from the unsupported-check count, and a
   // field on another tab would otherwise lift the Inspector's nonce verdict.
+  // The reader detects the format: a Jade or BitBox02 host nonce and opening,
+  // or the AEXB/AEXT messages of one session.
+  let transcriptKind = "jade", transcriptWarningCode = null, aexbResult = null, aexbSignatures = null;
   if (view !== "inspect") try {
-    transcript = hodlParseAntiExfil(document.getElementById("psbt-ax-transcript")?.value || "");
+    let raw = (options?.transcript ?? document.getElementById("psbt-ax-transcript")?.value) || "";
+    const read = hodlReadNonceTranscript(raw);
+    transcript = read.transcript;
+    transcriptKind = read.kind || "jade";
+    transcriptWarningCode = read.warningCode || null;
+    aexbResult = read.aexb || null;
+    aexbSignatures = read.aexbSignatures || null;
+    if (read.error) transcriptError = read.error;
   } catch (exception) {
     transcriptError = exception.message || String(exception);
   }
@@ -12226,13 +16983,39 @@ function hodlRenderPsbt(psbt, nonceSourceTag = new Uint8Array(), nonceCheckedAt 
   }
   html.push("<p class='label psbt-section-label'>" + hodlT("Tx outputs") + " <span class='label-value'>(" + tx.outputs.length + ")</span></p><p class='muted label-description'>" + hodlT("Where this transaction sends bitcoin") + "</p>");
   let ownershipMap = hodlSessionOwnership(network);
-  tx.outputs.forEach((output, index) => {
-    html.push(hodlRenderOutputHtml(output, index, network, ownershipMap, psbt.outputs[index]));
-  });
+  // Output blocks are capped at the window and spend from the view's render
+  // budget; the ownership warning below still analyses every output.
+  const shownOutputs = budget.take(Math.min(tx.outputs.length, limits.outputs));
+  const outputsFrom = !only ? 0 : only.kind === "outputs" ? Math.min(only.from, shownOutputs) : shownOutputs;
+  // A "Show more" block renders only the outputs it adds, but they must read
+  // exactly as in a full render of the grown window, which spends the
+  // per-render derivation budget (audit M3) on the outputs above them first:
+  // those are rendered again and discarded until the budget runs out (GLM
+  // 5.3's review of #1031). A spent budget (main and reserve pool) stays spent, so the loop can stop.
+  for (let index = 0; only?.kind === "outputs" && index < outputsFrom && (derivationBudget.remaining > 0 || derivationBudget.reserve > 0); index++) {
+    hodlRenderOutputHtml(tx.outputs[index], index, network, ownershipMap, psbt.outputs[index], derivationBudget);
+  }
+  for (let index = outputsFrom; index < shownOutputs; index++) {
+    (only ? chunk : html).push(hodlRenderOutputHtml(tx.outputs[index], index, network, ownershipMap, psbt.outputs[index], derivationBudget));
+  }
+  const outputsTail = tx.outputs.length > shownOutputs ? elidedNote("outputs", tx.outputs.length - shownOutputs) + moreButton("outputs", tx.outputs.length - shownOutputs) : "";
+  if (only?.kind === "outputs") return { chunk: chunk.join(""), tail: outputsTail };
+  html.push("<div data-psbt-tail='outputs'>" + outputsTail + "</div>");
   html.push(hodlOwnershipWarning(tx.outputs, network, ownershipMap));
   html.push("<hr class='result-divider'>");
-  html.push("<p class='label psbt-section-label'>" + hodlT("Tx inputs") + " <span class='label-value'>(" + tx.inputs.length + ")</span></p><p class='muted label-description'>" + hodlT("Where this transaction’s outputs are spending from") + "</p>");
+  // The inputs render into their own list so the whole section can be wrapped
+  // in one collapsed block whose open state depends on what the inputs hold.
+  let inputsHtml = [];
+  // Signing progress and the per-input problem flags come from the renderer's
+  // own state, never from the class names in the markup: the collapsed
+  // block's open state reads these, so a problem can never be folded away.
+  let signingExpected = psbt.inputs.some((entries) => hodlPartialSigs(entries).length || hodlTapSigsParsed(entries).length || hodlFinalized(entries));
+  let signedInputs = 0;
+  let anyInputProblem = false;
   psbt.inputs.forEach((entries, index) => {
+    // This input's warning paragraphs are collected from here and placed at
+    // the end of the loop (see there).
+    const warningsBefore = warnings.length;
     let witnessUtxo = hodlWitUtxo(entries);
     // The non-witness UTXO is the checkable claim: it embeds the previous
     // transaction, so its txid must match the input's outpoint (issue #350).
@@ -12264,70 +17047,188 @@ function hodlRenderPsbt(psbt, nonceSourceTag = new Uint8Array(), nonceCheckedAt 
     } catch (exception) {
       declaredSighashError = exception.message || String(exception);
     }
-    let declaredLabel = declaredSighashError ? "" : declaredSighash === null ? "SIGHASH_ALL (default)" : hodlSighashLabel(declaredSighash);
-    let previous = tx.inputs[index], destination = claim ? hodlAddr(claim.script, network) : "(previous output details unavailable)", signatures = hodlPartialSigs(entries), tapSignatures = hodlTapSigsParsed(entries), finalized = hodlFinalized(entries), taprootish = entries.some((entry) => entry.type >= 0x13 && entry.type <= 0x18);
+    let declaredLabel = declaredSighashError ? "" : declaredSighash === null ? hodlTText("SIGHASH_ALL (default)") : hodlSighashLabel(declaredSighash);
+    let previous = tx.inputs[index], destination = claim ? hodlAddr(claim.script, network) : hodlTText("(previous output details unavailable)"), signatures = hodlPartialSigs(entries), tapSignatures = hodlTapSigsParsed(entries), finalized = hodlFinalized(entries),
+      // Whether SIGHASH 0 is Taproot's DEFAULT: decided by the resolved
+      // previous output, so a P2WPKH input that merely carries a 0x13-0x18
+      // field still gets the undefined-policy note; field presence only when
+      // the previous output is unknown (red-team sweep 0eed735, part09 #9).
+      taprootish = claim ? isP2tr(claim.script) : entries.some((entry) => entry.type >= 0x13 && entry.type <= 0x18),
+      finalTapPolicy = [],
+      finalUnread = false;
     if (finalized) {
       // Finalized signatures moved into the final script fields must not
       // escape repeated-nonce analysis (issue #87).
       let finalMaterial = hodlFinalSigs(entries, witnessUtxo, tx, index, signatureChecks);
-      // A finalized input whose fields yield no analyzable ECDSA signature
-      // (for example a Taproot-only witness) never yields a clean or
-      // no-signatures verdict.
-      if (!signatures.length && !finalMaterial.signatures.length && !finalMaterial.uninspected) finalMaterial.uninspected = 1;
+      // A finalized P2TR input carries its Schnorr signatures in the final
+      // witness instead of 0x13/0x14 fields; they must not escape the BIP340
+      // nonce comparison either. The key path and pk()/multi_a script-path
+      // leaves are read. A field a finalizer left beside them holds either
+      // the same signature (compared once, from the field) or a different
+      // one, and then both are compared (DeepSeek's red-team of #1051, F2).
+      // Keyed by the resolved previous output (Nemotron 3 Ultra's review of
+      // #1051): the witness UTXO, the verified non-witness UTXO, or nothing
+      // when the two disagree, which leaves a key-path signature unkeyed.
+      let finalTap = [hodlFinalTapKeySig(entries, claim)].concat(hodlFinalTapScriptSigs(entries, claim) || []).filter(Boolean);
+      finalTap.forEach((record) => {
+        // A key-path witness whose one item did not parse is a policy problem
+        // (below), and for the nonce check an unread Taproot input, as it was
+        // before it became a record (#1479 r3 gate, DeepSeek).
+        if (!record.r && record.source === "tap-key") {
+          finalTapPolicy.push(record);
+          tapUninspected++;
+          return;
+        }
+        let sameSignature = (tapSig) => tapSig.source === record.source && tapSig.r && record.r && hodlEq(tapSig.r, record.r) && hodlEq(tapSig.s, record.s) && (record.source === "tap-key" || hodlEq(tapSig.pubkey, record.pubkey));
+        // The witness's own sighash byte is policy-checked unless a field
+        // holds the same signature with the same byte: a field with the same
+        // r and s but a harmless byte hid a SIGHASH_NONE suffix in the final
+        // witness (#1479 gate, Gemini).
+        if (!tapSignatures.some((tapSig) => sameSignature(tapSig) && tapSig.sighash === record.sighash)) finalTapPolicy.push(record);
+        if (tapSignatures.some(sameSignature)) return;
+        schnorrRecords.push(Object.assign({ input: index }, record));
+        if (record.r) tapSignatureCount++;
+      });
+      // A finalized input whose fields yield no analyzable signature never
+      // yields a clean or no-signatures verdict: a Taproot one counts as an
+      // unchecked Taproot input, any other as an uninspected ECDSA one.
+      // Partial signatures are not the final material: a decoy one beside
+      // final fields that yield nothing readable left them counted as read,
+      // for the policy check and the Taproot nonce check alike (#1479 r4
+      // gate, Gemini).
+      if (!finalMaterial.signatures.length && !finalMaterial.uninspected && !finalTap.length) {
+        if (hodlFinalIsTaproot(entries, claim)) tapUninspected++;
+        else finalMaterial.uninspected = 1;
+      }
+      finalUnread = Boolean(finalMaterial.uninspected || finalMaterial.malformed);
       signatures = signatures.concat(finalMaterial.signatures);
       uninspected += finalMaterial.uninspected + (finalMaterial.malformed ? 1 : 0);
+      // Every ECDSA signature the finalized fields carry but this analysis
+      // could not attribute is still an ECDSA signature the coverage line
+      // must count as unchecked (Kimi K3's review of #1074): otherwise it
+      // claims "checked for all N" while N + k are present. Taproot material
+      // stays in tapUninspected.
+      rfcTotal += finalMaterial.uninspected + (finalMaterial.malformed && !hodlFinalIsTaproot(entries, claim) ? 1 : 0);
     }
     // Only a Schnorr signature that parses under BIP341 counts as present: an
     // unparseable one is flagged as a policy problem below, not silently
     // counted (issue #333).
     let parsedTapSignatures = tapSignatures.reduce((count, tapSig) => count + (tapSig.r ? 1 : 0), 0);
     tapSignatureCount += parsedTapSignatures;
+    let inputSigned = signatures.length + parsedTapSignatures > 0 || finalized;
+    if (inputSigned) signedInputs++;
+    let inputHasProblem = false;
     let destinationHtml = claim && !destination.startsWith("script ") ? hodlPublicInlineHtml(destination, { className: "psbt-address", label: hodlTText("Address") }) : hodlEscapeHtml(destination);
-    html.push("<p class='psbt-kv'><strong>Input " + index + "</strong> \xB7 " + hodlHexRev(previous.txid) + " : " + previous.vout + (claim ? "<br><span class='psbt-amount'>" + hodlSats(claim.amount) + " BTC claimed</span><br>" + destinationHtml : "<br>" + destinationHtml) + "<br>" + (signatures.length + parsedTapSignatures ? "<span class='psbt-sig-present'>" + (signatures.length + parsedTapSignatures) + " signature(s) present</span>" : finalized ? "<span class='psbt-sig-finalized'>Finalized input data present</span>" : "<span class='psbt-sig-unsigned'>Not signed yet</span>") + "<br><span class='psbt-sig-policy'>" + (declaredSighashError ? "Declared sighash policy unreadable: " + hodlEscapeHtml(declaredSighashError) : "Signature policy: " + hodlEscapeHtml(declaredLabel)) + "</span></p>");
+    // Everything in this loop — UTXO claim resolution and the fee total,
+    // conflict and sighash-policy warnings, inscription findings, nonce and
+    // signature analysis — runs for EVERY input, so every summary count
+    // covers the whole file. Only the rendering is bounded: the section and
+    // this input's warning paragraphs are placed at the end of the loop —
+    // inline, exactly where they belong, while the per-list cap and the
+    // view's render budget allow; collected and summarized past them.
     if (claimConflict) {
+      inputHasProblem = true;
       let conflictReason = witnessUtxo.amount !== nonWitnessUtxo.amount
-        ? "declares " + hodlSats(witnessUtxo.amount) + " BTC in its witness UTXO but " + hodlSats(nonWitnessUtxo.amount) + " BTC in its non-witness UTXO (checked against the embedded previous transaction). Neither amount is trusted"
-        : "names different previous-output scripts in its witness UTXO and its non-witness UTXO (the non-witness side checked against the embedded previous transaction). Neither claim is trusted";
-      html.push("<p class='psbt-bad'><strong>Conflicting previous-output claims:</strong> input " + index + " " + conflictReason + " and the fee is left unknown.</p>");
+        ? hodlT("input {n} declares {witness} BTC in its witness UTXO but {nonWitness} BTC in its non-witness UTXO (checked against the embedded previous transaction). Neither amount is trusted and the fee is left unknown.", { n: index, witness: hodlSats(witnessUtxo.amount), nonWitness: hodlSats(nonWitnessUtxo.amount) })
+        : hodlT("input {n} names different previous-output scripts in its witness UTXO and its non-witness UTXO (the non-witness side checked against the embedded previous transaction). Neither claim is trusted and the fee is left unknown.", { n: index });
+      warnings.push("<p class='psbt-bad'><strong>" + hodlT("Conflicting previous-output claims:") + "</strong> " + conflictReason + "</p>");
     }
-    if (nonWitnessError) html.push("<p class='psbt-bad'><strong>Non-witness UTXO problem:</strong> input " + index + ": " + hodlEscapeHtml(nonWitnessError) + " That field claims nothing.</p>");
+    if (nonWitnessError) {
+      inputHasProblem = true;
+      warnings.push("<p class='psbt-bad'><strong>" + hodlT("Non-witness UTXO problem:") + "</strong> " + hodlT("input {n}: {error} That field claims nothing.", { n: index, error: nonWitnessError }) + "</p>");
+    }
     let inputEnvelopes = (inscriptionReport.inputs[index] && inscriptionReport.inputs[index].envelopes) || [];
     inputEnvelopes.forEach((envelope) => {
+      inputHasProblem = true;
       let className = envelope.unrecognizedEven || envelope.bodyBytes > 100000 ? "psbt-bad" : "psbt-warn";
-      html.push("<p class='" + className + "'><strong>Inscription envelope</strong> \xB7 input " + index + " \xB7 #" + envelope.envelopeIndex + " \xB7 " + hodlEscapeHtml(envelope.source) + "<br>" + describeEnvelope(envelope).map(hodlEscapeHtml).join("<br>") + "</p>");
+      warnings.push("<p class='" + className + "'><strong>" + hodlT("Inscription envelope") + "</strong> \xB7 " + hodlT("input {n}", { n: index }) + " \xB7 #" + envelope.envelopeIndex + " \xB7 " + hodlEscapeHtml(envelope.source) + "<br>" + describeEnvelope(envelope).map(hodlEscapeHtml).join("<br>") + "</p>");
     });
     if (declaredSighashError) {
+      inputHasProblem = true;
       policyProblems++;
-      html.push("<p class='psbt-bad'><strong>Policy problem:</strong> input " + index + " declares a malformed sighash policy. Do not sign until its policy is known.</p>");
+      warnings.push("<p class='psbt-bad'><strong>" + hodlT("Policy problem:") + "</strong> " + hodlT("input {n} declares a malformed sighash policy. Do not sign until its policy is known.", { n: index }) + "</p>");
     } else if (declaredSighash !== null && declaredSighash !== 1 && !(taprootish && declaredSighash === 0)) {
       // SIGHASH_DEFAULT (0) is Taproot's full-commitment policy, so only
       // ECDSA inputs treat 0 as undefined. The warning names which commitment
       // side is missing (issue #333).
+      inputHasProblem = true;
       policyProblems++;
-      let base = declaredSighash & 0x7f, lacks = base === 1 ? "does not commit to all shown inputs" : base >= 2 && base <= 3 ? "does not commit to all shown outputs" : "is not a defined sighash policy";
-      html.push("<p class='psbt-bad'><strong>Policy problem:</strong> input " + index + " requests " + hodlEscapeHtml(declaredLabel) + "; that policy " + hodlEscapeHtml(lacks) + ". Do not accept the displayed outputs as what a signature will authorize.</p>");
+      let base = declaredSighash & 0x7f, vars = { n: index, policy: declaredLabel };
+      let problem = base === 1 ? hodlT("input {n} requests {policy}; that policy does not commit to all shown inputs. Do not accept the displayed outputs as what a signature will authorize.", vars)
+        : base >= 2 && base <= 3 ? hodlT("input {n} requests {policy}; that policy does not commit to all shown outputs. Do not accept the displayed outputs as what a signature will authorize.", vars)
+        : hodlT("input {n} requests {policy}; that policy is not a defined sighash policy. Do not accept the displayed outputs as what a signature will authorize.", vars);
+      warnings.push("<p class='psbt-bad'><strong>" + hodlT("Policy problem:") + "</strong> " + problem + "</p>");
     }
     // Every Schnorr signature's sighash suffix joins the safety analysis; one
     // that does not parse under BIP341 (64 bytes, or 65 with a defined
     // sighash byte) is a policy problem, not a countable signature.
     tapSignatures.forEach((tapSig) => {
       if (!tapSig.r) {
+        inputHasProblem = true;
         uninspected += 1;
         policyIncomplete += 1;
         policyProblems++;
-        html.push("<p class='psbt-bad'><strong>Policy problem:</strong> input " + index + " carries a Schnorr signature that is not valid under BIP341 (64 bytes, or 65 with a defined sighash byte). Do not sign until its policy is known.</p>");
+        warnings.push("<p class='psbt-bad'><strong>" + hodlT("Policy problem:") + "</strong> " + hodlT("input {n} carries a Schnorr signature that is not valid under BIP341 (64 bytes, or 65 with a defined sighash byte). Do not sign until its policy is known.", { n: index }) + "</p>");
         return;
       }
       hodlTapSighashProblems(declaredSighash, tapSig.sighash, hodlSighashLabel).forEach((problem) => {
+        inputHasProblem = true;
         policyProblems++;
-        html.push("<p class='psbt-bad'><strong>Policy problem:</strong> input " + index + ": " + hodlEscapeHtml(problem) + " Do not sign until its policy is known.</p>");
+        warnings.push("<p class='psbt-bad'><strong>" + hodlT("Policy problem:") + "</strong> " + hodlT("input {n}: {problem} Do not sign until its policy is known.", { n: index, problem }) + "</p>");
       });
     });
-    if (tapSignatures.length || (finalized && !signatures.length)) policyIncomplete++;
+    // A finalized Taproot signature's sighash byte joins the same check: a
+    // readable NONE or SINGLE suffix in the final witness was a missed red
+    // flag (red-team sweep 0eed735, part09 #10). One also held in a 0x13 or
+    // 0x14 field was checked above, so it is not listed here.
+    finalTapPolicy.forEach((record) => {
+      if (!record.r) {
+        inputHasProblem = true;
+        policyIncomplete += 1;
+        policyProblems++;
+        warnings.push("<p class='psbt-bad'><strong>" + hodlT("Policy problem:") + "</strong> " + hodlT("input {n} carries a Schnorr signature that is not valid under BIP341 (64 bytes, or 65 with a defined sighash byte). Do not sign until its policy is known.", { n: index }) + "</p>");
+        return;
+      }
+      hodlTapSighashProblems(declaredSighash, record.sighash, hodlSighashLabel).forEach((problem) => {
+        inputHasProblem = true;
+        policyProblems++;
+        warnings.push("<p class='psbt-bad'><strong>" + hodlT("Policy problem:") + "</strong> " + hodlT("input {n}: {problem} Do not sign until its policy is known.", { n: index, problem }) + "</p>");
+      });
+    });
+    // BIP340 nonce inspection: one record per Taproot signature. A
+    // script-path record's key is the x-only key in its keydata; a key-path
+    // 0x13 record carries no key, so the key is the previous output's P2TR
+    // output key Q, read from the resolved previous output (the witness UTXO,
+    // or the verified non-witness UTXO). Without one, or when the two
+    // disagree, the key is missing and the record cannot be compared.
+    tapSignatures.forEach((tapSig) => {
+      let schnorrKey = tapSig.source === "tap-script" ? tapSig.pubkey : claim && isP2tr(claim.script) ? claim.script.slice(2) : new Uint8Array();
+      schnorrRecords.push({ input: index, source: tapSig.source, pubkey: schnorrKey, r: tapSig.r, s: tapSig.s, leafHash: tapSig.leafHash });
+    });
+    // A 0x13 with keydata or a 0x14 whose keydata is not key + leaf hash is
+    // no signature field the collectors accept, but it may still carry a
+    // signature: it counts as incomplete, never silently dropped (Kimi K3's
+    // review of #1051).
+    let oddTapFields = hodlFind(entries, 19).filter((entry) => entry.keydata.length).length + hodlFind(entries, 20).filter((entry) => entry.keydata.length !== 64).length;
+    for (let odd = 0; odd < oddTapFields; odd++) schnorrRecords.push({ input: index, source: "tap-malformed", pubkey: new Uint8Array(), r: null, s: null });
+    // A partial ECDSA signature beside finalized material says nothing about
+    // that material. A decoy one made the row read complete over a finalized
+    // Taproot spend, read or not, and over final ECDSA signatures this check
+    // could not attribute or parse (#1479 r2 and r3 gates, Kimi, Gemini).
+    if (tapSignatures.length || finalUnread || (finalized && (!signatures.length || hodlFinalIsTaproot(entries, claim)))) policyIncomplete++;
+    let derivationFingerprints = signatures.length ? hodlPsbtDerivationFingerprints(entries) : null;
     signatures.forEach(signature => {
       let parts = hodlSigParts(signature.der),
         looseR = parts ? parts.r : hodlDerRLoose(signature.der),
         scriptCode = hodlInputScriptCode(entries, witnessUtxo),
+        // A script carrying OP_CODESEPARATOR signs a digest that starts just
+        // past the last executed separator (BIP-143); enumerating those
+        // starts stays in the crate (psbt-wasm/src/scriptcode.rs). The
+        // full-script digest reconstructed here is not the consensus message,
+        // so neither a "verifies" nor a "does not verify" drawn from it is
+        // sound — the row below reports the signature unverifiable instead
+        // (audit C2-D).
+        codeSeparated = scriptCode ? hodlScriptHasCodeSeparator(scriptCode) : false,
         overBudget = false,
         sighash = null;
       // Digest reconstruction re-reads the whole transaction per signature,
@@ -12337,7 +17238,7 @@ function hodlRenderPsbt(psbt, nonceSourceTag = new Uint8Array(), nonceCheckedAt 
       // layer's signature-check budget); past it the signature is reported
       // unchecked below — an incomplete verdict, never a clean one. A
       // signature that does not parse never needed the digest at all.
-      if ((parts || looseR) && witnessUtxo && scriptCode && signature.sighash === 1) {
+      if ((parts || looseR) && witnessUtxo && scriptCode && !codeSeparated && signature.sighash === 1) {
         if (signatureChecks.remaining > 0) {
           signatureChecks.remaining -= 1;
           sighash = hodlBip143(tx, index, scriptCode, witnessUtxo.amount, signature.sighash);
@@ -12350,6 +17251,8 @@ function hodlRenderPsbt(psbt, nonceSourceTag = new Uint8Array(), nonceCheckedAt 
         }) : null,
         message = hodlT("Need the matching key in this session to check RFC 6979 and low-r grind."),
         className = "muted";
+      // Set only by the AEXB branch below.
+      let aexbVerdict = null;
       let suffixForPolicy = signature.raw.length >= 2 ? signature.sighash : null,
         sighashProblems = hodlSighashProblems(declaredSighash, suffixForPolicy);
       if (sighashProblems.length) policyProblems++;
@@ -12360,6 +17263,7 @@ function hodlRenderPsbt(psbt, nonceSourceTag = new Uint8Array(), nonceCheckedAt 
       // hodlPsbtWipeMem.
       let privateKey = null;
       try {
+        rfcTotal += 1;
         if (!parts && !looseR) {
           uninspected += 1;
           policyIncomplete += 1;
@@ -12370,13 +17274,14 @@ function hodlRenderPsbt(psbt, nonceSourceTag = new Uint8Array(), nonceCheckedAt 
             className = "psbt-bad";
           }
         } else {
-          privateKey = hodlPrivForPub(signature.pubkey) || hodlPrivFromPath(entries, signature.pubkey);
+          privateKey = hodlPrivForPub(signature.pubkey) || hodlPrivFromPath(entries, signature.pubkey, inputDerivationBudget);
+          if (privateKey) rfcKeyFound = true;
           rValues.push({
             input: index,
             r: looseR,
             hex: hodlHex.encode(looseR),
             pubkey: hodlCompressedPubkey(signature.pubkey),
-            masterFingerprint: hodlPsbtMasterFingerprint(entries, signature.pubkey, Boolean(privateKey && hodlPsbtHd)),
+            masterFingerprint: hodlPsbtMasterFingerprint(entries, signature.pubkey, Boolean(privateKey && hodlPsbtHd), derivationFingerprints),
             sighash,
             valid: parts ? signatureValid : null
           });
@@ -12384,6 +17289,10 @@ function hodlRenderPsbt(psbt, nonceSourceTag = new Uint8Array(), nonceCheckedAt 
             // An unsafe or conflicting sighash policy blocks every other check.
             message = hodlT("Signature policy problem: {problems}", { problems: sighashProblems.join(" ") });
             className = "psbt-bad";
+          } else if (codeSeparated) {
+            message = hodlT("Script contains OP_CODESEPARATOR — this signature cannot be verified here. Its digest commits to the script from just past the last executed separator, which this inspection does not reconstruct, and its RFC 6979 nonce cannot be recomputed either. Verify it in the signing device.");
+            className = "psbt-warn";
+            unsupportedNonceChecks += 1;
           } else if (overBudget) {
             message = hodlT("Signature not inspected: this file carries more SIGHASH_ALL signatures than the per-file check budget covers.");
             className = "psbt-warn";
@@ -12395,19 +17304,22 @@ function hodlRenderPsbt(psbt, nonceSourceTag = new Uint8Array(), nonceCheckedAt 
             message = hodlT("This signature does not verify against the reconstructed input digest.");
             className = "psbt-warn";
           } else if (transcript) {
+            let bitbox = transcriptKind === "bitbox02";
             let opening = transcript.openings.length === 1 ? transcript.openings[0] : transcript.openings[ecdsaIndex];
             if (!opening) {
-              message = hodlT("No Jade opening R was provided for this signature.");
+              message = bitbox ? hodlT("No BitBox02 opening R was provided for this signature.") : hodlT("No Jade opening R was provided for this signature.");
               className = "psbt-warn";
             } else try {
               if (hodlAntiExfilCommitOk(parts.r, opening, transcript.host)) {
-                message = hodlT("Matches Jade anti-exfil (sign-to-contract). Host entropy mixed into the nonce. Not a leak.");
+                message = bitbox ? hodlT("Matches BitBox02 anti-klepto (sign-to-contract). Host entropy mixed into the nonce. Not a leak.") : hodlT("Matches Jade anti-exfil (sign-to-contract). Host entropy mixed into the nonce. Not a leak.");
                 className = "psbt-ok";
               } else {
-                message = hodlT("Does not match this Jade anti-exfil transcript. Signature r is not R + H(R||ρ)G.");
+                message = bitbox ? hodlT("Does not match this BitBox02 anti-klepto transcript.") : hodlT("Does not match this Jade anti-exfil transcript. Signature r is not R + H(R||ρ)G.");
                 className = "psbt-warn";
                 if (privateKey && sighash) try {
                   let cmp = hodlRfc6979Compare(sighash, privateKey.key, parts.r);
+                  rfcChecked += 1;
+                  if (!cmp.ok) rfcMismatched += 1;
                   if (cmp.ok) {
                     message += " " + cmp.message;
                     className = cmp.className;
@@ -12420,8 +17332,35 @@ function hodlRenderPsbt(psbt, nonceSourceTag = new Uint8Array(), nonceCheckedAt 
               message = hodlT("Could not verify Jade anti-exfil: {error}", { error: exception.message || String(exception) });
               className = "psbt-warn";
             }
+          } else if (aexbSignatures) {
+            const slotVerdict = hodlAexbSlotVerdict(aexbSignatures.slots, index, hodlCompressedPubkey(signature.pubkey), parts.r, parts.s, sighash);
+            aexbVerdict = slotVerdict;
+            if (slotVerdict === "no-slot") {
+              message = hodlT("No AEXB transcript slot covers this signature.");
+              className = "psbt-warn";
+            } else if (slotVerdict === "match") {
+              message = hodlT("Matches the AEXB transcript: this is the signature the transcript checks.");
+              className = "psbt-ok";
+              aexbMatched += 1;
+            } else {
+              message = hodlT("Does not match the AEXB transcript's signature for this input.");
+              className = "psbt-warn";
+              if (privateKey && sighash) try {
+                let cmp = hodlRfc6979Compare(sighash, privateKey.key, parts.r);
+                rfcChecked += 1;
+                if (!cmp.ok) rfcMismatched += 1;
+                if (cmp.ok) {
+                  message += " " + cmp.message;
+                  className = cmp.className;
+                } else message += " " + hodlT("Also does not match RFC 6979 or low-r grind.");
+              } catch (exception) {
+                message += " " + (exception.message || String(exception));
+              }
+            }
           } else if (privateKey && sighash) try {
             let cmp = hodlRfc6979Compare(sighash, privateKey.key, parts.r);
+            rfcChecked += 1;
+            if (!cmp.ok) rfcMismatched += 1;
             message = cmp.message;
             className = cmp.className;
           } catch (exception) {
@@ -12433,134 +17372,342 @@ function hodlRenderPsbt(psbt, nonceSourceTag = new Uint8Array(), nonceCheckedAt 
             message = hodlT("Matching key found, but this input script is not yet supported for RFC 6979 comparison.");
             className = "psbt-warn";
             unsupportedNonceChecks += 1;
-          } else if (!privateKey || !sighash) {
+          } else if (!sighash) {
+            // No digest could be reconstructed (unsupported script, a policy
+            // other than SIGHASH_ALL, or the per-file budget): a real gap.
             unsupportedNonceChecks += 1;
+          } else if (!privateKey) {
+            // The digest was reconstructed from the witness UTXO and the r
+            // value was compared; only the session key is missing, so RFC
+            // 6979 cannot be recomputed. Counting that as an unsupported
+            // nonce check made a one-signature, no-key PSBT (the signer-audit
+            // fixture) amber although its only gap is "nothing to compare".
+            nonceKeyMissing += 1;
           }
         }
       } finally {
         if (privateKey && !privateKey.owned) privateKey.key.fill(0);
       }
       ecdsaIndex += 1;
-      rows.push({ input: index, message, className, pubkey: hodlHex.encode(signature.pubkey) });
+      if (className === "psbt-bad" || className === "psbt-warn") inputHasProblem = true;
+      rows.push({ input: index, message, className, pubkey: hodlHex.encode(signature.pubkey), aexbVerdict });
     });
-  });
-  html.push("<hr class='result-divider'>");
-  html.push("<p class='label psbt-section-label'>" + hodlT("Tx fees") + "</p><p class='muted label-description'>" + hodlT("Remainder of total inputs after total outputs are accounted for") + "</p>");
-  if (conflictedInputs.length) html.push("<p class='psbt-bad'><strong>Fee unknown</strong> — input(s) " + conflictedInputs.join(", ") + " carry conflicting witness and non-witness UTXO amounts.</p>");
-  else if (knownInputs === tx.inputs.length) {
-    let outputSum = tx.outputs.reduce((sum, output) => sum + output.amount, 0n), fee = inputSum - outputSum;
-    if (fee >= 0n) html.push("<p class='psbt-kv'><strong>Unverified fee (PSBT previous-output claims)</strong><br><span class='psbt-amount'>" + hodlSats(fee) + " BTC</span></p>");
-    else {
-      feeInconsistent = 1;
-      html.push("<p class='psbt-bad'><strong>Inconsistent claimed amounts:</strong> outputs exceed claimed inputs by " + hodlSats(-fee) + " BTC.</p>");
+    // Placement: while the per-list cap and the view's render budget allow,
+    // the input's section and its warning paragraphs render inline, exactly
+    // where they belong (rock's order); past them the warnings join the
+    // collected list rendered capped after the loop, and the unrendered
+    // section is counted in the inputs elision line below.
+    // The section is built last, once every finding above has set this
+    // input's problem flag, so data-problem reflects its own state.
+    if (!inputSigned && signingExpected) inputHasProblem = true;
+    if (inputHasProblem) anyInputProblem = true;
+    const sectionHtml = "<p class='psbt-kv'" + (inputHasProblem ? " data-problem='true'" : "") + "><strong>" + hodlT("Input {n}", { n: index }) + "</strong> \xB7 " + hodlHexRev(previous.txid) + " : " + previous.vout + (claim ? "<br><span class='psbt-amount'>" + hodlT("{amount} BTC claimed", { amount: hodlSats(claim.amount) }) + "</span><br>" + destinationHtml : "<br>" + destinationHtml) + "<br>" + (signatures.length + parsedTapSignatures ? "<span class='psbt-sig-present'>" + hodlT("{count} signature(s) present", { count: signatures.length + parsedTapSignatures }) + "</span>" : finalized ? "<span class='psbt-sig-finalized'>" + hodlT("Finalized input data present") + "</span>" : "<span class='psbt-sig-unsigned'>" + hodlT("Not signed yet") + "</span>") + "<br><span class='psbt-sig-policy'>" + (declaredSighashError ? hodlT("Declared sighash policy unreadable: {error}", { error: declaredSighashError }) : hodlT("Signature policy: {policy}", { policy: declaredLabel })) + "</span></p>";
+    const own = warnings.splice(warningsBefore);
+    // The section needs one unit; as many of its own warnings as the budget
+    // then holds render inline under it, and the rest join the collected
+    // list. (Asking for the section and every warning at once hid the whole
+    // section of an input whose warnings outnumbered the budget left, even in
+    // a small PSBT: GLM 5.3's review of #1031.) Loops, not spreads: the nonce
+    // view's budget is unbounded and `own` can hold hundreds of thousands.
+    if (index < limits.inputs && budget.take(1) === 1) {
+      // In a chunk render, inputs already on screen emit nothing. How many
+      // of an input's warnings render inline depends on the window, so an
+      // earlier input that has any could have shown a different split: the
+      // click then repaints the whole run instead.
+      if (only && index < only.from && own.length) splitShown = true;
+      const sink = !only ? inputsHtml : index >= only.from ? chunk : null;
+      if (sink) sink.push(sectionHtml);
+      // One unit stays reserved for every later section in the window, so
+      // one input's warnings can never starve the inputs after it.
+      const reserve = Math.max(0, Math.min(limits.inputs, psbt.inputs.length) - index - 1);
+      const inline = budget.take(Math.max(0, Math.min(own.length, budget.left - reserve)));
+      if (sink) for (let i = 0; i < inline; i++) sink.push(own[i]);
+      for (let i = inline; i < own.length; i++) warnings.push(own[i]);
+      shownInputs++;
+    } else {
+      for (const warning of own) warnings.push(warning); // no spread: `own` can hold hundreds of thousands
     }
-  } else html.push("<p class='muted'>Fee unknown — some inputs do not include a claimed previous-output amount.</p>");
-  html.push("<p class='edge-note is-public'>Witness-UTXO amounts are unverified PSBT claims; non-witness UTXO amounts are cross-checked against the embedded previous transaction. Neither is checked against the blockchain.</p>");
+  });
+  // The warnings collected past the cap or the budget render capped too: a
+  // crafted PSBT triggers one per input (red-team F7). The policy/conflict
+  // counts and the analysis summary still cover every input.
+  const inputsTail = (psbt.inputs.length > shownInputs ? elidedNote("inputs", psbt.inputs.length - shownInputs) + moreButton("inputs", psbt.inputs.length - shownInputs) : "")
+    + cappedHtml(warnings, (warning) => warning, "warnings", (n) => hodlT("…and {n} more warnings (not rendered).", { n }), budget);
+  if (only?.kind === "inputs") return splitShown ? null : { chunk: chunk.join(""), tail: inputsTail };
+  // The whole inputs section is one collapsed block. It opens when any input
+  // carries a problem or a warning, so collapsing never hides one.
+  let inputsBody = inputsHtml.join("");
+  // The section's own flag: any input's problem, or the elided-inputs note
+  // (rendered in the warning tone) when the window hides some of them.
+  let inputsProblem = anyInputProblem || psbt.inputs.length > shownInputs;
+  html.push("<details class='derivation-advanced' data-psbt-inputs" + (inputsProblem ? " open data-problem='true'" : "") + "><summary><span class='label psbt-section-label'>" + hodlT("Inputs ({count}): what this transaction spends", { count: tx.inputs.length }) + "</span></summary>");
+  html.push(inputsBody);
+  html.push("<div data-psbt-tail='inputs'>" + inputsTail + "</div>");
+  // The collapsed block draws its own bottom border, so no divider follows it.
+  html.push("</details>");
+  html.push("<p class='label psbt-section-label'>" + hodlT("Tx fees") + "</p><p class='muted label-description'>" + hodlT("Remainder of total inputs after total outputs are accounted for") + "</p>");
+  // The fee analysis is computed once and rendered twice: the Fees section
+  // below and the glance line above. feeProblem holds the problem's own
+  // markup, so the glance can repeat it in the same severity instead of
+  // softening it to "fee unknown".
+  let feeKnown = false, feeValue = 0n, feeProblem = "";
+  if (conflictedInputs.length) {
+    feeProblem = "<strong>" + hodlT("Fee unknown") + "</strong> — " + hodlT("input(s) {inputs} carry conflicting witness and non-witness UTXO amounts.", { inputs: conflictedInputs.join(", ") });
+    html.push("<p class='psbt-bad'>" + feeProblem + "</p>");
+  } else if (knownInputs === tx.inputs.length) {
+    let outputSum = tx.outputs.reduce((sum, output) => sum + output.amount, 0n), fee = inputSum - outputSum;
+    if (fee >= 0n) {
+      feeKnown = true;
+      feeValue = fee;
+      html.push("<p class='psbt-kv'><strong>" + hodlT("Unverified fee (PSBT previous-output claims)") + "</strong><br><span class='psbt-amount'>" + hodlSats(fee) + " BTC</span></p>");
+    } else {
+      feeInconsistent = 1;
+      feeProblem = "<strong>" + hodlT("Inconsistent claimed amounts:") + "</strong> " + hodlT("outputs exceed claimed inputs by {amount} BTC.", { amount: hodlSats(-fee) });
+      html.push("<p class='psbt-bad'>" + feeProblem + "</p>");
+    }
+  } else html.push("<p class='muted'>" + hodlT("Fee unknown — some inputs do not include a claimed previous-output amount.") + "</p>");
+  // The one-line answer above the detail: what this transaction sends, in how
+  // many outputs, and the fee the section above computed. Every amount uses
+  // the Fees section's unit (BTC, 8 decimals), and a problem the Fees section
+  // shows appears here in the same severity, never as "fee unknown": the fee
+  // state is the Fees section's own result (feeProblem), so a conflicting
+  // UTXO claim is repeated here too. The change part appears only when the
+  // loaded key's ownership map claims an output; "Sends" then counts only
+  // what does not return to the key.
+  let glanceTotal = tx.outputs.reduce((sum, output) => sum + output.amount, 0n),
+    glanceCount = tx.outputs.length,
+    glanceChange = 0n;
+  // The same ownership rule as the warning below, address fallback included,
+  // so the glance line and the warning can never disagree about what is ours.
+  if (ownershipMap.size) for (const output of tx.outputs) if (matchOwnership(ownershipMap, output.script).state === "ours" || matchOwnership(ownershipMap, hodlAddr(output.script, network)).state === "ours") glanceChange += output.amount;
+  let glanceParts = [];
+  if (feeProblem) {
+    glanceParts.push(feeProblem);
+  } else {
+    glanceParts.push(ownershipMap.size ? hodlT("Sends {amount} BTC", { amount: hodlSats(glanceTotal - glanceChange) }) : hodlT("Outputs total {amount} BTC", { amount: hodlSats(glanceTotal) }));
+    glanceParts.push(glanceCount === 1 ? hodlT("in 1 output") : hodlT("in {count} outputs", { count: glanceCount }));
+    glanceParts.push(feeKnown ? hodlT("fee {fee} BTC", { fee: hodlSats(feeValue) }) : hodlT("fee unknown"));
+    if (glanceChange > 0n) glanceParts.push(hodlT("{change} BTC returns to your key", { change: hodlSats(glanceChange) }));
+  }
+  if (signingExpected) glanceParts.push(hodlT("{signed} of {total} inputs signed", { signed: signedInputs, total: tx.inputs.length }));
+  let glance = "<p class='" + (feeProblem ? "psbt-bad" : "psbt-kv") + "' data-psbt-glance data-severity='" + (feeProblem ? "bad" : "ok") + "'>" + glanceParts.join(" · ") + "</p>";
+  html.push("<p class='edge-note is-public'>" + hodlT("Witness-UTXO amounts are unverified PSBT claims; non-witness UTXO amounts are cross-checked against the embedded previous transaction. Neither is checked against the blockchain.") + "</p>");
   if (inscriptionReport.envelopes.length) {
-    html.push("<p class='psbt-warn'><strong>" + inscriptionReport.envelopes.length + " inscription envelope" + (inscriptionReport.envelopes.length === 1 ? "" : "s") + " in this PSBT.</strong> This is what the file reveals in witness or tap-leaf scripts. EntropyLab does not number sats, fetch content from the chain, or render binary payloads.</p>");
+    let count = inscriptionReport.envelopes.length;
+    html.push("<p class='psbt-warn'><strong>" + hodlT(count === 1 ? "{count} inscription envelope in this PSBT." : "{count} inscription envelopes in this PSBT.", { count }) + "</strong> " + hodlT("This is what the file reveals in witness or tap-leaf scripts. EntropyLab does not number sats, fetch content from the chain, or render binary payloads.") + "</p>");
   }
   let nonceHtml = [];
-  if (view !== "nonce") nonceHtml.push("<p class='label'>ECDSA nonce check</p>");
-  if (transcriptError) nonceHtml.push("<p class='psbt-warn'><strong>Jade anti-exfil transcript not used:</strong> " + hodlEscapeHtml(transcriptError) + "</p>");
+  if (view !== "nonce") nonceHtml.push("<p class='label'>" + hodlT("ECDSA nonce check") + "</p>");
+  if (transcriptError) nonceHtml.push("<p class='psbt-warn'><strong>" + hodlT("Anti-exfil transcript not used:") + "</strong> " + hodlEscapeHtml(transcriptError) + "</p>");
+  if (transcriptWarningCode === "jade-or-bitbox02") nonceHtml.push("<p class='edge-note'>" + hodlT("This reads as a Jade host nonce ρ or a BitBox02 host nonce. Both are checked the same way. From a BitBox02, paste the host nonce, not its SHA-256 commitment.") + "</p>");
+  if (aexbResult) {
+    // Green only when every ECDSA signature in this PSBT reached the slot
+    // comparison and matched: one stopped earlier (policy, DER, digest,
+    // finalized material) counts against it, and the count is the PSBT's.
+    const aexbCovered = rfcTotal > 0 && aexbMatched === rfcTotal;
+    nonceHtml.push(aexbResult.ok
+      ? aexbCovered
+        ? "<p class='psbt-ok' data-aexb-summary='covered'>" + hodlT("AEXB transcript checks out for {n} signature slot(s). This checks the transcript's math only, not that an honest host ran the exchange.", { n: aexbMatched }) + "</p>"
+        : "<p class='psbt-warn' data-aexb-summary='partial'>" + hodlT("AEXB transcript checks out, but it does not cover every signature in this PSBT.") + "</p>"
+      : "<p class='psbt-warn' data-aexb-summary='fail'>" + hodlT("AEXB transcript does not check out:") + " <code>" + hodlEscapeHtml(aexbResult.reason || aexbResult.slots?.find((slot) => !slot.ok)?.reason || "") + "</code></p>");
+  }
   let {
     reused,
     possible,
     crossKey
   } = hodlCompareNonces(rValues);
-  if (reused.length) nonceHtml.push("<p class='psbt-bad'><strong>Reused nonce detected for the same public key.</strong> The same r value appears on different message digests. If both signatures are valid, the private key can be recovered. Do not broadcast this transaction.</p>");
-  else if (possible.length) nonceHtml.push("<p class='psbt-warn'><strong>Possible repeated nonce for the same public key.</strong> The message digests could not both be reconstructed, so verify these signatures independently before treating this as a key leak.</p>");
-  if (crossKey.length) nonceHtml.push("<p class='psbt-bad'><strong>Same r value claimed under different public keys.</strong> " + crossKey.length + " pair(s) share an r value but name different keys — a mislabeled signature field can hide real nonce reuse this way. Verify every signature against its input's key independently before signing or broadcasting.</p>");
-  else if (uninspected) nonceHtml.push("<p class='psbt-warn'><strong>Incomplete nonce coverage.</strong> Some ECDSA signatures could not be inspected, so this is not a clean verdict.</p>");
+  // BIP340 reuse is a key leak whenever one R value appears under one x-only
+  // key: BIP341's signature message commits to the input index, the spend
+  // path (ext_flag) and the leaf hash, so two such signatures always sign
+  // different messages. One signature copied into two fields (same s) is
+  // not reuse.
+  let {
+    reused: schnorrReused,
+    incomplete: schnorrIncomplete
+  } = hodlCompareSchnorrNonces(schnorrRecords, hodlEq);
+  if (reused.length) nonceHtml.push("<p class='psbt-bad'><strong>" + hodlT("Reused nonce detected for the same public key.") + "</strong> " + hodlT("The same r value appears on different message digests. If both signatures are valid, the private key can be recovered. Do not broadcast this transaction.") + "</p>");
+  else if (possible.length) nonceHtml.push("<p class='psbt-warn'><strong>" + hodlT("Possible repeated nonce for the same public key.") + "</strong> " + hodlT("The message digests could not both be reconstructed, so verify these signatures independently before treating this as a key leak.") + "</p>");
+  if (crossKey.length) nonceHtml.push("<p class='psbt-bad'><strong>" + hodlT("Same r value claimed under different public keys.") + "</strong> " + hodlT("{count} pair(s) share an r value but name different keys — a mislabeled signature field can hide real nonce reuse this way. Verify every signature against its input's key independently before signing or broadcasting.", { count: crossKey.length }) + "</p>");
+  else if (uninspected) nonceHtml.push("<p class='psbt-warn'><strong>" + hodlT("Incomplete nonce coverage.") + "</strong> " + hodlT("Some ECDSA signatures could not be inspected, so this is not a clean verdict.") + "</p>");
   else if (rValues.length >= 2) {
-    if (!reused.length && !possible.length) nonceHtml.push("<p class='psbt-ok'>No repeated ECDSA nonce r values were found for the same public key in this PSBT.</p>");
+    if (!reused.length && !possible.length) nonceHtml.push("<p class='psbt-ok'>" + hodlT("No repeated ECDSA nonce r values were found for the same public key in this PSBT.") + "</p>");
   }
-  else if (rValues.length === 1) nonceHtml.push("<p class='muted'>Only one ECDSA signature with a readable r is present. Nonce reuse cannot be judged from this file alone.</p>");
-  else nonceHtml.push("<p class='muted'>No ECDSA signatures with a readable r value are present, so there is no nonce to compare yet.</p>");
-  if (rValues.length) nonceHtml.push("<p class='psbt-kv'>r values:<br>" + rValues.map(value => hodlEscapeHtml(value.hex) + " (input " + value.input + ")").join("<br>") + "</p>");
-  rows.forEach(row => nonceHtml.push("<p class='psbt-kv'><strong>Input " + row.input + "</strong><br>" + hodlPublicInlineHtml(row.pubkey, { label: hodlTText("Public key"), preview: row.pubkey.slice(0, 18) + "\u2026", className: "psbt-address" }) + "<br><span class='" + row.className + "'>" + hodlEscapeHtml(row.message) + "</span></p>"));
-  if (tapSignatureCount) nonceHtml.push("<p class='edge-note is-muted'>This PSBT also contains " + tapSignatureCount + " Taproot / Schnorr signature(s). Their sighash policies are checked above; their BIP340 nonces are not analyzed in this version.</p>");
-  nonceHtml.push("<p class='field-note'>RFC 6979 comparison currently covers SegWit v0 P2WPKH and P2WSH signatures using SIGHASH_ALL, including Bitcoin Core-style low-r grinding. Jade anti-exfil is secp256k1-zkp sign-to-contract and needs the USB host nonce plus signer opening; QR / sign_psbt Jade does not run it yet. BitBox anti-klepto is a different construction. Nonce reuse detection compares r values for the same secp256k1 point, including signatures carried by finalized scriptSig/witness fields, compressed and uncompressed encodings, and recoverable non-strict DER; the same r value claimed under two different public keys is flagged as a mislabeled field rather than skipped. A clean verdict is not issued when a signature cannot be inspected. Inscription detection reads OP_FALSE OP_IF \"ord\" envelopes in tap-leaf scripts and finalized witnesses; it does not number sats. Output ownership is derived from the session key: accounts 0\u20132, 50 receive + 50 change, all four script types. It does not talk to the chain.</p>");
-  let nonceIncomplete = uninspected || tapSignatureCount || unsupportedNonceChecks || crossKey.length || rValues.length < 2;
-  let nonceVerdict = reused.length ? "reuse" : crossKey.length ? "cross-key" : possible.length ? "possible" : nonceIncomplete ? "incomplete" : "clean";
-  if (view !== "inspect") hodlPsbtRecordNonceInspection("psbt", rValues, nonceSourceTag, nonceVerdict, nonceCheckedAt);
+  else if (rValues.length === 1) nonceHtml.push("<p class='muted'>" + hodlT("Only one ECDSA signature with a readable r is present. Nonce reuse cannot be judged from this file alone.") + "</p>");
+  else nonceHtml.push("<p class='muted'>" + hodlT("No ECDSA signatures with a readable r value are present, so there is no nonce to compare yet.") + "</p>");
+  if (schnorrReused.length) nonceHtml.push(hodlSchnorrReuseHtml(schnorrReused));
+  if (rValues.length) nonceHtml.push("<p class='psbt-kv'>" + hodlT("r values:") + cappedHtml(rValues, (value) => "<br>" + hodlEscapeHtml(value.hex) + " " + hodlT("(input {n})", { n: value.input }), "rows", (n) => hodlT("…and {n} more rows (not rendered).", { n }), budget) + "</p>");
+  nonceHtml.push(cappedHtml(rows, (row) => "<p class='psbt-kv'" + (row.aexbVerdict ? " data-aexb-verdict='" + row.aexbVerdict + "'" : "") + "><strong>" + hodlT("Input {n}", { n: row.input }) + "</strong><br>" + hodlPublicInlineHtml(row.pubkey, { label: hodlTText("Public key"), preview: row.pubkey.slice(0, 18) + "…", className: "psbt-address" }) + "<br><span class='" + row.className + "'>" + hodlEscapeHtml(row.message) + "</span></p>", "rows", (n) => hodlT("…and {n} more rows (not rendered).", { n }), budget));
+  // The Taproot total counts parseable signatures only (issue #333); an
+  // unreadable one still makes the result incomplete. A single comparable
+  // signature has nothing to be compared with, like a single ECDSA r
+  // (DeepSeek's red-team of #1051, F5).
+  if (!schnorrReused.length && (schnorrRecords.length || tapUninspected)) nonceHtml.push("<p class='edge-note is-muted'>" + (tapUninspected
+    ? hodlT("Some finalized Taproot inputs could not be read, so their signatures could not be checked for a repeated nonce. This check reads key-path spends and single-key or multi_a script-path spends. This is not a clean result.")
+    : schnorrIncomplete && !tapSignatureCount
+    ? hodlT("Taproot / Schnorr signature data in this PSBT could not be read, so it could not be checked for a repeated nonce. This is not a clean result.")
+    : schnorrIncomplete
+      ? hodlT("This PSBT also contains {count} Taproot / Schnorr signature(s). Their sighash policies are checked above. Some could not be checked for a repeated nonce, because a signature was unreadable or its key is not in this file. This is not a clean result.", { count: tapSignatureCount })
+      : tapSignatureCount === 1
+        ? hodlT("This PSBT also contains 1 Taproot / Schnorr signature. Its sighash policy is checked above. Only one Taproot signature is present, so nonce reuse cannot be judged from this file alone.")
+        : hodlT("This PSBT also contains {count} Taproot / Schnorr signature(s). Their sighash policies are checked above. No repeated BIP340 nonces were found among them.", { count: tapSignatureCount })) + "</p>");
+  let rfc6979Note = "";
+  if (rfcTotal > 0) {
+    rfc6979Note = rfcChecked === 0 && !rfcKeyFound
+      ? hodlTText("RFC 6979: not checked (no matching key in this session).")
+      : rfcChecked === rfcTotal && rfcTotal === 1
+        ? hodlTText("RFC 6979: checked for 1 of 1 ECDSA signature.")
+        : rfcChecked === rfcTotal && rfcTotal >= 2
+          ? hodlTText("RFC 6979: checked for all {total} ECDSA signatures.", { total: rfcTotal })
+          : hodlTText("RFC 6979: checked for {checked} of {total} ECDSA signatures.", { checked: rfcChecked, total: rfcTotal });
+    if (rfcMismatched > 0) rfc6979Note += " " + hodlTText("{n} did not match.", { n: rfcMismatched });
+  }
+  if (rfc6979Note) nonceHtml.push("<p class='edge-note is-muted' data-rfc6979-coverage>" + hodlEscapeHtml(rfc6979Note) + "</p>");
+  nonceHtml.push("<p class='field-note'>" + hodlT("RFC 6979 comparison currently covers SegWit v0 P2WPKH and P2WSH signatures using SIGHASH_ALL, including Bitcoin Core-style low-r grinding; a signature on a script containing OP_CODESEPARATOR is reported as unverifiable instead of compared. Anti-exfil reads a Jade or BitBox02 host nonce plus the signer opening (secp256k1-zkp sign-to-contract), or the AEXB/AEXT messages of one session; QR / sign_psbt Jade does not run it yet. Nonce reuse detection compares r values for the same secp256k1 point, including signatures carried by finalized scriptSig/witness fields, compressed and uncompressed encodings, and recoverable non-strict DER; the same r value claimed under two different public keys is flagged as a mislabeled field rather than skipped. A clean verdict is not issued when a signature cannot be inspected. Inscription detection reads OP_FALSE OP_IF \"ord\" envelopes in tap-leaf scripts and finalized witnesses; it does not number sats. Output ownership is derived from the session key: accounts 0–2, 50 receive + 50 change, all four script types. It does not talk to the chain.") + "</p>");
+  // ECDSA r values and BIP340 R values are never compared with each other,
+  // so each family needs two comparable signatures of its own: one of each
+  // is not a clean result (DeepSeek's red-team of #1051, F1).
+  let schnorrCompared = schnorrRecords.length - schnorrIncomplete;
+  let nonceIncomplete = uninspected || schnorrIncomplete || tapUninspected || unsupportedNonceChecks || nonceKeyMissing || crossKey.length || rValues.length === 1 || schnorrCompared === 1 || rValues.length + schnorrCompared === 0;
+  // A nonce check that is incomplete only because there is nothing to
+  // compare (one comparable signature, or none) is the no-key case's
+  // sibling: the row still reads Incomplete, but the overall line does not
+  // count it (owner, 2026-10-26). Any other cause keeps the check counting.
+  // A signature whose only missing piece is the session key (nonceKeyMissing)
+  // is not such a cause: its r was compared, and the missing key is the
+  // no-key case the overall line already ignores. It still makes the row
+  // Incomplete, so a PSBT with two or more signatures and no key stays amber.
+  let nonceNothingToCompare = !possible.length && !uninspected && !schnorrIncomplete && !tapUninspected && !unsupportedNonceChecks && !crossKey.length && (rValues.length === 1 || schnorrCompared === 1 || rValues.length + schnorrCompared === 0);
+  let nonceVerdict = reused.length || schnorrReused.length ? "reuse" : crossKey.length ? "cross-key" : possible.length ? "possible" : nonceIncomplete ? "incomplete" : "clean";
+  if (view !== "inspect" && options?.record !== false) hodlPsbtRecordNonceInspection("psbt", rValues, nonceSourceTag, nonceVerdict, nonceCheckedAt);
   let checks = [
     {
-      label: "Previous outputs and fee",
-      state: feeInconsistent ? "problem" : "incomplete",
+      label: hodlTText("Previous outputs and fee"),
+      state: feeInconsistent ? "problem" : knownInputs === tx.inputs.length ? "complete" : "incomplete",
       detail: feeInconsistent
-        ? "The claimed output amounts exceed the claimed input amounts, so the PSBT's own claims are inconsistent; claims were not checked against previous transactions or the blockchain."
+        ? hodlTText("The claimed output amounts exceed the claimed input amounts, so the PSBT's own claims are inconsistent; claims were not checked against previous transactions or the blockchain.")
         : knownInputs === tx.inputs.length
-          ? "Amounts and fee were calculated from PSBT-provided witness UTXO claims, but those claims were not checked against previous transactions or the blockchain."
-          : "One or more inputs have no witness UTXO amount, and available PSBT claims were not checked against previous transactions or the blockchain.",
+          ? hodlTText("Amounts and fee were calculated from PSBT-provided witness UTXO claims, but those claims were not checked against previous transactions or the blockchain.")
+          : hodlTText("One or more inputs have no witness UTXO amount, and available PSBT claims were not checked against previous transactions or the blockchain."),
     },
     {
-      label: "SIGHASH policy",
+      id: "sighash-policy",
+      label: hodlTText("SIGHASH policy"),
       state: policyProblems ? "problem" : policyIncomplete ? "incomplete" : "complete",
       detail: policyProblems
-        ? "At least one malformed, unsafe, or conflicting policy was found; see the blocking warning below."
+        ? hodlTText("At least one malformed, unsafe, or conflicting policy was found; see the blocking warning below.")
         : policyIncomplete
-          ? "Some finalized, Taproot, or undecodable signature data could not be evaluated by this check."
-          : "Every policy declaration and readable ECDSA signature suffix available to this report commits to all displayed outputs.",
+          ? hodlTText("Some finalized, Taproot, or undecodable signature data could not be evaluated by this check.")
+          : hodlTText("Every policy declaration and readable ECDSA signature suffix available to this report commits to all displayed outputs."),
     },
     {
-      label: "Output ownership / derivation",
+      label: hodlTText("Output ownership / derivation"),
       state: "incomplete",
+      incompleteReason: ownershipMap.size ? undefined : "no-key",
       detail: ownershipMap.size
-        ? "Compared with the loaded session key only within accounts 0–2, 50 receive and 50 change addresses, and four supported script types; outputs outside that range remain unclassified."
-        : "No session key was loaded, so output ownership and change derivation were not checked.",
+        ? hodlTText("Compared with the loaded session key only within accounts 0–2, 50 receive and 50 change addresses, and four supported script types; outputs outside that range remain unclassified.")
+        : hodlTText("No session key was loaded, so output ownership and change derivation were not checked."),
     },
-    hodlPsbtNonceCheck(reused, possible, nonceIncomplete),
+    hodlPsbtNonceCheck(reused, possible, nonceIncomplete, schnorrReused, rValues.length, schnorrCompared, rfc6979Note, nonceNothingToCompare ? "nothing-to-compare" : ""),
     {
-      label: "BIP-174 / consensus cross-check",
+      label: hodlTText("BIP-174 / consensus cross-check"),
       state: referenceVerdict.state,
       detail: referenceVerdict.state === "problem"
-        ? "The reference layer (rust-bitcoin) reports error-severity problems; see the banner at the top of this report."
+        ? hodlTText("The reference layer (rust-bitcoin) reports error-severity problems; see the banner at the top of this report.")
         : referenceVerdict.state === "complete"
-          ? "rust-bitcoin parsed this file and reported no error-severity BIP-174 or consensus problem."
-          : "The reference layer was unavailable, so validity was checked only by the built-in parser.",
+          ? hodlTText("rust-bitcoin parsed this file and reported no error-severity BIP-174 or consensus problem.")
+          : hodlTText("The reference layer was unavailable, so validity was checked only by the built-in parser."),
     },
     {
-      label: "Taproot inscription scan",
+      label: hodlTText("Taproot inscription scan"),
       state: inscriptionScanIncomplete ? "incomplete" : "complete",
       detail: inscriptionScanIncomplete
-        ? "Tap-leaf or finalized-witness data could not be fully decoded, so inscription-envelope coverage is incomplete."
-        : "Tap-leaf scripts and finalized witnesses were scanned for recognizable inscription envelopes; this does not number sats or inspect chain data.",
+        ? hodlTText("Tap-leaf or finalized-witness data could not be fully decoded, so inscription-envelope coverage is incomplete.")
+        : hodlTText("Tap-leaf scripts and finalized witnesses were scanned for recognizable inscription envelopes; this does not number sats or inspect chain data."),
     },
   ];
   if (view === "nonce") return nonceHtml.join("");
-  html.unshift(hodlPsbtAnalysisSummary(checks));
-  return (view === "inspect" ? html : html.concat(nonceHtml)).join("");
+  // The answer block comes first: the section band, the overall status line
+  // and the glance line, in one block.
+  let overallLine = hodlPsbtOverallLine(checks);
+  let answerBlock = "<section class='psbt-analysis-summary' data-psbt-answer data-psbt-analysis-overall='" + overallLine.state + "' aria-label='" + hodlTAttr("PSBT security analysis status") + "'><p class='label psbt-section-label'>" + hodlT("PSBT security analysis") + "</p>" + overallLine.html + glance + "</section>";
+  html.unshift(answerBlock, hodlPsbtAnalysisSummary(checks));
+  // Commentary, last in the result and never read by a check; a throw adds
+  // nothing.
+  let privacy = "";
+  try { privacy = hodlPrivacySignalsHtml(psbtPrivacySignals({ inputs: psbt.inputs, outputs: tx.outputs })); } catch {}
+  return (view === "inspect" ? html : html.concat(nonceHtml)).concat(privacy).join("");
 }
 // Same three views as hodlRenderPsbt. A raw transaction has no summary table,
 // so the Inspector carries the verdict lines themselves — the exact lines the
 // Nonce Inspector shows, never a restatement of them.
-function hodlRenderRawTx(tx, nonceSourceTag = new Uint8Array(), nonceCheckedAt = new Date().toISOString(), view = "all") {
+function hodlRenderRawTx(tx, nonceSourceTag = new Uint8Array(), nonceCheckedAt = new Date().toISOString(), view = "all", options) {
   // The inspector follows the header network picker (mainnet/testnet); there
-  // is no per-tool network control.
-  let network = hodlNetworkDefault,
+  // is no per-tool network control. A repaint passes the run's network.
+  // Per-element rendering is capped like the PSBT editor's views (the
+  // PSBT_RENDER_LIMIT imported from psbt-viz.js, above hodlRenderPsbt). The
+  // ownership warning, inscription hints and nonce analysis below still
+  // cover every input and output.
+  let network = options?.network ?? hodlInspectorNetwork(),
     html = [],
     map = hodlSessionOwnership(network),
     signatures = extractEcdsaSignatures(tx),
     rValues = [],
     uninspected = 0;
-  html.push("<p class='psbt-warn'><strong>Raw Bitcoin transaction.</strong> Not a PSBT. Input amounts and fee are unknown without previous outputs. RFC 6979 cannot be checked here. This is the last look before broadcast.</p>");
+  // The window of inputs and outputs this render may show. The Inspector
+  // passes its own (PSBT_INSPECTOR_LIMIT each, grown by its "Show more"
+  // buttons; `step` is the growth, `format` writes a count in the page
+  // language); every other caller gets the shared PSBT_RENDER_LIMIT.
+  const limits = { inputs: options?.limits?.inputs ?? PSBT_RENDER_LIMIT, outputs: options?.limits?.outputs ?? PSBT_RENDER_LIMIT, step: options?.limits?.step ?? 0, format: options?.limits?.format };
+  // A "Show more" click asks only for the block it adds: `only` names the
+  // list and where the shown part ends. The render then runs as a full render
+  // with the grown window would, emits that list's new sections and its tail
+  // (the note, the button and, for inputs, the collected warnings), and
+  // returns { chunk, tail } instead of the page. Each list's tail sits in its
+  // own data-psbt-tail wrapper, so the click can insert the chunk above it.
+  const only = options?.only && (options.only.kind === "inputs" || options.only.kind === "outputs") ? { kind: options.only.kind, from: Math.max(0, options.only.from | 0) } : null;
+  const chunk = [];
+  // "Show more" buttons go only where the caller can grow the window (the
+  // Inspector passes `step`); each names how many the next step adds.
+  const moreButton = (kind, remaining) => {
+    if (!limits.step || remaining <= 0) return "";
+    let n = Math.min(limits.step, remaining);
+    let label = kind === "inputs"
+      ? (n === 1 ? hodlT("Show 1 more input") : hodlT("Show {n} more inputs", { n: count(n) }))
+      : (n === 1 ? hodlT("Show 1 more output") : hodlT("Show {n} more outputs", { n: count(n) }));
+    return "<div class='row tool-actions'><button class='btn secondary' type='button' data-psbt-more='" + kind + "'>" + label + "</button></div>";
+  };
+  // The note under a capped input or output list. Those inputs and outputs
+  // are still in the transaction being signed (and in its fee and totals), so
+  // the note says so, as a warning: the person cannot review all of it here.
+  const count = (n) => (typeof limits.format === "function" ? limits.format(n) : String(n));
+  const elidedNote = (kind, n) => "<p class='psbt-warn'>" + (kind === "inputs"
+    ? (n === 1 ? hodlT("1 more input not shown, still included in this transaction.") : hodlT("{n} more inputs not shown, still included in this transaction.", { n: count(n) }))
+    : (n === 1 ? hodlT("1 more output not shown, still included in this transaction.") : hodlT("{n} more outputs not shown, still included in this transaction.", { n: count(n) }))) + "</p>";
+  html.push("<p class='psbt-warn'><strong>" + hodlT("Raw Bitcoin transaction.") + "</strong> " + hodlT("Not a PSBT. Input amounts and fee are unknown without previous outputs. RFC 6979 cannot be checked here. This is the last look before broadcast.") + "</p>");
   html.push("<hr class='result-divider'>");
   html.push("<p class='label psbt-section-label'>" + hodlT("Tx outputs") + " <span class='label-value'>(" + tx.outputs.length + ")</span></p><p class='muted label-description'>" + hodlT("Where this transaction sends bitcoin") + "</p>");
-  tx.outputs.forEach((output, index) => {
-    html.push(hodlRenderOutputHtml(output, index, network, map, null));
-  });
+  const shownOutputs = Math.min(tx.outputs.length, limits.outputs);
+  for (let index = !only ? 0 : only.kind === "outputs" ? Math.min(only.from, shownOutputs) : shownOutputs; index < shownOutputs; index++) {
+    (only ? chunk : html).push(hodlRenderOutputHtml(tx.outputs[index], index, network, map, null));
+  }
+  const outputsTail = tx.outputs.length > shownOutputs ? elidedNote("outputs", tx.outputs.length - shownOutputs) + moreButton("outputs", tx.outputs.length - shownOutputs) : "";
+  if (only?.kind === "outputs") return { chunk: chunk.join(""), tail: outputsTail };
+  html.push("<div data-psbt-tail='outputs'>" + outputsTail + "</div>");
   html.push(hodlOwnershipWarning(tx.outputs, network, map));
   html.push("<hr class='result-divider'>");
   html.push("<p class='label psbt-section-label'>" + hodlT("Tx inputs") + " <span class='label-value'>(" + tx.inputs.length + ")</span></p><p class='muted label-description'>" + hodlT("Where this transaction’s outputs are spending from") + "</p>");
-  tx.inputs.forEach((input, index) => {
-    html.push("<p class='psbt-kv'><strong>Input " + index + "</strong> \xB7 " + hodlHexRev(input.txid) + " : " + input.vout + "<br>sequence " + hodlEscapeHtml("0x" + input.sequence.toString(16)) + (input.sequence < 0xfffffffe ? " \xB7 RBF-capable" : "") + "</p>");
+  const shownInputs = Math.min(tx.inputs.length, limits.inputs);
+  tx.inputs.slice(only ? Math.min(only.from, shownInputs) : 0, shownInputs).forEach((input, offset) => {
+    const index = (only ? Math.min(only.from, shownInputs) : 0) + offset;
+    (only ? chunk : html).push("<p class='psbt-kv'><strong>" + hodlT("Input {n}", { n: index }) + "</strong> \xB7 " + hodlHexRev(input.txid) + " : " + input.vout + "<br>" + hodlT("sequence {sequence}", { sequence: "0x" + input.sequence.toString(16) }) + (input.sequence < 0xfffffffe ? " \xB7 " + hodlT("RBF-capable") : "") + "</p>");
   });
-  inscriptionHints(tx).forEach((hint) => {
-    html.push("<p class='psbt-warn'><strong>Inscription envelope</strong> in input " + hint.input + " (" + hint.scriptBytes + " bytes of script/witness). This transaction reveals OP_FALSE OP_IF \"ord\" data.</p>");
-  });
-  html.push("<p class='muted'>Version " + tx.version + " \xB7 locktime " + tx.locktime + (tx.segwit ? " \xB7 segwit" : "") + ". Fee unknown \u2014 previous output amounts are not in a raw transaction.</p>");
+  const inputsTail = tx.inputs.length > shownInputs ? elidedNote("inputs", tx.inputs.length - shownInputs) + moreButton("inputs", tx.inputs.length - shownInputs) : "";
+  if (only?.kind === "inputs") return { chunk: chunk.join(""), tail: inputsTail };
+  html.push("<div data-psbt-tail='inputs'>" + inputsTail + "</div>");
+  html.push(cappedHtml(inscriptionHints(tx), (hint) => "<p class='psbt-warn'><strong>" + hodlT("Inscription envelope") + "</strong> " + hodlT("in input {n} ({bytes} bytes of script/witness). This transaction reveals OP_FALSE OP_IF \"ord\" data.", { n: hint.input, bytes: hint.scriptBytes }) + "</p>", "warnings", (n) => hodlT("…and {n} more warnings (not rendered).", { n })));
+  html.push("<p class='muted'>" + hodlT(tx.segwit ? "Version {version} · locktime {locktime} · segwit. Fee unknown — previous output amounts are not in a raw transaction." : "Version {version} · locktime {locktime}. Fee unknown — previous output amounts are not in a raw transaction.", { version: tx.version, locktime: tx.locktime }) + "</p>");
   let nonceHtml = [], verdictHtml = [];
-  if (view !== "nonce") nonceHtml.push("<p class='label'>ECDSA nonce check</p>");
+  if (view !== "nonce") nonceHtml.push("<p class='label'>" + hodlT("ECDSA nonce check") + "</p>");
   signatures.forEach((signature) => {
     let parts = hodlSigParts(signature.der), looseR = parts ? parts.r : hodlDerRLoose(signature.der);
     if (!looseR || !signature.pubkey) {
@@ -12578,23 +17725,44 @@ function hodlRenderRawTx(tx, nonceSourceTag = new Uint8Array(), nonceCheckedAt =
     });
   });
   let { reused, possible, crossKey } = hodlCompareNonces(rValues);
-  if (reused.length || possible.length) verdictHtml.push("<p class='psbt-bad'><strong>Repeated nonce r for the same public key.</strong> Message digests cannot be rebuilt from a raw transaction without prevouts, so treat this as a warning and do not broadcast until the signatures are checked independently.</p>");
-  if (crossKey.length) verdictHtml.push("<p class='psbt-warn'><strong>Same r value claimed under different public keys.</strong> A key association in a raw transaction is read from the script, not verified; verify these signatures independently before broadcast.</p>");
-  else if (uninspected) verdictHtml.push("<p class='psbt-warn'><strong>Incomplete nonce coverage.</strong> Some ECDSA signatures could not be inspected.</p>");
+  // Taproot: a script-path spend names its keys in the leaf, so pk() and
+  // multi_a signatures are compared as in a PSBT. A key-path signature's key
+  // is in the previous output, which a raw transaction does not carry, so it
+  // and any other Taproot spend count as unchecked: never a clean result.
+  let schnorrRecords = [], tapUnchecked = 0;
+  tx.inputs.forEach((input, index) => {
+    let stack = input.witness || [], records = hodlTapScriptPathSigs(stack);
+    if (records) records.forEach((record) => schnorrRecords.push(Object.assign({ input: index }, record)));
+    else if (hodlTapWitnessShape(stack)) tapUnchecked++;
+  });
+  let { reused: schnorrReused, incomplete: schnorrIncomplete } = hodlCompareSchnorrNonces(schnorrRecords, hodlEq);
+  let schnorrCompared = schnorrRecords.length - schnorrIncomplete, tapCount = schnorrRecords.filter((record) => record.r).length;
+  if (reused.length || possible.length) verdictHtml.push("<p class='psbt-bad'><strong>" + hodlT("Repeated nonce r for the same public key.") + "</strong> " + hodlT("Message digests cannot be rebuilt from a raw transaction without prevouts, so treat this as a warning and do not broadcast until the signatures are checked independently.") + "</p>");
+  if (crossKey.length) verdictHtml.push("<p class='psbt-warn'><strong>" + hodlT("Same r value claimed under different public keys.") + "</strong> " + hodlT("A key association in a raw transaction is read from the script, not verified; verify these signatures independently before broadcast.") + "</p>");
+  else if (uninspected) verdictHtml.push("<p class='psbt-warn'><strong>" + hodlT("Incomplete nonce coverage.") + "</strong> " + hodlT("Some ECDSA signatures could not be inspected.") + "</p>");
   else if (rValues.length >= 2) {
-    if (!reused.length && !possible.length) verdictHtml.push("<p class='psbt-ok'>No repeated ECDSA nonce r values were found for the same public key in this transaction.</p>");
+    if (!reused.length && !possible.length) verdictHtml.push("<p class='psbt-ok'>" + hodlT("No repeated ECDSA nonce r values were found for the same public key in this transaction.") + "</p>");
   }
-  else if (rValues.length === 1) verdictHtml.push("<p class='muted'>Only one ECDSA signature with a readable r is present. Nonce reuse cannot be judged from this file alone.</p>");
-  else verdictHtml.push("<p class='muted'>No ECDSA signatures with a readable r and public key were found.</p>");
+  else if (rValues.length === 1) verdictHtml.push("<p class='muted'>" + hodlT("Only one ECDSA signature with a readable r is present. Nonce reuse cannot be judged from this file alone.") + "</p>");
+  else verdictHtml.push("<p class='muted'>" + hodlT("No ECDSA signatures with a readable r and public key were found.") + "</p>");
+  if (schnorrReused.length) verdictHtml.push(hodlSchnorrReuseHtml(schnorrReused));
+  else if (tapUnchecked || schnorrIncomplete) verdictHtml.push("<p class='edge-note is-muted'>" + hodlT("Some Taproot signatures in this transaction could not be checked for a repeated nonce. A key-path signature's key is in the previous output, which a raw transaction does not include, and only single-key and multi_a script-path spends are read. This is not a clean result.") + "</p>");
+  else if (tapCount === 1) verdictHtml.push("<p class='edge-note is-muted'>" + hodlT("This transaction also contains 1 Taproot / Schnorr signature in a script-path spend. Only one Taproot signature is present, so nonce reuse cannot be judged from this transaction alone.") + "</p>");
+  else if (tapCount) verdictHtml.push("<p class='edge-note is-muted'>" + hodlT("This transaction also contains {count} Taproot / Schnorr signature(s) in script-path spends. No repeated BIP340 nonces were found among them.", { count: tapCount }) + "</p>");
   nonceHtml.push(...verdictHtml);
-  if (rValues.length) nonceHtml.push("<p class='psbt-kv'>r values:<br>" + rValues.map((value) => hodlEscapeHtml(value.hex) + " (input " + value.input + ")").join("<br>") + "</p>");
-  nonceHtml.push("<p class='field-note'>Raw-transaction inspect does not reconstruct sighashes. Paste the PSBT when you still can; use this path for a fully signed hex dump from a hardware wallet or Bitcoin Core.</p>");
-  let nonceIncomplete = uninspected || crossKey.length || rValues.length < 2;
-  let nonceVerdict = crossKey.length ? "cross-key" : possible.length ? "possible" : nonceIncomplete ? "incomplete" : "clean";
-  if (view !== "inspect") hodlPsbtRecordNonceInspection("transaction", rValues, nonceSourceTag, nonceVerdict, nonceCheckedAt);
+  if (rValues.length) nonceHtml.push("<p class='psbt-kv'>" + hodlT("r values:") + cappedHtml(rValues, (value) => "<br>" + hodlEscapeHtml(value.hex) + " " + hodlT("(input {n})", { n: value.input }), "rows", (n) => hodlT("…and {n} more rows (not rendered).", { n })) + "</p>");
+  nonceHtml.push("<p class='field-note'>" + hodlT("Raw-transaction inspect does not reconstruct sighashes. Paste the PSBT when you still can; use this path for a fully signed hex dump from a hardware wallet or Bitcoin Core.") + "</p>");
+  // Each family needs two comparable signatures of its own, as in a PSBT.
+  let nonceIncomplete = uninspected || crossKey.length || schnorrIncomplete || tapUnchecked || rValues.length === 1 || schnorrCompared === 1 || rValues.length + schnorrCompared === 0;
+  let nonceVerdict = schnorrReused.length ? "reuse" : crossKey.length ? "cross-key" : possible.length ? "possible" : nonceIncomplete ? "incomplete" : "clean";
+  if (view !== "inspect" && options?.record !== false) hodlPsbtRecordNonceInspection("transaction", rValues, nonceSourceTag, nonceVerdict, nonceCheckedAt);
   if (view === "nonce") return nonceHtml.join("");
-  if (view === "inspect") return html.concat(["<p class='label'>Nonce analysis</p>"], verdictHtml, ["<p class='muted'>" + hodlT("Open the Nonce Inspector for every r value and the per-signature detail.") + "</p>"]).join("");
-  return html.concat(nonceHtml).join("");
+  // Commentary, last in the result and never read by a check; a throw adds
+  // nothing.
+  let privacy = "";
+  try { privacy = hodlPrivacySignalsHtml(psbtPrivacySignals({ inputs: null, outputs: tx.outputs })); } catch {}
+  if (view === "inspect") return html.concat(["<p class='label'>" + hodlT("Nonce analysis") + "</p>"], verdictHtml, ["<p class='muted'>" + hodlT("Open the Nonce Inspector for every r value and the per-signature detail.") + "</p>"], privacy).join("");
+  return html.concat(nonceHtml, privacy).join("");
 }
 var hodlAccountId = "bip84",
   hodlNextKeyId = 1,
@@ -12602,6 +17770,7 @@ var hodlAccountId = "bip84",
   hodlKeys = [],
   hodlActiveKey = -1;
 var hodlKeyManagerIds = new Set(), hodlKeyManagerIgnored = [], hodlKeyManagerPending = [], hodlKeyManagerActiveId = "";
+var hodlJournalKeyDerivation = null, hodlJournalKeyImportConfirm = null, hodlKeyManagerFileRequest = 0;
 
 function hodlKeyColor(id) {
   let hue = Math.round((Number(id) * 137.508 + 19) % 360);
@@ -12636,15 +17805,35 @@ function hodlKeyManagerStatus(message, error = false) {
   status.textContent = message || "";
   status.dataset.state = error ? "error" : "";
 }
+function hodlKeyManagerSyncReviewedContext() {
+  let status = document.getElementById("key-import-context"), state = hodlKeys[hodlActiveKey];
+  if (!status) return;
+  let reviewed = state?.isLab && state.importedKeyId != null;
+  status.hidden = !reviewed;
+  status.textContent = reviewed ? hodlTText("Reviewing {name} for {network}. Derive to verify these inputs. Use the Network menu to change the saved network.", { name: state.importedName || hodlTText("imported inputs"), network: state.importedNetworkChoice || state.fields.network }) : "";
+}
+function hodlKeyManagerHasInputs(state) {
+  let fields = state?.fields || {};
+  return ["pass", "dice", "colemanDice", "bitboxDice", "dplusDice", "hex", "bin", "base4", "base8", "base32", "base64", "cards", "directCards", "seed", "seedNumbers", "brainLab", "key"].some(key => fields[key]?.length)
+    || Object.values(fields.privateKeys || {}).some(value => value?.length)
+    || Boolean(state?.lastWord || state?.dplusLastWord);
+}
 function hodlKeyManagerStates() {
   let states = [], identities = new Set();
-  [...hodlKeys.filter((state) => !state.isLab && state.result), ...hodlKeyManagerPending].forEach((state) => {
+  [...hodlKeys.filter((state) => !state.isLab && (state.result || hodlKeyManagerHasInputs(state))), ...hodlKeyManagerPending].forEach((state) => {
     let identity = keyVaultIdentity(state);
     if (!identity || identities.has(identity)) return;
     identities.add(identity);
     states.push(state);
   });
   return states;
+}
+function hodlKeyManagerCapacityError(keyCount = hodlKeyManagerStates().length, archivedCount = hodlKeyManagerIgnored.length) {
+  // Check the resulting inventory before moving inputs: an individually
+  // valid file or archive action must not make the complete backup fail.
+  if (keyCount > hodlKeyVaultMaxKeys) return hodlTText("A Journal backup can contain at most {n} active key input sets. Archive inputs to make room before adding more.", { n: hodlKeyVaultMaxKeys });
+  if (archivedCount > hodlKeyVaultMaxKeys) return hodlTText("A Journal backup can contain at most {n} archived key input sets. Restore archived inputs to make room, or download a backup before clearing Journal.", { n: hodlKeyVaultMaxKeys });
+  return "";
 }
 function hodlKeyManagerEntry(state) {
   // Byte arrays stay behind: the copy is read only for the key's identity, and
@@ -12654,45 +17843,68 @@ function hodlKeyManagerEntry(state) {
   // the encrypted file, which is an export.
   if (ArrayBuffer.isView(state.fields?.pass) && copy.fields) copy.fields.pass = hodlPassphraseText(state.fields.pass);
   delete copy.isLab;
+  delete copy.secureCleared;
   copy.reveal = false;
   copy.error = "";
   delete copy.errorSpec;
   return copy;
+}
+function hodlKeyManagerArchiveEntry(state) {
+  // An archive owns portable inputs, not JSON copies of runtime HD nodes.
+  // Only a fresh result may establish the saved chain before it is omitted.
+  let entry = hodlKeyManagerEntry({ ...state, result: null });
+  if (!state.needsDerivation && ["mainnet", "testnet", "signet", "regtest"].includes(state.result?.network)) entry.fields.network = state.result.network;
+  entry.needsDerivation = true;
+  return entry;
 }
 function hodlKeyManagerNameTaken(name, state) {
   let normalized = hodlNormalizeKeyName(name);
   return normalized && hodlKeyManagerStates().some((candidate) => candidate !== state && hodlNormalizeKeyName(candidate.name) === normalized);
 }
 function hodlKeyManagerRename(state, input) {
+  if (!hodlKeyManagerStates().includes(state)) return;
   let name = String(input.value || "").trim().replace(/\s+/g, " ");
   if (!name || hodlKeyManagerNameTaken(name, state)) {
-    input.value = state.name || "";
-    if (name) hodlKeyManagerStatus("That key name is already in use.", true);
+    input.setAttribute("aria-invalid", "true");
+    hodlKeyManagerStatus(hodlTText(name ? "That key name is already in use." : "Enter a name for these key inputs."), true);
     return;
   }
-  state.name = name;
+  input.removeAttribute("aria-invalid");
   input.value = name;
+  if (name === state.name) return;
+  state.name = name;
+  for (let draft of [...hodlKeys, hodlJournalKeyDerivation?.draft]) {
+    if (draft?.isLab && draft.importedKeyId === state.id) draft.importedName = name;
+  }
+  hodlKeyManagerSyncReviewedContext();
+  // A change event can run while the pointer is moving from the name field
+  // to an action. Update its labels without removing that action's target.
+  let identity = keyVaultIdentity(state), tabs = document.getElementById("journal-keymanager-tabs"), panel = document.getElementById("journal-keymanager-panel");
+  let label = [...tabs?.children || []].find((tab) => tab.dataset.keymanagerId === identity)?.querySelector("[data-keymanager-label]");
+  if (label) label.textContent = name;
+  let heading = panel?.dataset.keymanagerId === identity ? panel.querySelector("[data-keymanager-name]") : null;
+  if (heading) heading.textContent = name;
   if (hodlKeys.includes(state)) hodlRenderKeyTabs();
-  hodlKeyManagerRender();
-  hodlKeyManagerStatus("Key name updated in memory. Download the key file to keep the change.");
+  hodlKeyManagerStatus(hodlTText("Key name updated. Download a backup to keep the change."));
   hodlJournalLog("key-manager-rename", hodlKeyLogLabel(state), "journal");
 }
 function hodlKeyManagerDetails(state) {
   let result = state.result || {};
-  if (state.needsDerivation) return [
-    ["Verification", "Unverified inputs — derive in Key Station before using any address or export."],
-    ["Method", hodlKeySummaryMethod(state) || "Unknown"],
-    ["Derivation path", state.fields?.derivationPath || "Not available", state.fields?.derivationPath ? "path" : false],
-    ["Private material", "Saved inputs may contain secrets. Cached outputs were discarded."],
+  if (state.needsDerivation || !state.result) return [
+    ["Verification", "Derive these inputs to verify their keys and addresses.", false, "verification"],
+    ["Method", hodlKeySummaryMethod(state) || "Unknown", false, "method"],
+    ["Network", state.fields?.network || "Unknown", false, "network"],
+    ["Derivation path", state.fields?.derivationPath || "Not available", state.fields?.derivationPath ? "path" : false, "path"],
+    ["Private material", "Saved inputs may contain secrets. Cached outputs were discarded.", false, "private-material"],
   ];
   return [
-    ["Created", state.createdAt ? new Date(state.createdAt).toLocaleString() : "Not available"],
-    ["Master fingerprint", result.masterFingerprint || "Not available", Boolean(result.masterFingerprint)],
-    ["Method", hodlKeySummaryMethod(state) || "Unknown"],
-    ["Network", result.network || state.fields?.network || "Unknown"],
-    ["Derivation path", state.fields?.derivationPath || state.createdPath || "Not available", state.fields?.derivationPath || state.createdPath ? "path" : false],
-    ["Public root key", result.rootXpub || result.xpub || result.importedPublicKey || "Not available", Boolean(result.rootXpub || result.xpub || result.importedPublicKey)],
-    ["Private material", hodlResultHasRoot(result) || hodlResultHasImportedPrivate(result) || result.accounts?.some((account) => account.privateNode) ? "Present in encrypted key file" : "Not present"],
+    ["Created", state.createdAt ? new Date(state.createdAt).toLocaleString() : "Not available", false, "created"],
+    ["Master fingerprint", result.masterFingerprint || "Not available", Boolean(result.masterFingerprint), "fingerprint"],
+    ["Method", hodlKeySummaryMethod(state) || "Unknown", false, "method"],
+    ["Network", result.network || state.fields?.network || "Unknown", false, "network"],
+    ["Derivation path", state.fields?.derivationPath || state.createdPath || "Not available", state.fields?.derivationPath || state.createdPath ? "path" : false, "path"],
+    ["Public root key", result.rootXpub || result.xpub || result.importedPublicKey || "Not available", Boolean(result.rootXpub || result.xpub || result.importedPublicKey), "public-key"],
+    ["Private material", hodlResultHasRoot(result) || hodlResultHasImportedPrivate(result) || hodlResultHasSingleKey(result) || result.accounts?.some((account) => account.privateNode) ? "Private key material is available in this session. Treat saved recovery inputs as private." : "No private key output is available in this session. Saved inputs may still contain secrets.", false, "private-material"],
   ];
 }
 function hodlKeyManagerRenderIgnored() {
@@ -12701,16 +17913,24 @@ function hodlKeyManagerRenderIgnored() {
   section.hidden = !hodlKeyManagerIgnored.length;
   list.replaceChildren();
   hodlKeyManagerIgnored.forEach((entry) => {
-    let row = document.createElement("div"), copy = document.createElement("div"), name = document.createElement("strong"), fingerprint = document.createElement("span"), restore = document.createElement("button");
+    let row = document.createElement("div"), copy = document.createElement("div"), name = document.createElement("strong"), details = document.createElement("span"), restore = document.createElement("button");
     row.className = "journal-keymanager-ignored-row";
+    row.dataset.keymanagerId = keyVaultIdentity(entry);
     copy.className = "journal-keymanager-ignored-copy";
-    name.textContent = entry.name || "Unnamed key";
-    if (entry.result?.masterFingerprint) fingerprint.innerHTML = hodlPublicInlineHtml(entry.result.masterFingerprint);
-    else fingerprint.textContent = "No fingerprint";
-    copy.append(name, fingerprint);
+    name.className = "label";
+    details.className = "field-note";
+    name.dataset.i18nSkip = "";
+    name.setAttribute("translate", "no");
+    name.textContent = entry.name || hodlTText("Unnamed key");
+    details.textContent = [hodlKeySummaryMethodText(entry), entry.fields?.network, hodlKeySummaryPath(entry)].filter(Boolean).join(" · ");
+    details.dataset.i18nSkip = "";
+    copy.append(name, details);
     restore.className = "btn secondary";
     restore.type = "button";
-    restore.textContent = "Restore";
+    restore.textContent = hodlTText("Restore and derive");
+    restore.setAttribute("aria-label", hodlTText("Restore and derive {name}", { name: entry.name || hodlTText("Unnamed key") }));
+    restore.dataset.keymanagerAction = "restore";
+    restore.disabled = Boolean(hodlActiveDerivation || hodlJournalKeyDerivation);
     restore.onclick = () => hodlKeyManagerRestoreIgnored(entry);
     row.append(copy, restore);
     list.appendChild(row);
@@ -12719,20 +17939,23 @@ function hodlKeyManagerRenderIgnored() {
 function hodlKeyManagerRender() {
   let tabs = document.getElementById("journal-keymanager-tabs"), panel = document.getElementById("journal-keymanager-panel");
   if (!tabs || !panel) return;
+  let focused = document.activeElement, ownsFocus = tabs.contains(focused) || panel.contains(focused);
+  let focusedIdentity = focused?.closest?.("[data-keymanager-id]")?.dataset.keymanagerId, focusedAction = focused?.dataset?.keymanagerAction;
+  let editing = ownsFocus && focusedAction === "rename" ? { value: focused.value, start: focused.selectionStart, end: focused.selectionEnd, direction: focused.selectionDirection } : null;
+  hodlKeyManagerSyncDerivationUI();
   let states = hodlKeyManagerStates();
-  let addAll = document.getElementById("journal-keymanager-add-all");
-  if (addAll) {
-    addAll.disabled = !states.some((state) => !state.needsDerivation && !hodlKeys.includes(state));
-    addAll.onclick = hodlKeyManagerUseAllInStation;
-  }
   tabs.replaceChildren();
   panel.replaceChildren();
+  panel.removeAttribute("aria-labelledby");
+  delete panel.dataset.keymanagerId;
+  tabs.hidden = !states.length;
   if (!states.length) {
     let empty = document.createElement("p");
-    empty.className = "journal-keymanager-empty";
-    empty.textContent = "No derived keys are available. Derive a key in Key Station or upload an encrypted .elkeys file.";
+    empty.className = "muted journal-keymanager-empty";
+    empty.textContent = hodlTText(hodlKeyManagerIgnored.length ? "No active key inputs. Restore archived inputs below, or import more inputs." : "No key inputs yet. Import key inputs, or derive a key in Key Station.");
     panel.appendChild(empty);
     hodlKeyManagerRenderIgnored();
+    if (ownsFocus) document.getElementById("journal-keymanager-upload")?.focus({ preventScroll: true });
     return;
   }
   let active = states.find((state) => keyVaultIdentity(state) === hodlKeyManagerActiveId) || states[0];
@@ -12745,6 +17968,8 @@ function hodlKeyManagerRender() {
     button.setAttribute("role", "tab");
     button.setAttribute("aria-selected", String(activeTab));
     button.setAttribute("aria-controls", "journal-keymanager-panel");
+    button.dataset.keymanagerId = identity;
+    button.dataset.keymanagerState = state.needsDerivation || !state.result ? "pending" : "available";
     button.tabIndex = activeTab ? 0 : -1;
     image.className = "key-tab-lifehash";
     image.width = 28;
@@ -12753,11 +17978,15 @@ function hodlKeyManagerRender() {
     image.hidden = true;
     hodlFillKeyTabLifehash(image, state.result?.masterFingerprint || "");
     label.className = "key-tab-label";
-    label.textContent = state.name || state.result?.masterFingerprint || "Unnamed key";
+    label.dataset.keymanagerLabel = "";
+    label.dataset.i18nSkip = "";
+    label.setAttribute("translate", "no");
+    label.textContent = state.name || state.result?.masterFingerprint || hodlTText("Unnamed key");
     button.append(image, label);
     button.onclick = () => {
       hodlKeyManagerActiveId = identity;
       hodlKeyManagerRender();
+      document.getElementById(button.id)?.focus();
     };
     button.onkeydown = (event) => {
       let next = null;
@@ -12773,61 +18002,105 @@ function hodlKeyManagerRender() {
     };
     tabs.appendChild(button);
   });
-  panel.setAttribute("aria-labelledby", tabs.querySelector(".active")?.id || "");
-  let included = hodlKeyManagerIds.has(hodlKeyManagerActiveId), heading = document.createElement("div"), title = document.createElement("h3"), badge = document.createElement("span");
+  let selected = tabs.children[states.indexOf(active)];
+  panel.setAttribute("aria-labelledby", selected.id);
+  panel.dataset.keymanagerId = hodlKeyManagerActiveId;
+  hodlRevealTab(tabs, states.indexOf(active));
+  let heading = document.createElement("div"), title = document.createElement("h3"), badge = document.createElement("span");
   heading.className = "journal-keymanager-heading";
-  title.textContent = active.name || active.result?.masterFingerprint || "Unnamed key";
-  badge.className = "journal-keymanager-badge" + (included ? " is-included" : "");
-  badge.textContent = included ? "Included in key file" : "Not included";
+  title.className = "label";
+  title.dataset.keymanagerName = "";
+  title.dataset.i18nSkip = "";
+  title.setAttribute("translate", "no");
+  title.textContent = active.name || active.result?.masterFingerprint || hodlTText("Unnamed key");
+  badge.className = "field-note journal-keymanager-badge";
+  badge.textContent = active.needsDerivation || !active.result ? "Needs derivation" : hodlKeys.includes(active) ? "Available in Key Station" : "Saved in Journal";
   heading.append(title, badge);
   panel.appendChild(heading);
   let name = document.createElement("input"), nameLabel = document.createElement("label");
   nameLabel.className = "field journal-keymanager-name";
   nameLabel.append("Key name");
   name.type = "text";
+  name.dataset.keymanagerAction = "rename";
   name.value = active.name || "";
   name.maxLength = 120;
   name.autocomplete = "off";
+  name.setAttribute("aria-describedby", "journal-keymanager-status");
   name.onchange = () => hodlKeyManagerRename(active, name);
+  name.onkeydown = (event) => {
+    if (event.isComposing || event.repeat) return;
+    if (event.key === "Enter") {
+      event.preventDefault();
+      hodlKeyManagerRename(active, name);
+    } else if (event.key === "Escape") {
+      event.preventDefault();
+      name.value = active.name || "";
+      name.removeAttribute("aria-invalid");
+      hodlKeyManagerStatus("");
+    }
+  };
   nameLabel.appendChild(name);
   panel.appendChild(nameLabel);
   let details = document.createElement("dl");
   details.className = "journal-keymanager-details";
-  hodlKeyManagerDetails(active).forEach(([term, value, publicValue]) => {
+  hodlKeyManagerDetails(active).forEach(([term, value, publicValue, detail]) => {
     let dt = document.createElement("dt"), dd = document.createElement("dd");
+    dt.className = "label";
+    if (publicValue) dd.className = "mono";
+    dd.dataset.keymanagerDetail = detail;
     dt.textContent = term;
     if (publicValue) {
-      let row = document.createElement("div"), field = document.createElement("span");
-      row.dataset.copyGroup = "";
-      field.innerHTML = hodlPublicInlineHtml(value, { clipboard: publicValue !== "path" });
-      let group = field.firstElementChild, readout = group.querySelector("[data-public-value]");
-      dd.append(readout);
-      dt.append(...group.childNodes);
-      row.append(dt, dd);
-      details.append(row);
-    } else {
-      dd.textContent = value;
-      details.append(dt, dd);
-    }
+      dd.innerHTML = hodlPublicInlineHtml(value, { clipboard: false });
+    } else dd.textContent = value;
+    details.append(dt, dd);
   });
   panel.appendChild(details);
-  let actions = document.createElement("div"), include = document.createElement("button"), use = document.createElement("button"), ignore = document.createElement("button");
+  let actions = document.createElement("div"), use = document.createElement("button"), ignore = document.createElement("button");
   actions.className = "row psbt-actions journal-keymanager-entry-actions tool-actions";
-  include.className = included ? "btn secondary" : "btn primary";
-  include.type = "button";
-  include.textContent = included ? "Remove from key file" : "Include in key file";
-  include.onclick = () => hodlKeyManagerToggle(active);
   use.className = "btn secondary";
   use.type = "button";
-  use.textContent = active.needsDerivation ? "Load inputs to derive" : hodlKeys.includes(active) ? "Open in Key Station" : "Use in Key Station";
-  use.onclick = () => hodlKeyManagerUseInStation(active);
-  ignore.className = "btn clear-current-action journal-keymanager-ignore";
+  use.dataset.keymanagerAction = "open";
+  use.textContent = active.needsDerivation ? "Derive inputs" : hodlKeys.includes(active) ? "Open in Key Station" : "Use in Key Station";
+  use.onclick = () => active.needsDerivation ? hodlKeyManagerDeriveInputs([active]) : hodlKeyManagerUseInStation(active);
+  ignore.className = "btn secondary clear-current-action journal-keymanager-ignore";
   ignore.type = "button";
-  ignore.textContent = "Ignore key";
+  ignore.textContent = "Archive inputs";
+  ignore.dataset.keymanagerAction = "archive";
   ignore.onclick = () => hodlKeyManagerIgnore(active);
-  actions.append(include, use, ignore);
+  actions.append(use, ignore);
+  if (active.needsDerivation) {
+    let review = document.createElement("button");
+    review.type = "button";
+    review.className = "btn secondary";
+    review.dataset.keymanagerAction = "review";
+    review.textContent = hodlTText("Review inputs");
+    review.onclick = () => hodlKeyManagerReviewInputs(active);
+    actions.append(review);
+    if (active.error) {
+      let error = document.createElement("p");
+      error.className = "edge-note is-private";
+      error.dataset.keymanagerError = "";
+      error.textContent = active.error;
+      panel.append(error);
+    }
+  }
   panel.appendChild(actions);
+  if (hodlKeys.includes(active)) {
+    let note = document.createElement("p");
+    note.className = "field-note";
+    note.textContent = "To archive these inputs, first remove the key from Key Station. Its inputs remain here.";
+    panel.appendChild(note);
+  }
   hodlKeyManagerRenderIgnored();
+  hodlKeyManagerSyncDerivationUI();
+  if (ownsFocus) {
+    let target = focusedIdentity === hodlKeyManagerActiveId && focusedAction ? [...panel.querySelectorAll("[data-keymanager-action]")].find((control) => control.dataset.keymanagerAction === focusedAction && !control.disabled) : null;
+    if (target === name && editing) {
+      name.value = editing.value;
+      if (Number.isInteger(editing.start) && Number.isInteger(editing.end)) name.setSelectionRange(editing.start, editing.end, editing.direction);
+    }
+    (target || selected).focus({ preventScroll: true });
+  }
 }
 // Journal-safe label for key events: never the wallet identity itself
 // (masterIdentity/rootXpub are permanent, linkable identifiers); the
@@ -12835,19 +18108,7 @@ function hodlKeyManagerRender() {
 function hodlKeyLogLabel(state) {
   return state?.result?.masterFingerprint || `key-${state?.number ?? state?.id ?? "?"}`;
 }
-function hodlKeyManagerToggle(state) {
-  let identity = keyVaultIdentity(state);
-  if (hodlKeyManagerIds.has(identity)) {
-    hodlKeyManagerIds.delete(identity);
-    hodlKeyManagerStatus("Key removed from the next key-file download.");
-    hodlJournalLog("key-manager-exclude", hodlKeyLogLabel(state), "journal");
-  } else {
-    hodlKeyManagerIds.add(identity);
-    hodlKeyManagerStatus("Key included in the next key-file download.");
-    hodlJournalLog("key-manager-include", hodlKeyLogLabel(state), "journal");
-  }
-  hodlKeyManagerRender();
-}
+
 function hodlKeyManagerImportedState(entry) {
   let state = hodlNewKeyState(String(entry.name || "Imported key"), hodlNextKeyId++, hodlNextKeyNumber++), legacyColemanDice = entry.diceMethod === "coleman" && entry.fields && !Object.prototype.hasOwnProperty.call(entry.fields, "colemanDice") ? entry.fields.dice || "" : null;
   Object.assign(state, entry, {
@@ -12866,15 +18127,224 @@ function hodlKeyManagerImportedState(entry) {
   if (legacyColemanDice !== null) state.fields.colemanDice = legacyColemanDice;
   return state;
 }
-function hodlKeyManagerUseInStation(state) {
+function hodlKeyManagerDecision(options) {
+  if (!hodlJournalKeyImportConfirm) hodlJournalKeyImportConfirm = initJournalKeyImportConfirm();
+  return hodlJournalKeyImportConfirm.open(options);
+}
+function hodlKeyManagerResultPaths(result) {
+  return (result.accounts || []).map(account => {
+    let rows = (account.addressBranches || []).flatMap(branch => branch.rows || []);
+    let first = rows[0]?.path, last = rows.at(-1)?.path;
+    return first ? first === last ? first : hodlTText("{first} to {last}", { first, last }) : account.accountPath || "";
+  }).join(" · ");
+}
+function hodlKeyManagerDiscardInputs(state) {
+  if (!state) return;
+  hodlZeroKeyPassphrase(state);
+  // Its securely entered words are inputs too. A failed wipe must not stop the rest.
+  try { hodlSecureEntryDropKey(hodlSecureKeyOf(state)); } catch {}
+  for (let key of Object.keys(state.fields || {})) {
+    if (key === "privateKeys") {
+      for (let kind of Object.keys(state.fields.privateKeys || {})) state.fields.privateKeys[kind] = "";
+    } else state.fields[key] = "";
+  }
+  state.lastWord = "";
+  state.dplusLastWord = "";
+  state.diceCoinPositions = [];
+  try { hodlWipeUnsharedWalletRows(state.result); } finally { state.result = null; }
+}
+function hodlKeyManagerSyncDerivationUI() {
+  let busy = Boolean(hodlJournalKeyDerivation), deriving = busy || Boolean(hodlActiveDerivation), pending = hodlKeyManagerPending.some(state => state.needsDerivation);
+  for (let id of ["journal-keymanager-upload", "journal-keymanager-file"]) {
+    let control = document.getElementById(id);
+    if (control) control.disabled = deriving;
+  }
+  let derive = document.getElementById("journal-keymanager-derive");
+  if (derive) {
+    derive.hidden = !busy && !pending;
+    derive.disabled = !busy && (Boolean(hodlActiveDerivation) || !pending);
+  }
+  let states = hodlKeyManagerStates(), download = document.getElementById("journal-keymanager-download");
+  if (download) download.disabled = !states.length && !hodlKeyManagerIgnored.length;
+  let reopen = document.getElementById("journal-keymanager-add-all");
+  if (reopen) {
+    let available = states.filter(state => !state.needsDerivation && state.result && !hodlKeys.includes(state)).length;
+    reopen.hidden = available < 2;
+    reopen.disabled = deriving || available < 2;
+  }
+  let panel = document.getElementById("journal-keymanager-panel"), active = states.find(state => keyVaultIdentity(state) === panel?.dataset.keymanagerId);
+  for (let control of panel?.querySelectorAll("button[data-keymanager-action]") || []) {
+    control.disabled = deriving || !active || control.dataset.keymanagerAction === "archive" && hodlKeys.includes(active);
+  }
+  for (let control of document.querySelectorAll('#journal-keymanager-ignored-list [data-keymanager-action="restore"]')) control.disabled = deriving;
+  // The secure entry switch is refused during a batch (its turn-off would
+  // miss the parked editor); the switch row is drawn disabled the same way.
+  let secureSwitch = document.getElementById("secure-entry-switch");
+  if (secureSwitch) secureSwitch.disabled = busy;
+}
+function hodlKeyManagerFinishDerivation(transaction, wipeDraft = false) {
+  if (hodlJournalKeyDerivation !== transaction) return;
+  let lab = hodlKeys.findIndex(state => state.isLab);
+  let temporary = lab >= 0 ? hodlKeys[lab] : null;
+  // The parked editor stays an ownership root until it is restored, or
+  // explicitly wiped by End Session. Journal Clear only restores it.
+  if (lab >= 0) hodlKeys[lab] = wipeDraft ? hodlNewLabState() : transaction.draft;
+  else hodlKeys.unshift(wipeDraft ? hodlNewLabState() : transaction.draft);
+  hodlActiveKey = Math.max(0, hodlKeys.findIndex(state => state.id === transaction.activeId));
+  if (wipeDraft) {
+    try { hodlWipeWalletKeys(transaction.draft.result); } catch {}
+    try { hodlKeyManagerDiscardInputs(transaction.draft); } catch {}
+  }
+  hodlJournalKeyDerivation = null;
+  hodlWalletResult = null;
+  if (temporary && temporary !== transaction.draft) try { hodlKeyManagerDiscardInputs(temporary); } catch {}
+  if (transaction.temporary && transaction.temporary !== temporary) try { hodlKeyManagerDiscardInputs(transaction.temporary); } catch {}
+  transaction.draft = null;
+  transaction.temporary = null;
+  hodlRestoreKey();
+  let card = document.getElementById("calc-card");
+  if (card) card.hidden = hodlWorkspace !== "calc";
+  if (hodlWorkspace !== "calc") hodlWalletResult = null;
+  hodlRenderKeyTabs();
+  hodlKeyManagerRender();
+  hodlKeyManagerSyncDerivationUI();
+}
+function hodlKeyManagerCancelDerivation({ wipeDraft = false } = {}) {
+  let transaction = hodlJournalKeyDerivation;
+  if (!transaction) return;
+  transaction.cancelled = true;
+  try { hodlInvalidateDerivation(); } catch {}
+  try { hodlLowEntropyConfirm?.close({ restoreFocus: false }); } catch {}
+  try { hodlFingerprintCollisionConfirm?.close({ restoreFocus: false }); } catch {}
+  try { hodlJournalKeyImportConfirm?.close({ restoreFocus: false }); } catch {}
+  hodlKeyManagerFinishDerivation(transaction, wipeDraft);
+}
+async function hodlKeyManagerDecideCommit(transaction, input, result, script) {
+  let generation = hodlJournalGeneration;
+  const logDecision = choice => { if (generation === hodlJournalGeneration) hodlJournalLog("key-import-decision", choice, "journal"); };
+  let identity = hodlKeyWalletIdentity(result, true);
+  let matches = identity ? hodlKeys.filter(state => !state.isLab && hodlKeyWalletIdentity(state.result, true) === identity) : [];
+  if (!matches.length) { logDecision("new-setup"); return { kind: "append" }; }
+  let setup = hodlKeyResultSetup(result, script);
+  let exact = setup && matches.find(state => {
+    let existing = hodlKeyResultSetup(state.result, state.accountId);
+    return existing && JSON.stringify(existing) === JSON.stringify(setup);
+  });
+  if (exact) { logDecision("reuse"); return { kind: "reuse", state: exact, previousResult: exact.result }; }
+  let existing = matches[0], previousResult = existing.result;
+  let answer = await hodlKeyManagerDecision({
+    mode: "conflict", name: input.name, existingName: existing.name,
+    importedNetwork: result.network, existingNetwork: previousResult.network,
+    importedPath: hodlKeyManagerResultPaths(result), existingPath: hodlKeyManagerResultPaths(previousResult),
+    importedScript: hodlTText(hodlScriptDefinition(script).label), existingScript: hodlTText(hodlScriptDefinition(existing.accountId).label),
+    importedEncoding: result.kind === "single" ? hodlTText(result.compressed === true ? "Compressed" : result.compressed === false ? "Uncompressed" : "Not specified by input") : "",
+    existingEncoding: previousResult.kind === "single" ? hodlTText(previousResult.compressed === true ? "Compressed" : previousResult.compressed === false ? "Uncompressed" : "Not specified by input") : "",
+    importedRecovery: hodlTText(hodlResultHasSeed(result) ? "Seed recovery available" : hodlResultHasRoot(result) || hodlResultHasImportedPrivate(result) || hodlResultHasSingleKey(result) ? "Private key recovery available" : "Watch-only"),
+    existingRecovery: hodlTText(hodlResultHasSeed(previousResult) ? "Seed recovery available" : hodlResultHasRoot(previousResult) || hodlResultHasImportedPrivate(previousResult) || hodlResultHasSingleKey(previousResult) ? "Private key recovery available" : "Watch-only"),
+  });
+  if (answer === null) { logDecision("cancel"); hodlKeyManagerCancelDerivation(); return { kind: "skip" }; }
+  if (!hodlKeys.includes(existing) || existing.result !== previousResult) throw new HodlDerivationCancelledError();
+  if (answer === "append") { logDecision("append"); return { kind: "append" }; }
+  logDecision("keep");
+  if (transaction) transaction.skipped++;
+  return { kind: "skip" };
+}
+async function hodlKeyManagerDeriveInputs(inputs) {
+  if (hodlJournalKeyDerivation || hodlActiveDerivation || !hodlJournalUnlocked()) return;
+  let queue = inputs.filter(state => state.needsDerivation && hodlKeyManagerPending.includes(state));
+  if (!queue.length) return;
+  if (hodlWorkspace === "calc") hodlCaptureKey();
+  let transaction = {
+    draft: hodlKeys.find(state => state.isLab) || hodlNewLabState(),
+    activeId: hodlKeys[hodlActiveKey]?.id ?? 0,
+    generation: hodlJournalGeneration, cancelled: false, temporary: null,
+    added: 0, reused: 0, failed: 0, skipped: 0,
+  };
+  hodlJournalKeyDerivation = transaction;
+  const isCurrent = () => hodlJournalKeyDerivation === transaction && !transaction.cancelled && transaction.generation === hodlJournalGeneration;
+  hodlKeyManagerSyncDerivationUI();
+  try {
+    await hodlDeriveWithProgress("key", async progress => {
+      for (let index = 0; index < queue.length; index++) {
+        if (!isCurrent()) break;
+        let input = queue[index];
+        if (!hodlKeyManagerPending.includes(input)) continue;
+        hodlActiveKey = hodlFillLabFromKey(input);
+        let lab = transaction.temporary = hodlKeys[hodlActiveKey];
+        lab.importedKeyId = input.id;
+        hodlRestoreKey();
+        let card = document.getElementById("calc-card");
+        if (card) card.hidden = hodlWorkspace !== "calc";
+        hodlKeyManagerActiveId = keyVaultIdentity(input);
+        input.error = "";
+        hodlKeyManagerStatus(hodlTText("Deriving input {n} of {total}…", { n: index + 1, total: queue.length }));
+        hodlKeyManagerRender();
+        let warning = hodlLowEntropyWarning();
+        if (warning && hodlLowEntropyConfirm && !hodlLowEntropyConfirm.isAcknowledged()) {
+          if (!await hodlLowEntropyConfirm.open(warning)) { hodlKeyManagerCancelDerivation(); break; }
+        }
+        if (!isCurrent()) break;
+        let decision;
+        let succeeded = await hodlCalculateKey(progress, "derive", {
+          logTool: "journal",
+          networkChoice: input.fields.network,
+          focusResult: false, isCurrent: () => isCurrent() && hodlKeyManagerPending.includes(input),
+          onCancel: hodlKeyManagerCancelDerivation,
+          decideCommit: async (result, script) => decision = await hodlKeyManagerDecideCommit(transaction, input, result, script),
+        });
+        if (card) card.hidden = hodlWorkspace !== "calc";
+        if (!isCurrent()) break;
+        if (succeeded) transaction[decision?.kind === "reuse" ? "reused" : "added"]++;
+        else if (decision?.kind !== "skip") {
+          input.error = lab.error || hodlTText("These inputs could not be derived. Review them in Key Station.");
+          transaction.failed++;
+        }
+        // Keep only source inputs for failed/skipped items. The temporary
+        // result is either owned by its new station key or wiped here.
+        if (hodlKeys.includes(lab)) hodlKeys[hodlKeys.indexOf(lab)] = hodlNewLabState();
+        hodlWalletResult = null;
+        hodlKeyManagerDiscardInputs(lab);
+        transaction.temporary = null;
+      }
+      return !transaction.cancelled;
+    }, "journal-keymanager-derive");
+  } catch (error) {
+    if (!(error instanceof HodlDerivationCancelledError)) {
+      transaction.failed++;
+      transaction.error = error.message || hodlTText("The key import could not finish.");
+    }
+  } finally {
+    if (hodlJournalKeyDerivation === transaction) hodlKeyManagerFinishDerivation(transaction);
+    if (transaction.generation === hodlJournalGeneration && hodlJournalUnlocked()) {
+      hodlJournalLog("key-import-summary", `added=${transaction.added} reused=${transaction.reused} failed=${transaction.failed} kept=${transaction.skipped} pending=${hodlKeyManagerPending.filter(state => state.needsDerivation).length} cancelled=${transaction.cancelled}`, "journal");
+      hodlKeyManagerStatus(transaction.error || hodlTText("{added} added; {reused} reused with imported inputs archived; {pending} inputs still need attention.", { added: transaction.added, reused: transaction.reused, pending: hodlKeyManagerPending.filter(state => state.needsDerivation).length }), Boolean(transaction.error));
+    }
+    hodlKeyManagerSyncDerivationUI();
+  }
+}
+async function hodlKeyManagerReviewInputs(state) {
+  if (hodlActiveDerivation || hodlJournalKeyDerivation || !hodlKeyManagerPending.includes(state)) return;
+  if (hodlWorkspace === "calc") hodlCaptureKey();
+  let draft = hodlKeys.find(candidate => candidate.isLab), fields = draft?.fields || {}, generation = hodlJournalGeneration;
+  let hasInputs = draft?.result || ["pass", "dice", "colemanDice", "bitboxDice", "dplusDice", "hex", "bin", "base4", "base8", "base32", "base64", "cards", "directCards", "seed", "seedNumbers", "brainLab", "key"].some(key => fields[key]?.length) || Object.values(fields.privateKeys || {}).some(Boolean);
+  if ((hasInputs || hodlSecureEntryHasData(hodlSecureKeyOf(draft))) && await hodlKeyManagerDecision({ mode: "draft", name: state.name }) !== "load") return;
+  if (generation !== hodlJournalGeneration || hodlActiveDerivation || hodlJournalKeyDerivation || !hodlKeyManagerPending.includes(state) || hodlKeys.find(candidate => candidate.isLab) !== draft) return;
+  hodlKeyManagerUseInStation(state);
+  if (draft && !hodlKeys.includes(draft)) hodlKeyManagerDiscardInputs(draft);
+}
+function hodlKeyManagerUseInStation(state, show = true) {
+  if (hodlActiveDerivation || hodlJournalKeyDerivation) return;
   if (state.needsDerivation) {
-    if (!hodlKeyManagerPending.includes(state) || hodlActiveDerivation) return;
+    if (!show || !hodlKeyManagerPending.includes(state)) return;
     let lab = hodlFillLabFromKey(state);
     hodlKeys[lab].importedKeyId = state.id;
+    hodlKeys[lab].importedNetworkChoice = state.fields.network;
+    hodlKeys[lab].importedName = state.name;
     hodlActiveKey = lab;
     hodlRenderKeyTabs();
     hodlShowWorkspace("calc");
-    hodlKeyManagerStatus("Unverified inputs loaded. Review them and derive the key before using addresses or exports.");
+    document.getElementById("key-tabs")?.children?.[hodlActiveKey]?.focus();
+    hodlKeyManagerStatus(hodlTText("Unverified inputs loaded for {network}. Review them and derive before using addresses or exports. Use the Network menu to change the saved network.", { network: state.fields.network }));
     return;
   }
   let identity = keyVaultIdentity(state), existing = hodlKeys.find((candidate) => !candidate.isLab && keyVaultIdentity(candidate) === identity);
@@ -12889,71 +18359,113 @@ function hodlKeyManagerUseInStation(state) {
     hodlKeys.push(state);
     hodlActiveKey = hodlKeys.length - 1;
   }
-  hodlRenderKeyTabs();
+  if (show) hodlRenderKeyTabs();
   hodlJournalLog("key-manager-use", hodlKeyLogLabel(state), "journal");
+  if (!show) return;
   hodlShowWorkspace("calc");
+  document.getElementById("key-tabs")?.children?.[hodlActiveKey]?.focus();
 }
+
 function hodlKeyManagerUseAllInStation() {
-  let states = hodlKeyManagerStates().filter((state) => !state.needsDerivation && !hodlKeys.includes(state));
+  if (hodlActiveDerivation || hodlJournalKeyDerivation) return;
+  let states = hodlKeyManagerStates().filter(state => !state.needsDerivation && state.result && !hodlKeys.includes(state));
   if (!states.length) return;
-  // Pushing keys and moving the active tab cancels any in-flight derivation.
-  hodlInvalidateDerivation();
-  states.forEach((state) => {
-    let pending = hodlKeyManagerPending.indexOf(state);
-    if (pending < 0) return;
-    hodlKeyManagerPending.splice(pending, 1);
-    hodlKeys.push(state);
-    hodlJournalLog("key-manager-use", hodlKeyLogLabel(state), "journal");
-  });
+  // Reuse the single-entry membership and identity guards, then show the
+  // destination once. Imported and archived inputs never enter this flow.
+  states.forEach(state => hodlKeyManagerUseInStation(state, false));
   hodlActiveKey = hodlKeys.indexOf(states[0]);
   hodlRenderKeyTabs();
   hodlKeyManagerRender();
   hodlShowWorkspace("calc");
+  document.getElementById("key-tabs")?.children?.[hodlActiveKey]?.focus();
 }
+
 function hodlKeyManagerIgnore(state) {
-  let identity = keyVaultIdentity(state), station = hodlKeys.indexOf(state), pending = hodlKeyManagerPending.indexOf(state);
-  if (station >= 0) {
-    // Removing a station key shifts the active tab; cancel any in-flight
-    // derivation so its commit cannot land on the key that takes its place.
-    hodlInvalidateDerivation();
-    hodlKeys.splice(station, 1);
-    if (hodlActiveKey > station) hodlActiveKey--;
-    else if (hodlActiveKey === station) hodlActiveKey = Math.min(station, hodlKeys.length - 1);
-    hodlRenderKeyTabs();
-  } else if (pending >= 0) hodlKeyManagerPending.splice(pending, 1);
-  hodlKeyManagerIgnored = hodlKeyManagerIgnored.filter((entry) => keyVaultIdentity(entry) !== identity);
-  hodlKeyManagerIgnored.push(hodlKeyManagerEntry(state));
+  if (hodlActiveDerivation || hodlJournalKeyDerivation) return;
+  // Archiving must never unload a live key or invalidate its consumers.
+  if (hodlKeys.includes(state)) {
+    hodlKeyManagerStatus("Remove the key from Key Station before archiving its inputs.", true);
+    return;
+  }
+  let pending = hodlKeyManagerPending.indexOf(state);
+  if (pending < 0) return;
+  let identity = keyVaultIdentity(state);
+  let archived = hodlKeyManagerIgnored.filter((entry) => keyVaultIdentity(entry) !== identity);
+  let capacityError = hodlKeyManagerCapacityError(hodlKeyManagerStates().filter((entry) => entry !== state).length, archived.length + 1);
+  if (capacityError) { hodlKeyManagerStatus(capacityError, true); return; }
+  hodlKeyManagerPending.splice(pending, 1);
+  hodlKeyManagerIgnored = archived;
+  let entry = hodlKeyManagerArchiveEntry(state);
+  hodlKeyManagerIgnored.push(entry);
+  // Preserve the portable inputs before releasing detached owned material.
+  hodlZeroKeyPassphrase(state);
   hodlKeyManagerIds.delete(identity);
   hodlKeyManagerActiveId = "";
   hodlKeyManagerRender();
-  hodlKeyManagerStatus("Key moved to Ignored keys.");
+  Array.from(document.getElementById("journal-keymanager-ignored-list")?.children || []).find(row => row.dataset.keymanagerId === identity)?.querySelector('[data-keymanager-action="restore"]')?.focus();
+  hodlKeyManagerStatus("Inputs archived. They remain in your backup.");
   hodlJournalLog("key-manager-ignore", hodlKeyLogLabel(state), "journal");
-  hodlDisposeDroppedWallets(); // the ignored wallet: its Ignored copy keeps no key bytes
+  hodlDisposeDroppedWallets();
 }
-function hodlKeyManagerRestoreIgnored(entry) {
+async function hodlKeyManagerRestoreIgnored(entry) {
+  if (hodlActiveDerivation || hodlJournalKeyDerivation || !hodlKeyManagerIgnored.includes(entry)) return;
+  let generation = hodlJournalGeneration;
   let identity = keyVaultIdentity(entry), state = hodlKeyManagerStates().find((candidate) => keyVaultIdentity(candidate) === identity);
+  let archived = hodlKeyManagerIgnored.filter((candidate) => keyVaultIdentity(candidate) !== identity);
+  let capacityError = hodlKeyManagerCapacityError(hodlKeyManagerStates().length + (state ? 0 : 1), archived.length);
+  if (capacityError) { hodlKeyManagerStatus(capacityError, true); return; }
   if (!state) {
     state = hodlKeyManagerImportedState(entry);
     hodlKeyManagerPending.push(state);
   }
-  hodlKeyManagerIgnored = hodlKeyManagerIgnored.filter((candidate) => keyVaultIdentity(candidate) !== identity);
+  hodlKeyManagerIgnored = archived;
   hodlKeyManagerIds.add(keyVaultIdentity(state));
   hodlKeyManagerActiveId = keyVaultIdentity(state);
+  // The fresh pending copy now owns these inputs. The removed archive
+  // callback may remain alive during a warning, beyond End Session's roots.
+  if (state !== entry) hodlKeyManagerDiscardInputs(entry);
   hodlKeyManagerRender();
-  hodlKeyManagerStatus("Key restored and included in the next key-file download.");
+  let progress = document.getElementById("journal-keymanager-derive");
   hodlJournalLog("key-manager-restore", hodlKeyLogLabel(state), "journal");
+  if (state.needsDerivation) {
+    let derivation = hodlKeyManagerDeriveInputs([state]);
+    progress?.focus();
+    await derivation;
+  }
+  if (generation === hodlJournalGeneration && hodlWorkspace === "journal" && (!document.activeElement || document.activeElement === document.body || document.activeElement === progress)) {
+    Array.from(document.getElementById("journal-keymanager-tabs")?.children || []).find(tab => tab.dataset.keymanagerId === hodlKeyManagerActiveId)?.focus();
+  }
 }
 function hodlKeyManagerDetachFromStation(state) {
   let identity = keyVaultIdentity(state), index = hodlKeys.indexOf(state);
   if (index < 0) return;
+  // Journal cannot hold securely entered words yet (a later backup format
+  // will), so a key with any stays in the Key Station rather than lose them.
+  if (hodlSecureEntryHeld(state)) {
+    hodlKeyManagerStatus(hodlTText("This key has words entered with Secure entry, which Journal cannot keep yet. Turn Secure entry off or clear the key first."), true);
+    return;
+  }
+  if (state.secureCleared) {
+    hodlKeyManagerStatus(hodlTText("This key's words were cleared by Secure entry, so Journal cannot keep it. Enter its words again and derive its wallet first."), true);
+    return;
+  }
   hodlCaptureKey();
+  let retainInputs = Boolean(state.result || hodlKeyManagerHasInputs(state));
+  let capacityError = retainInputs && hodlKeyManagerCapacityError();
+  if (capacityError) { hodlKeyManagerStatus(capacityError, true); return; }
+  hodlReleaseKeyConsumers(state.id);
+  // An empty secure entry left behind goes with the key. A failed wipe must not abort the detach.
+  try { hodlSecureEntryDropKey(hodlSecureKeyOf(state)); } catch {}
   hodlKeys.splice(index, 1);
-  if (!hodlKeyManagerPending.some((candidate) => keyVaultIdentity(candidate) === identity)) hodlKeyManagerPending.push(state);
+  if (retainInputs && !hodlKeyManagerPending.some((candidate) => keyVaultIdentity(candidate) === identity)) {
+    if (!state.result) state.needsDerivation = true;
+    hodlKeyManagerPending.push(state);
+  }
   if (hodlActiveKey > index) hodlActiveKey--;
   else if (hodlActiveKey === index) hodlActiveKey = Math.min(index, hodlKeys.length - 1);
   hodlRenderKeyTabs();
   hodlRestoreKey();
-  hodlKeyManagerStatus("Key removed from Key Station. It remains available in Key manager.");
+  hodlKeyManagerStatus(hodlTText(retainInputs ? "Key removed from Key Station. Its inputs remain available in Journal." : "Empty key removed from Key Station."));
   hodlJournalLog("station-delete", `key-${state.number}`, "calc");
   (hodlActiveKey >= 0 ? hodlElement("#key-tabs").children[hodlActiveKey] : hodlElement("#add-key"))?.focus();
 }
@@ -12970,8 +18482,14 @@ function hodlKeyManagerReset() {
   // A pending key detached from a station can share its result with one that
   // still shows it; the walk skips those results rather than zero them.
   let live = hodlLiveWalletResults();
+  // The session roots cloned from a detached key are not part of the key
+  // itself: release them before the key's own bytes are zeroed.
+  hodlKeyManagerPending.forEach((state) => hodlReleaseKeyConsumers(state.id));
   hodlKeyManagerPending.forEach((state) => hodlKeyManagerWipeValue(state, new Set(live)));
   hodlKeyManagerIgnored.forEach((state) => hodlKeyManagerWipeValue(state));
+  for (let state of [...hodlKeyManagerPending, ...hodlKeyManagerIgnored]) {
+    try { hodlKeyManagerDiscardInputs(state); } catch {}
+  }
   hodlKeyManagerIds.clear();
   hodlKeyManagerIgnored = [];
   hodlKeyManagerPending = [];
@@ -12985,7 +18503,7 @@ function hodlKeyManagerReset() {
   hodlKeyManagerRender();
 }
 function hodlCloneDerivedKey(source, existing) {
-  let state = existing ? { ...existing, fields: { ...existing.fields, ...(existing.fields.privateKeys ? { privateKeys: { ...existing.fields.privateKeys } } : {}), pass: hodlStoredPassphraseBytes(existing.fields.pass) } } : hodlNewKeyState();
+  let state = existing ? { ...existing, fields: { ...existing.fields, ...(existing.fields.privateKeys ? { privateKeys: { ...existing.fields.privateKeys } } : {}) } } : hodlNewKeyState();
   let fingerprint = source.result?.masterFingerprint || "";
   Object.assign(state, {
     isLab: false,
@@ -13003,6 +18521,8 @@ function hodlCloneDerivedKey(source, existing) {
     // The entropy verdict must travel with the sync it describes, or a cloned
     // key falls back to reporting its digest length as counted entropy.
     globalSyncSourceBits: source.globalSyncSourceBits,
+    // The raised-length caution travels with the sync too (#1459 gate, Gemini).
+    globalSyncLengthRaised: source.globalSyncLengthRaised,
     seedAutocomplete: source.seedAutocomplete,
     passphraseBip39Words: source.passphraseBip39Words,
     brainWalletOutput: source.brainWalletOutput,
@@ -13021,8 +18541,12 @@ function hodlCloneDerivedKey(source, existing) {
     createdScript: source.createdScript,
     createdPath: source.createdPath,
     error: source.error,
+    // GLM on #1294: a key derived from secure words carries no copy of them,
+    // so it is marked for the Journal refusals (hodlSecureEntryHeld).
+    secureSource: Boolean(source.secureSource) || hodlSecureEntryHasData(hodlSecureKeyOf(source)),
     fields: { ...source.fields, ...(source.fields?.privateKeys ? { privateKeys: { ...source.fields.privateKeys } } : {}), pass: hodlStoredPassphraseBytes(source.fields?.pass) }
   });
+  if (source.secureCleared) state.secureCleared = true; else delete state.secureCleared;
   return state;
 }
 // The wallet a key tab belongs to: its network-independent master identity
@@ -13083,10 +18607,14 @@ function hodlConfirmKeyFingerprint(result) {
 function hodlSpTabCollides(state) {
   return !state?.isLab && hodlFingerprintCollides(hodlSpAddresses, state, (item) => item.isLab ? "" : item.fingerprint, (item) => item.isLab ? null : item.walletIdentity);
 }
-function hodlKeyWalletIdentity(result) {
+function hodlKeyWalletIdentity(result, includeSingle = false) {
+  // Journal compares only fresh results. Its single-key imports share the
+  // public point across encodings/networks; ordinary manual derivation keeps
+  // its existing append behavior unless this comparison is requested.
+  if (result?.kind === "single") return includeSingle && typeof result.pubkeyCompressed === "string" && /^(02|03)[0-9a-f]{64}$/i.test(result.pubkeyCompressed) ? `single:${result.pubkeyCompressed.toLowerCase()}` : null;
   return result?.masterIdentity || result?.rootXpub || null;
 }
-function hodlCommitDerivedKey(action = "derive") {
+function hodlCommitDerivedKey(action = "derive", decision = null) {
   let lab = hodlKeys[hodlActiveKey];
   if (!lab?.isLab || !lab.result) {
     hodlRenderKeyTabs();
@@ -13094,22 +18622,84 @@ function hodlCommitDerivedKey(action = "derive") {
     return hodlActiveKey;
   }
   let imported = hodlKeyManagerPending.find((state) => state.id === lab.importedKeyId);
+  let orphaned = !imported && lab.importedKeyId != null;
+  // Journal Clear leaves the reviewed editor intact. Reuse can focus the
+  // existing key while retaining those inputs in its unfinished draft.
+  let retainReviewedDraft = decision?.kind === "reuse" && orphaned && !hodlJournalUnlocked();
   let identity = hodlKeyWalletIdentity(lab.result);
   let existing = -1;
-  if (action === "update") existing = hodlKeys.findIndex((state) => !state.isLab && state.id === lab.editSourceId);
-  else if (lab.editSourceId == null && identity) existing = hodlKeys.findIndex((state) => !state.isLab && hodlKeyWalletIdentity(state.result) === identity);
+  if (decision?.kind === "reuse") {
+    existing = hodlKeys.indexOf(decision.state);
+    if (existing < 0 || decision.state.result !== decision.previousResult) throw new HodlDerivationCancelledError();
+  } else if (action === "update") existing = hodlKeys.findIndex((state) => !state.isLab && state.id === lab.editSourceId);
+  else if (decision?.kind !== "append" && lab.editSourceId == null && identity) existing = hodlKeys.findIndex((state) => !state.isLab && hodlKeyWalletIdentity(state.result) === identity);
   if (action === "update" && existing < 0) throw new Error(hodlTText("The original key is no longer available. Derive a new key instead."));
-  if (existing >= 0) {
-    hodlKeys[existing] = hodlCloneDerivedKey(lab, hodlKeys[existing]);
+  let reviewedSnapshot = null;
+  if (decision?.kind === "reuse" && !retainReviewedDraft && (orphaned || lab.importedName != null)) {
+    let snapshot = hodlKeyManagerEntry(lab), source = imported && hodlKeyManagerEntry(imported);
+    snapshot.fields.network = lab.result.network;
+    // Loading an older file migrates its single-key field without changing
+    // its recovery input. Compare that normalized representation on copies;
+    // the original archived source remains untouched.
+    for (let entry of [snapshot, source].filter(Boolean)) {
+      let fields = entry.fields;
+      let kind = hodlNormalizePrivateKeyKind(fields.keyKind, fields.key || fields.privateKeys?.[fields.keyKind] || "");
+      hodlPrivateKeyValues(fields);
+      fields.keyKind = kind;
+    }
+    // A manually corrected draft may reach the existing wallet through
+    // different recovery inputs. Preserve both sources; display preferences
+    // alone must not create another archive record.
+    let inputFields = ["mode", "diceMethod", "cardMethod", "seedMethod", "seedZeroIndexed", "entropyFormat", "globalSync", "globalSyncSource", "globalSyncBitCount", "globalSyncSourceBits", "brainWalletOutput", "brainWalletTrim", "targetWords", "diceCoinPositions", "lastWord", "dplusLastWord", "accountId", "fields"];
+    if (!source || inputFields.some(field => JSON.stringify(snapshot[field]) !== JSON.stringify(source[field]))) reviewedSnapshot = snapshot;
+  }
+  let remaining = hodlKeyManagerStates().filter((state) => state !== imported && state !== hodlKeys[existing]).length;
+  let capacityError = hodlJournalUnlocked() && hodlKeyManagerCapacityError(remaining + 1, hodlKeyManagerIgnored.length + (decision?.kind === "reuse" && imported ? 1 : 0) + (reviewedSnapshot ? 1 : 0));
+  if (capacityError) throw new Error(capacityError);
+  if (decision?.kind === "reuse") {
+    if (imported) hodlKeyManagerIgnored.push(hodlKeyManagerArchiveEntry(imported));
+    if (reviewedSnapshot) {
+      Object.assign(reviewedSnapshot, { id: hodlNextKeyId++, number: hodlNextKeyNumber++, name: hodlTText("Reviewed inputs: {name}", { name: lab.importedName || imported?.name || lab.name }), result: null, needsDerivation: true });
+      delete reviewedSnapshot.importedKeyId;
+      delete reviewedSnapshot.importedNetworkChoice;
+      delete reviewedSnapshot.importedName;
+      hodlKeyManagerIgnored.push(reviewedSnapshot);
+    }
+    if (retainReviewedDraft) lab.result = null;
+    else {
+      try { hodlSecureEntryDropKey(hodlSecureKeyOf(lab)); } catch {}
+      hodlZeroKeyPassphrase(lab);
+      hodlKeys[hodlActiveKey] = hodlNewLabState();
+    }
+    hodlActiveKey = existing;
+  } else if (existing >= 0) {
+    let previous = hodlKeys[existing], updated = hodlCloneDerivedKey(lab, previous);
+    // An edit can turn this tab into a different wallet (a corrected
+    // passphrase changes the root). Sessions cloned from the old root would
+    // otherwise keep deriving and verifying under it while their picker and
+    // session line still name this tab.
+    if (hodlKeyWalletIdentity(previous.result) !== hodlKeyWalletIdentity(updated.result)) {
+      hodlReleaseKeyConsumers(previous.id, { keepVanity: hodlVanityApplying });
+    }
+    // The key being replaced may still hold words kept at turn-on (GLM):
+    // they go with it, as its text inputs would.
+    try { hodlSecureEntryDropKey(hodlSecureKeyOf(previous)); } catch {}
+    hodlZeroKeyPassphrase(previous);
+    hodlKeys[existing] = updated;
+    try { hodlSecureEntryDropKey(hodlSecureKeyOf(lab)); } catch {}
+    hodlZeroKeyPassphrase(lab);
     hodlKeys[hodlActiveKey] = hodlNewLabState();
     hodlActiveKey = existing;
   } else {
     let derived = hodlCloneDerivedKey(lab);
-    if (lab.editSourceId != null && hodlKeyNameTaken(derived.name, -1)) {
+    if (imported || orphaned) derived.name = imported?.name || lab.importedName || derived.name;
+    if ((lab.editSourceId != null || imported || orphaned) && hodlKeyNameTaken(derived.name, -1)) {
       let base = derived.name, suffix = 1;
       do derived.name = base + " (" + suffix++ + ")";
       while (hodlKeyNameTaken(derived.name, -1));
     }
+    try { hodlSecureEntryDropKey(hodlSecureKeyOf(lab)); } catch {}
+    hodlZeroKeyPassphrase(lab);
     hodlKeys[hodlActiveKey] = hodlNewLabState();
     hodlKeys.push(derived);
     hodlActiveKey = hodlKeys.length - 1;
@@ -13119,6 +18709,7 @@ function hodlCommitDerivedKey(action = "derive") {
     hodlKeyManagerPending.splice(hodlKeyManagerPending.indexOf(imported), 1);
     if (hodlKeyManagerIds.delete(identity)) hodlKeyManagerIds.add(derivedIdentity);
     if (hodlKeyManagerActiveId === identity) hodlKeyManagerActiveId = derivedIdentity;
+    if (decision) hodlKeyManagerDiscardInputs(imported);
   }
   hodlRenderKeyTabs();
   hodlRestoreKey();
@@ -13139,7 +18730,10 @@ function hodlFillLabFromKey(source) {
   let labIndex = hodlKeys.findIndex((state) => state.isLab);
   let existing = labIndex >= 0 ? hodlKeys[labIndex] : hodlNewLabState();
   let lab = hodlCloneDerivedKey(source, existing);
-  Object.assign(lab, { isLab: true, editSourceId: hodlKeys.includes(source) ? source.id : null, name: "Key Station", result: null, importedKeyId: null, error: "", reveal: false, createdScript: "", createdPath: "" });
+  Object.assign(lab, { isLab: true, secureSource: false, editSourceId: hodlKeys.includes(source) ? source.id : null, name: "Key Station", result: null, importedKeyId: null, importedName: null, importedNetworkChoice: null, error: "", reveal: false, createdScript: "", createdPath: "" });
+  // The editor shows no wallet, so a cleared key's mark stays with the key:
+  // a copy here would keep refusing backups after that key is cleared.
+  delete lab.secureCleared;
   if (labIndex < 0) {
     hodlKeys.unshift(lab);
     labIndex = 0;
@@ -13154,43 +18748,42 @@ function hodlEditKeyInputs() {
     return;
   }
   hodlCaptureKey();
-  hodlSelectKey(hodlFillLabFromKey(hodlKeys[hodlActiveKey]));
+  // The editor being replaced takes its secure words with it, as its text
+  // would go; a key's own secure words move to the new editor (no copy), so
+  // Edit Input opens them in the picker.
+  let outgoing = hodlKeys.find((state) => state.isLab);
+  try { hodlSecureEntryDropKey(hodlSecureKeyOf(outgoing)); } catch {}
+  let labIndex = hodlFillLabFromKey(source);
+  let token = hodlSecureKeyOf(source);
+  if (token != null) {
+    hodlSecureKeys.delete(source);
+    hodlSecureKeys.set(hodlKeys[labIndex], token);
+    source.secureSource = true;
+  }
+  hodlSelectKey(labIndex);
 }
 function hodlKeyHasResult(state = hodlKeys[hodlActiveKey]) {
   return Boolean(state && !state.isLab && state.result);
 }
+function hodlKeySummaryMethodParts(state) {
+  if (!state) return ["", ""];
+  let variant = state.mode === "dice" ? state.diceMethod || "coldcard"
+    : state.mode === "cards" ? state.cardMethod === "direct" ? "direct" : "hashed"
+    : state.mode === "hex" ? state.entropyFormat || "bin"
+    : state.mode === "seed" ? state.seedMethod === "numbers" ? "numbers" : "words"
+
+    : state.mode === "key" ? state.fields?.keyKind || "wif" : "";
+  return [hodlKeyModeLabels[state.mode] || "", hodlKeySummarySubmethodLabels[state.mode]?.[variant] || ""];
+}
 function hodlKeySummaryMethod(state) {
-  if (!state) return "";
-  let method = {
-    dice: "Dice rolls",
-    cards: "Cards",
-    hex: "Number bases",
-    seed: "Seed phrase",
-    key: "Private key",
-  }[state.mode] || "";
-  let submethod = state.mode === "dice" ? {
-    coldcard: "Base 10 [1-6] / Hashed rolls",
-    coleman: "Base 6 [0-5] / Hashed rolls",
-    bitbox: "BitBox diceware / Direct word selection",
-    dplus: "D++ / Direct word selection",
-  }[state.diceMethod || "coldcard"] : state.mode === "cards"
-    ? state.cardMethod === "direct" ? "Direct word selection" : "Hashed card transcript"
-    : state.mode === "hex" ? {
-      bin: "Binary (Base 2)",
-      base4: "Quaternary (Base 4)",
-      base8: "Octal (Base 8)",
-      hex: "Hexadecimal (Base 16)",
-      base32: "Base32 (Bech32)",
-      base64: "Base64 (RFC 4648 alphabet)",
-    }[state.entropyFormat || "bin"]
-    : state.mode === "seed" ? state.seedMethod === "numbers" ? "BIP39 word numbers" : "Direct word entry"
-    : state.mode === "key" ? {
-      wif: "WIF",
-      "hex-key": "Private key hex",
-      minikey: "Mini key",
-      brain: "Brain wallet",
-    }[state.fields?.keyKind || "wif"] : "";
+  let [method, submethod] = hodlKeySummaryMethodParts(state);
   return method && submethod ? `${method}: ${submethod}` : method;
+}
+// The summary line in the page language; hodlKeySummaryMethod stays English
+// for the key file's details.
+function hodlKeySummaryMethodText(state) {
+  let [method, submethod] = hodlKeySummaryMethodParts(state);
+  return method && submethod ? hodlTText("{method}: {submethod}", { method: hodlTText(method), submethod: hodlTText(submethod) }) : hodlTText(method);
 }
 function hodlKeySummaryScript(state) {
   let id = state?.accountId || state?.fields?.script || "bip84";
@@ -13237,8 +18830,8 @@ function hodlPaintKeySummary() {
     node.textContent = fingerprint;
     node.disabled = !fingerprint;
   }
-  if (method) method.textContent = hodlKeySummaryMethod(state);
-  if (script) script.textContent = state?.createdScript || hodlKeySummaryScript(state);
+  if (method) method.textContent = hodlKeySummaryMethodText(state);
+  if (script) script.textContent = hodlTText(state?.createdScript || hodlKeySummaryScript(state));
   if (path) {
     let value = state?.createdPath || hodlKeySummaryPath(state);
     path.innerHTML = value ? hodlPublicInlineHtml(value, { clipboard: false }) : "";
@@ -13293,6 +18886,7 @@ function hodlRestoreFormFields(state) {
 }
 function hodlSetMode(mode) {
   hodlCaptureKey();
+
   let state = hodlKeys[hodlActiveKey];
   if (state) state.mode = mode;
   hodlKeyMode = mode;
@@ -13309,7 +18903,7 @@ function hodlSetMode(mode) {
 function hodlKeyStateNeedsClear(state) {
   if (!state) return false;
   let fields = state.fields || {}, privateKeys = hodlPrivateKeyValues(fields), hasText = (id) => String(fields[id] ?? "").length > 0;
-  return String(state.mode ?? "dice") !== "dice" || String(state.diceMethod ?? "coldcard") !== "coldcard" || String(state.cardMethod ?? "hashed") !== "hashed" || String(state.seedMethod ?? "words") !== "words" || Boolean(state.seedZeroIndexed) || Boolean(state.cardColemanSymbols) || String(state.entropyFormat ?? "bin") !== "bin" || Boolean(state.globalSync) || state.seedAutocomplete === false || Boolean(state.passphraseBip39Words) || state.passphraseAutocomplete === false || Boolean(state.brainWalletTrim) || Boolean(state.showCards) || Boolean(state.showDiceFairness) || Number(state.targetWords ?? 24) !== 24 || Array.isArray(state.diceCoinPositions) && state.diceCoinPositions.length > 0 || String(state.lastWord ?? "").length > 0 || String(state.dplusLastWord ?? "").length > 0 || Boolean(state.result) || Boolean(state.reveal) || String(state.error ?? "").length > 0 || String(state.accountId ?? "bip84") !== "bip84" || String(fields.script ?? "bip84") !== "bip84" || String(fields.derivationPath ?? "m/84'/0'/0'/{0-1}/{0-9}") !== "m/84'/0'/0'/{0-1}/{0-9}" || String(fields.purpose ?? "84'") !== "84'" || fields.purposeHarden === false || String(fields.coinType ?? (fields.network === "testnet" ? "1'" : "0'")) !== "0'" || fields.coinTypeHarden === false || String(fields.account ?? "0'") !== "0'" || fields.accountHarden === false || String(fields.branchStart ?? "0") !== "0" || Boolean(fields.branchHarden) || String(fields.branchRange ?? "2") !== "2" || String(fields.addressStart ?? "0") !== "0" || Boolean(fields.addressHarden) || String(fields.addressRange ?? fields.count ?? "10") !== "10" || hodlNormalizePrivateKeyKind(fields.keyKind, privateKeys[fields.keyKind] || "") !== "wif" || ["pass", "dice", "colemanDice", "bitboxDice", "dplusDice", "hex", "bin", "base4", "base8", "base32", "base64", "cards", "directCards", "seed", "seedNumbers", "brainLab", "key"].some(hasText) || hodlPrivateKeyKinds.some((kind) => privateKeys[kind].length > 0);
+  return String(state.mode ?? "dice") !== "dice" || String(state.diceMethod ?? "coldcard") !== "coldcard" || String(state.cardMethod ?? "hashed") !== "hashed" || String(state.seedMethod ?? "words") !== "words" || Boolean(state.seedZeroIndexed) || Boolean(state.cardColemanSymbols) || String(state.entropyFormat ?? "bin") !== "bin" || Boolean(state.globalSync) || state.seedAutocomplete === false || Boolean(state.passphraseBip39Words) || state.passphraseAutocomplete === false || Boolean(state.brainWalletTrim) || Boolean(state.showCards) || Boolean(state.showDiceFairness) || Number(state.targetWords ?? 24) !== 24 || Array.isArray(state.diceCoinPositions) && state.diceCoinPositions.length > 0 || String(state.lastWord ?? "").length > 0 || String(state.dplusLastWord ?? "").length > 0 || Boolean(state.result) || Boolean(state.reveal) || String(state.error ?? "").length > 0 || String(state.accountId ?? "bip84") !== "bip84" || String(fields.script ?? "bip84") !== "bip84" || String(fields.derivationPath ?? "m/84'/0'/0'/{0-1}/{0-9}") !== "m/84'/0'/0'/{0-1}/{0-9}" || String(fields.purpose ?? "84'") !== "84'" || fields.purposeHarden === false || String(fields.coinType ?? (fields.network === "testnet" ? "1'" : "0'")) !== "0'" || fields.coinTypeHarden === false || String(fields.account ?? "0'") !== "0'" || fields.accountHarden === false || String(fields.branchStart ?? "0") !== "0" || Boolean(fields.branchHarden) || String(fields.branchRange ?? "2") !== "2" || String(fields.addressStart ?? "0") !== "0" || Boolean(fields.addressHarden) || String(fields.addressRange ?? fields.count ?? "10") !== "10" || hodlNormalizePrivateKeyKind(fields.keyKind, privateKeys[fields.keyKind] || "") !== "wif" || ["pass", "dice", "colemanDice", "bitboxDice", "dplusDice", "hex", "bin", "base4", "base8", "base32", "base64", "cards", "directCards", "seed", "seedNumbers", "brainLab", "key"].some(hasText) || hodlPrivateKeyKinds.some((kind) => privateKeys[kind].length > 0) || hodlSecureEntryHasData(hodlSecureKeyOf(state));
 }
 function hodlSyncKeyClearButton(capture = false) {
   if (capture) hodlCaptureKey();
@@ -13325,6 +18919,41 @@ function hodlWipeActiveKey() {
   hodlLastWordCache.clear();
   if (hodlActiveKey < 0 || !hodlKeys[hodlActiveKey]) return;
   let state = hodlKeys[hodlActiveKey];
+  // Clear replaces the derived material, so the sessions cloned from it go
+  // too, and the passphrase bytes are zeroed rather than left to GC.
+  hodlReleaseKeyConsumers(state.id);
+  // Clear also wipes the key's securely entered words.
+  hodlSecureEntryDropKey(hodlSecureKeyOf(state));
+  hodlZeroKeyPassphrase(state);
+  // Empty the secret fields in place before the form re-renders for the fresh
+  // key: the nodes it drops would otherwise keep their text, and its Undo
+  // history, until garbage collection. Assignment drops that history.
+  ["dice", "hex", "bin", "base4", "base8", "base32", "base64", "seed", "seed-numbers", "key", "cards", "direct-cards"].forEach((id) => {
+    let el = document.getElementById(id);
+    if (!el) return;
+    el.value = "";
+    // The dice field keeps its previous text for diffing; drop that copy too.
+    if (el.dataset) delete el.dataset.previousValue;
+    delete el.hodlDiceBeforeInput;
+  });
+  // The copies that repeat the typed or derived text, the same set the
+  // pagehide sweep clears: the mirrors (highlights, the word grid, last-word
+  // options, the brain-wallet hex), then the dealt-cards strip, the worked
+  // calculations, the fairness panel and the progress lines.
+  document.querySelectorAll(".dice-input-highlight, .dice-word-grid, #last-words, #brain-lab-hex").forEach((mirror) => {
+    mirror.textContent = "";
+  });
+  for (let id of ["dealt-cards", "dice-manual-calculations", "cards-manual-calculations", "number-base-calculations", "dice-fairness", "dice-meta", "cards-meta", "entropy-meta", "seed-meta", "seed-number-meta", "private-key-meta"]) {
+    let panel = document.getElementById(id);
+    if (panel) panel.textContent = "";
+  }
+  // The BIP39 passphrase field holds the text itself in BIP39-word mode; the
+  // vault's own clear() empties it in step with the vault.
+  if (typeof hodlPassphraseVaultField !== "undefined" && hodlPassphraseVaultField) hodlPassphraseVaultField.clear();
+  else {
+    let pass = document.getElementById("pass");
+    if (pass) pass.value = "";
+  }
   hodlKeys[hodlActiveKey] = state.isLab ? hodlNewLabState() : hodlNewKeyState(state.name, state.id, state.number);
   hodlRestoreKey();
   // Restoring the fresh state re-renders the form; dropping the still-filled
@@ -13345,6 +18974,7 @@ function hodlCaptureKey() {
   state.diceMethod = hodlDiceMethod;
   state.cardMethod = hodlCardMethod;
   state.seedMethod = hodlSeedMethod;
+
   state.seedZeroIndexed = Boolean(hodlSeedZeroIndexed);
   state.cardColemanSymbols = Boolean(hodlCardColemanSymbols);
   state.entropyFormat = hodlEntropyFormat;
@@ -13415,7 +19045,10 @@ function hodlSelectedKeyNetwork() {
   return hodlSelectedNetwork(document.getElementById("network"));
 }
 function hodlRestoreKey() {
+  hodlKeyManagerSyncReviewedContext();
+  hodlSyncWorkspaceCounts();
   let state = hodlKeys[hodlActiveKey];
+
   if (!state) {
     hodlKeyMode = "dice";
     hodlDiceMethod = "coldcard";
@@ -13672,7 +19305,7 @@ function hodlCreateSilentPaymentsIcon() {
   return span;
 }
 function hodlCreateKeyTab(index) {
-  let state = hodlKeys[index], active = index === hodlActiveKey, button = document.createElement("button"), fingerprint = state.result?.masterFingerprint || "", name = state.isLab ? "Key Station" : state.name || fingerprint || hodlT("Key {n}", { n: state.number }), label = document.createElement("span");
+  let state = hodlKeys[index], active = index === hodlActiveKey, button = document.createElement("button"), fingerprint = state.result?.masterFingerprint || "", name = state.isLab ? hodlTText("Key Station") : state.name || fingerprint || hodlT("Key {n}", { n: state.number }), label = document.createElement("span");
   button.type = "button";
   button.id = state.isLab ? "key-tab-lab" : "key-tab-" + (index + 1);
   button.className = "tab key-tab" + (state.isLab ? " is-lab station-tab" : "") + (active ? " active" : "");
@@ -13695,13 +19328,13 @@ function hodlCreateKeyTab(index) {
   button.setAttribute("aria-controls", "calc-card");
   button.setAttribute("aria-selected", String(active));
   if (state.isLab) {
-    button.setAttribute("aria-label", "Key Station" + (active ? ", selected" : ". Activate to derive a key."));
-    button.title = "Derive a key";
+    button.setAttribute("aria-label", active ? hodlTText("Key Station, selected") : hodlTText("Key Station. Activate to derive a key."));
+    button.title = hodlTText("Derive a key");
     button.onclick = () => hodlSelectKey(index);
   } else {
     let shared = hodlKeyTabCollides(state) ? hodlTText(", shares its fingerprint with another wallet") : "";
-    button.setAttribute("aria-label", name + shared + (active ? ", selected. Activate or press F2 to rename." : ". Activate to select."));
-    button.title = active ? "Click again or press F2 to rename" : "Click to select";
+    button.setAttribute("aria-label", hodlTText(active ? "{name}{shared}, selected. Activate or press F2 to rename." : "{name}{shared}. Activate to select.", { name, shared }));
+    button.title = active ? hodlTText("Click again or press F2 to rename") : hodlTText("Click to select");
     button.onclick = () => index === hodlActiveKey ? hodlBeginKeyRename(index) : hodlSelectKey(index);
   }
   button.tabIndex = active ? 0 : -1;
@@ -13811,6 +19444,7 @@ function hodlSyncKeyAddButton() {
   button.setAttribute("aria-disabled", String(button.disabled));
 }
 function hodlRenderKeyTabs() {
+  hodlSyncWorkspaceCounts();
   let box = hodlElement("#key-tabs"), panel = hodlElement("#calc-card");
   box.innerHTML = "";
   panel.removeAttribute("aria-labelledby");
@@ -13832,6 +19466,7 @@ function hodlSelectKey(index) {
   // Switching tabs mid-derivation must cancel it: the pending commit would
   // otherwise land on the tab being switched to (the wipe path already does).
   hodlInvalidateDerivation();
+
   hodlCaptureKey();
   hodlActiveKey = index;
   hodlRenderKeyTabs();
@@ -13840,6 +19475,119 @@ function hodlSelectKey(index) {
 }
 function hodlAddKey() {
   hodlSelectLab();
+}
+// A station key is a source: the PSBT, BIP-85, Silent Payments and vanity
+// stations clone its root or seed into their own session state. When the key
+// goes away, each clone goes with it, the way hodlDeleteActiveBip85 already
+// takes its own children (#1000 audit follow-up).
+function hodlZeroKeyPassphrase(state) {
+  let pass = state?.fields?.pass;
+  if (ArrayBuffer.isView(pass)) pass.fill(0);
+}
+// The station sessions a BIP-85 child cloned: the same set the Delete button
+// releases for one child, shared with the parent-key cascade.
+function hodlReleaseBip85ChildSource(state) {
+  let source = `key:bip85:${state.id}`;
+  if (hodlBip85Source === source) {
+    hodlBip85WipeParent();
+    let field = document.getElementById("bip85-key");
+    if (field) field.value = "";
+    hodlSyncBip85Parent();
+  }
+  hodlSpDropAddressesFrom(source);
+  if (typeof hodlBip47ReleaseSource === "function") hodlBip47ReleaseSource(source);
+  if (hodlSpSource === source) {
+    hodlSpWipeKeys();
+    for (let id of ["sp-key", "sp-pass"]) {
+      let field = document.getElementById(id);
+      if (field) field.value = "";
+    }
+    hodlClearStationPassphrase("sp-pass");
+    let out = document.getElementById("sp-out");
+    if (out) out.replaceChildren();
+    hodlSpVerifyMatches = null;
+    hodlSpSendLast = null;
+    hodlPaintSpSession(hodlSpNote);
+  }
+  if (hodlPsbtSource === source) {
+    hodlPsbtWipeMem();
+    hodlPaintPsbtSession();
+    hodlSyncPsbtControls();
+  }
+  if (hodlVanitySource === source) {
+    hodlVanityCancel();
+    hodlVanityClearResults();
+    hodlVanitySource = "";
+    hodlVanitySyncSource();
+  }
+  // Everything this child's session key fed — a deeper BIP-85 child, a PSBT
+  // or Silent Payments session — goes with the child (AR-05).
+  hodlDropBip85ChildrenOf(source);
+}
+// Drop only the children this parent derived. hodlBip85WipeMem is the
+// station-wide lifetime wipe and would take another live key's children with
+// it, leaving their own consumers behind. The parent is identified by source,
+// not by its 32-bit fingerprint: two different roots can share one, and a
+// fingerprint match used to release the unrelated parent's child (AR-05).
+function hodlDropBip85ChildrenOf(parentSource) {
+  if (!parentSource) return;
+  let removed = false;
+  for (let state of [...hodlBip85Children]) {
+    // A transitive release below may already have taken this state.
+    if (!hodlBip85Children.includes(state)) continue;
+    if (state.isLab || state.parentSource !== parentSource) continue;
+    hodlReleaseBip85ChildSource(state);
+    hodlBip85DropChild(state);
+    let index = hodlBip85Children.indexOf(state);
+    if (index >= 0) hodlBip85Children.splice(index, 1);
+    removed = true;
+  }
+  if (!removed) return;
+  if (!hodlBip85Children.length) hodlBip85Children.push(hodlNewBip85BenchState());
+  hodlActiveBip85 = Math.min(Math.max(hodlActiveBip85, 0), hodlBip85Children.length - 1);
+  hodlBip85Result = hodlBip85ActiveState()?.result || null;
+  hodlRenderBip85Tabs();
+  hodlSyncBip85View();
+}
+function hodlReleaseKeyConsumers(keyId, options = {}) {
+  let source = "key:" + keyId;
+  if (hodlPsbtSource === source) {
+    hodlPsbtWipeMem();
+    hodlPaintPsbtSession();
+    hodlSyncPsbtControls();
+  }
+  if (hodlBip85Source === source) {
+    hodlBip85WipeParent();
+    let field = document.getElementById("bip85-key");
+    if (field) field.value = "";
+    hodlSyncBip85Parent();
+  }
+  hodlDropBip85ChildrenOf(source);
+  hodlSpDropAddressesFrom(source);
+  if (typeof hodlBip47ReleaseSource === "function") hodlBip47ReleaseSource(source);
+  if (hodlSpSource === source) {
+    hodlSpWipeKeys();
+    for (let id of ["sp-key", "sp-pass"]) {
+      let field = document.getElementById(id);
+      if (field) field.value = "";
+    }
+    hodlClearStationPassphrase("sp-pass");
+    let out = document.getElementById("sp-out");
+    if (out) out.replaceChildren();
+    hodlSpVerifyMatches = null;
+    hodlSpSendLast = null;
+    hodlPaintSpSession(hodlSpNote);
+  }
+  // A vanity Update key re-derives the key whose id this session names while
+  // the apply is still running. Only that successful update may keep the run:
+  // it is passed explicitly as { keepVanity: true }, so a delete, wipe,
+  // ignore or detach during the apply still releases it (AR-06).
+  if (hodlVanitySource === source && !options.keepVanity) {
+    hodlVanityCancel();
+    hodlVanityClearResults();
+    hodlVanitySource = "";
+    hodlVanitySyncSource();
+  }
 }
 function hodlDeleteActiveKey() {
   let state = hodlKeys[hodlActiveKey];
@@ -13856,8 +19604,11 @@ function hodlDeleteActiveKey() {
     return;
   }
   let deletedIndex = hodlActiveKey, deletedState = state;
+  hodlZeroKeyPassphrase(deletedState);
+  hodlReleaseKeyConsumers(deletedState.id);
+  // A failed wipe must not abort the delete.
+  try { hodlSecureEntryDropKey(hodlSecureKeyOf(deletedState)); } catch {}
   hodlKeys.splice(deletedIndex, 1);
-  hodlSpDropAddressesFrom("key:" + deletedState.id);
   hodlNextKeyNumber = hodlKeys.length ? hodlKeys.reduce((latest, state) => Math.max(latest, state.number), 0) + 1 : deletedState.number;
   if (!hodlKeys.length) {
     hodlKeys.push(hodlNewLabState());
@@ -14122,6 +19873,8 @@ function hodlCaptureMsig() {
   state.error = hodlFormatErrorSpec(hodlMsigErrorSpec);
 }
 function hodlRestoreMsig() {
+  hodlSyncWorkspaceCounts();
+  if (typeof hodlResetTextScans === "function") hodlResetTextScans("msig-card");
   let state = hodlMsigs[hodlActiveMsig], panel = document.getElementById("msig-card");
   if (!state) {
     hodlWalletResult = null;
@@ -14159,6 +19912,7 @@ function hodlRestoreMsig() {
   hodlUpdateAddressEstimate("msig-");
   let descriptor = document.getElementById("msig-descriptor"), descriptorStatus = document.getElementById("msig-descriptor-status");
   if (descriptor) descriptor.value = state.fields.descriptor || "";
+  if (typeof hodlMsigBip138Reset === "function") hodlMsigBip138Reset();
   if (descriptorStatus) {
     delete descriptorStatus.dataset.result;
     descriptorStatus.textContent = "";
@@ -14185,6 +19939,12 @@ function hodlWipeActiveMsig() {
   hodlInvalidateDerivation();
   if (hodlActiveMsig < 0 || !hodlMsigs[hodlActiveMsig]) return;
   let state = hodlMsigs[hodlActiveMsig];
+  // Empty the cosigner key fields in place before the station re-renders: the
+  // nodes it drops would otherwise keep their text, and its Undo history,
+  // until garbage collection (measured in CI's browser run).
+  document.querySelectorAll('[id^="msig-x-"], #msig-descriptor').forEach((el) => {
+    if ("value" in el) el.value = "";
+  });
   hodlMsigs[hodlActiveMsig] = state.isLab ? hodlNewMsigLabState() : hodlNewMsigState(state.name, state.id, state.number);
   hodlRestoreMsig();
   hodlJournalLog("clear", `multisig-${state.number}`, "msig");
@@ -14230,7 +19990,7 @@ function hodlCreateMsigTabMark(state) {
   return stack;
 }
 function hodlCreateMsigTab(index) {
-  let state = hodlMsigs[index], active = index === hodlActiveMsig, button = document.createElement("button"), name = state.isLab ? "MS Station" : state.name || state.createdPolicy || "Multisig " + state.number, label = document.createElement("span");
+  let state = hodlMsigs[index], active = index === hodlActiveMsig, button = document.createElement("button"), name = state.isLab ? hodlTText("MS Station") : state.name || state.createdPolicy || hodlTText("Multisig {n}", { n: state.number }), label = document.createElement("span");
   button.type = "button";
   button.id = state.isLab ? "msig-tab-lab" : "msig-tab-" + (index + 1);
   button.className = "tab key-tab msig-tab" + (state.isLab ? " is-lab station-tab" : "") + (active ? " active" : "");
@@ -14242,12 +20002,12 @@ function hodlCreateMsigTab(index) {
   button.setAttribute("aria-controls", "msig-card");
   button.setAttribute("aria-selected", String(active));
   if (state.isLab) {
-    button.setAttribute("aria-label", "MS Station" + (active ? ", selected" : ". Activate to derive a multisig."));
-    button.title = "Derive a multisig";
+    button.setAttribute("aria-label", active ? hodlTText("MS Station, selected") : hodlTText("MS Station. Activate to derive a multisig."));
+    button.title = hodlTText("Derive a multisig");
     button.onclick = () => hodlSelectMsig(index);
   } else {
-    button.setAttribute("aria-label", name + (active ? ", selected. Activate or press F2 to rename." : ". Activate to select."));
-    button.title = active ? "Click again or press F2 to rename" : "Click to select";
+    button.setAttribute("aria-label", hodlTText(active ? "{name}{shared}, selected. Activate or press F2 to rename." : "{name}{shared}. Activate to select.", { name, shared: "" }));
+    button.title = active ? hodlTText("Click again or press F2 to rename") : hodlTText("Click to select");
     button.onclick = () => index === hodlActiveMsig ? hodlBeginMsigRename(index) : hodlSelectMsig(index);
   }
   button.tabIndex = active ? 0 : -1;
@@ -14332,6 +20092,7 @@ function hodlSyncMsigAddButton() {
   button.setAttribute("aria-disabled", String(button.disabled));
 }
 function hodlRenderMsigTabs() {
+  hodlSyncWorkspaceCounts();
   let box = hodlElement("#msig-tabs"), panel = hodlElement("#msig-card");
   box.innerHTML = "";
   panel.removeAttribute("aria-labelledby");
@@ -14344,6 +20105,7 @@ function hodlRenderMsigTabs() {
   hodlRevealTab(box, hodlActiveMsig);
   hodlSyncMsigDeleteButton();
   hodlSyncMsigAddButton();
+  hodlRefreshJournalKeyPicker();
 }
 function hodlSelectMsig(index) {
   if (index === hodlActiveMsig || !hodlMsigs[index]) return;
@@ -14381,12 +20143,18 @@ function hodlDeleteActiveMsig() {
   (hodlActiveMsig >= 0 ? hodlElement("#msig-tabs").children[hodlActiveMsig] : hodlElement("#add-msig"))?.focus();
 }
 function hodlShowWorkspace(id) {
+  if (id !== "journal" && hodlJournalKeyDerivation) hodlKeyManagerCancelDerivation();
   if (id === hodlWorkspace) return;
   let preservedTop = window.scrollY, preservedLeft = window.scrollX;
   if (hodlWorkspace === "calc") hodlCaptureKey();
   else if (hodlWorkspace === "msig") hodlCaptureMsig();
   // A running vanity grind survives workspace navigation. Stop, inputs that
   // invalidate the run, and lifecycle/session clearing own cancellation.
+  // Leaving the Privacy workspace hides a revealed BIP-47 spending key.
+  if (hodlWorkspace === "sp" && typeof hodlBip47Conceal === "function") hodlBip47Conceal();
+  // Leaving the Transactions workspace closes an open scan panel.
+  if (hodlWorkspace === "psbt" && typeof hodlResetPsbtScans === "function") hodlResetPsbtScans();
+  if (typeof hodlResetTextScans === "function") hodlResetTextScans();
   hodlWorkspace = id;
   [...hodlElement("#workspace-tabs").querySelectorAll("[data-workspace]")].forEach((button) => {
     let active = button.dataset.workspace === id;
@@ -14405,13 +20173,18 @@ function hodlShowWorkspace(id) {
   document.getElementById("sp-card").hidden = id !== "sp";
   document.getElementById("vanity-card").hidden = id !== "vanity";
   document.getElementById("ln-card").hidden = id !== "ln";
+  document.getElementById("core-card").hidden = id !== "core";
+  // Preview builds only: a release build strips the Verify card.
+  const verifyCard = document.getElementById("verify-card");
+  if (verifyCard) verifyCard.hidden = id !== "verify";
   // The context block sits outside its tool's card, so it is shown and hidden
   // with the card rather than by it.
-  ["bip85", "sp", "msig", "calc", "vanity", "ln"].forEach((tool) => {
+  ["bip85", "sp", "msig", "calc", "vanity", "ln", "core"].forEach((tool) => {
     document.getElementById(`${tool}-tool-intro`).hidden = id !== tool;
   });
   hodlSyncPsbtTool();
   hodlSyncJournalTool();
+  hodlSyncPrivacyTool();
   hodlJournalLog("workspace", id);
   hodlWalletResult = null;
   hodlRevealPrivate = false;
@@ -14439,6 +20212,11 @@ function hodlShowWorkspace(id) {
     hodlQueueSegmentedControlSync();
     hodlWorkspaceScrollFrame = 0;
   });
+}
+function hodlSyncWorkspaceCounts() {
+  const counts = workspaceItemCounts({ keys: hodlKeys, multisigs: hodlMsigs, children: hodlBip85Children, addresses: hodlSpAddresses, matches: hodlVanityMatches });
+  syncWorkspaceCounts(document.getElementById("workspace-tabs"), counts, (count) => hodlTText(count === 1 ? "{count} generated item" : "{count} generated items", { count }));
+  hodlSyncWorkspaceOverflow();
 }
 function hodlInitTabDrag(box) {
   let pointerId = null, startX = 0, startScroll = 0, moved = false, suppressClick = false;
@@ -14556,11 +20334,17 @@ async function hodlLoadTestKeys() {
   addEventListener("load", () => hodlRenderKeyTabs(), { once: true });
 }
 // Each tool carries a full name and a short one. Narrow screens show the
-// short form so more tools stay on screen instead of off the right edge.
-var hodlWorkspaceTabs = [["calc", "Keys", "Keys"], ["msig", "Multi Signature", "MultiSig"], ["psbt", "PSBT", "PSBT"], ["bip85", "BIP-85 Child", "BIP-85"], ["sp", "Silent Payments", "SP"], ["vanity", "Vanity Address", "Vanity"], ...(__ENTROPYLAB_TEST_HOOKS__ ? [["journal", "Journal", "Journal"]] : [])];
-// Lightning and Journal are held back from release navigation while their
-// implementations remain in source. Test builds keep Journal reachable so its
-// behavior and backup compatibility stay covered until the UI is ready.
+// short form so more tools stay on screen instead of off the right edge. An
+// optional fourth entry is the wide-screen label where the full name would
+// push the nine tools past the desktop strip (owner, 2026-10-26); the full
+// name stays the accessible name and the hover title.
+var hodlWorkspaceTabs = [["calc", "Keys", "Keys"], ["msig", "Multi Signature", "MultiSig", "MultiSig"], ["psbt", "Transactions", "Txns"], ["ln", "Lightning", "LN"], ["core", "Bitcoin Core", "Core"], ["bip85", "BIP-85 Child", "BIP-85", "BIP-85"], ["sp", "Privacy", "Privacy"], ["vanity", "Vanity Address", "Vanity", "Vanity"], ["journal", "Journal", "Journal"], ["verify", "Verify", "Verify"]];
+// The Privacy workspace's stations: the id a station tab carries and the card
+// it shows. Later PRs add ["bip47", …] and ["check", …] rows here.
+var hodlPrivacyTools = [["sp", "sp-card"]];
+var hodlPrivacyTool = "sp";
+// Every tool is released: Lightning joined after its key worker (#1203) and
+// polish (#1211), placed after Transactions (owner, 2026-10-26).
 var hodlPsbtTool = "inspector";
 function hodlSyncPsbtTool() {
   let visible = hodlWorkspace === "psbt",
@@ -14587,6 +20371,10 @@ function hodlSyncPsbtTool() {
 }
 function hodlShowPsbtTool(id, focus = false) {
   let next = id === "editor" || id === "nonce" ? id : "inspector", changed = next !== hodlPsbtTool;
+  // Switching tools hides the card an open scan panel sits in: close it
+  // first, so its camera stops (Kimi, GLM, MiniMax on #1358).
+  if (changed && typeof hodlResetPsbtScans === "function") hodlResetPsbtScans();
+  if (changed && typeof hodlResetTextScans === "function") hodlResetTextScans("psbt-card");
   hodlPsbtTool = next;
   hodlSyncPsbtTool();
   if (changed) hodlJournalLog("tool-tab", hodlPsbtTool, "psbt");
@@ -14610,48 +20398,182 @@ function hodlInitPsbtToolTabs() {
   hodlInitTabDrag(document.getElementById("psbt-tool-tabs"));
   hodlSyncPsbtTool();
 }
+
+function hodlSyncPrivacyTool() {
+  let tabs = document.getElementById("privacy-tool-tabs");
+  if (!tabs) return;
+  let visible = hodlWorkspace === "sp",
+      manager = document.getElementById("privacy-manager");
+  // The strip sits outside the cards, so its wrapper (hidden in the markup,
+  // like #psbt-manager) is shown only on its workspace.
+  if (manager) manager.hidden = !visible;
+  tabs.querySelectorAll("[data-privacy-tool]").forEach((button) => {
+    let active = button.dataset.privacyTool === hodlPrivacyTool;
+    button.classList.toggle("active", active);
+    button.setAttribute("aria-selected", String(active));
+    button.tabIndex = active ? 0 : -1;
+  });
+  for (let [tool, card] of hodlPrivacyTools) {
+    let node = document.getElementById(card);
+    if (node) node.hidden = !(visible && hodlPrivacyTool === tool);
+  }
+  // The Silent Payments intro and its SP Station strip sit outside its card
+  // too: they belong to that station, not to the whole workspace.
+  for (let id of ["sp-tool-intro", "sp-manager"]) {
+    let node = document.getElementById(id);
+    if (node) node.hidden = !(visible && hodlPrivacyTool === "sp");
+  }
+}
+
+function hodlShowPrivacyTool(id, focus = false) {
+  if (!document.getElementById("privacy-tool-tabs")) return;
+  let next = hodlPrivacyTools.some(([tool]) => tool === id) ? id : "sp",
+      changed = next !== hodlPrivacyTool;
+  if (changed && typeof hodlResetTextScans === "function") hodlResetTextScans();
+  // A revealed spending key never outlives the station it was shown on.
+  if (next !== "bip47" && typeof hodlBip47Conceal === "function") hodlBip47Conceal();
+  hodlPrivacyTool = next;
+  hodlSyncPrivacyTool();
+  if (changed) hodlJournalLog("tool-tab", hodlPrivacyTool, "sp");
+  if (focus) document.querySelector(`#privacy-tool-tabs [data-privacy-tool="${hodlPrivacyTool}"]`)?.focus();
+}
+
+function hodlInitPrivacyToolTabs() {
+  let strip = document.getElementById("privacy-tool-tabs");
+  if (!strip) return;
+  let buttons = [...strip.querySelectorAll("[data-privacy-tool]")];
+  buttons.forEach((button, index) => {
+    button.onclick = () => hodlShowPrivacyTool(button.dataset.privacyTool);
+    button.onkeydown = (event) => {
+      let next = null;
+      if (event.key === "ArrowRight") next = (index + 1) % buttons.length;
+      else if (event.key === "ArrowLeft") next = (index - 1 + buttons.length) % buttons.length;
+      else if (event.key === "Home") next = 0;
+      else if (event.key === "End") next = buttons.length - 1;
+      if (next === null) return;
+      event.preventDefault();
+      hodlShowPrivacyTool(buttons[next].dataset.privacyTool, true);
+    };
+  });
+  hodlInitTabDrag(strip);
+  hodlSyncPrivacyTool();
+}
 var hodlJournal = createJournal();
-var hodlJournalTool = "book";
-var hodlJournalEncryptDownloads = true;
+var hodlJournalTool = "notes";
 var hodlJournalStateRefreshQueued = false;
 function hodlJournalActivePage() {
   return hodlJournal.pages[hodlJournal.activePage];
+}
+function hodlJournalStartPage() {
+  let page = hodlJournalActivePage(), stamp = hodlJournalStamp();
+  page.notesText = stamp + "  ";
+  page.pendingStamp = { start: 0, stamp };
+  hodlJournal.notesText = page.notesText;
+}
+function hodlJournalReferenceLifehashSlot(fingerprint, marker = "◆◆") {
+  let slot = document.createElement("span"), image = document.createElement("img");
+  slot.className = "journal-inline-key-lifehash-slot";
+  slot.textContent = marker;
+  image.className = "journal-inline-key-lifehash";
+  image.width = 22;
+  image.height = 22;
+  image.alt = "";
+  image.hidden = true;
+  if (fingerprint) {
+    slot.appendChild(image);
+    hodlFillKeyTabLifehash(image, fingerprint);
+  }
+  return slot;
 }
 function hodlJournalRenderVisual(field = document.getElementById("journal-notes-text")) {
   let render = document.getElementById("journal-notes-render");
   if (!field || !render) return;
   render.replaceChildren();
-  for (let run of hodlJournalNotebookRuns(field.value)) {
+  for (let run of hodlJournalNotebookRuns(hodlJournalPageNotesText({ ...hodlJournalActivePage(), notesText: field.value }))) {
     if (run.type === "text") {
       render.appendChild(document.createTextNode(run.text));
       continue;
     }
-    let reference = document.createElement("span"), slot = document.createElement("span"), image = document.createElement("img");
+    let reference = document.createElement("span");
     let isBip85 = run.source === "bip85";
     reference.className = "journal-inline-key" + (isBip85 ? " journal-inline-bip85" : "");
+    if (run.type === "multisig") {
+      run.fingerprints.forEach((fingerprint, index) => {
+        if (index) reference.appendChild(document.createTextNode(" "));
+        reference.appendChild(hodlJournalReferenceLifehashSlot(fingerprint, "▣▣"));
+      });
+      let policy = `${run.m}-of-${run.fingerprints.length}: ${run.fingerprints.map((value) => value || "????????").join(",")}`;
+      reference.title = `${run.name} · ${policy}`;
+      reference.appendChild(document.createTextNode(` ${run.name} [${policy}]`));
+      render.appendChild(reference);
+      continue;
+    }
     let repeatedFingerprint = run.name.trim().toLowerCase() === run.fingerprint;
     reference.title = repeatedFingerprint ? run.fingerprint : `${run.name} · ${run.fingerprint}`;
-    slot.className = "journal-inline-key-lifehash-slot";
-    slot.textContent = "◆◆";
-    image.className = "journal-inline-key-lifehash";
-    image.width = 22;
-    image.height = 22;
-    image.alt = "";
-    image.hidden = true;
-    slot.appendChild(image);
-    reference.append(slot, document.createTextNode(repeatedFingerprint ? ` [${run.fingerprint}]` : ` ${run.name} [${run.fingerprint}]`));
+    reference.append(hodlJournalReferenceLifehashSlot(run.fingerprint, isBip85 ? "◈◈" : "◆◆"), document.createTextNode(repeatedFingerprint ? ` [${run.fingerprint}]` : ` ${run.name} [${run.fingerprint}]`));
     render.appendChild(reference);
-    hodlFillKeyTabLifehash(image, run.fingerprint);
   }
-  hodlJournalSyncPendingPrompt(field);
+  let pending = hodlJournalActivePage()?.pendingStamp;
+  if (pending && field.value.slice(pending.start) === pending.stamp + "  ") {
+    // The prompt belongs only to the mirror, never to copied or saved notes.
+    let prompt = document.createElement("span");
+    prompt.id = "journal-notes-prompt";
+    prompt.className = "journal-notes-prompt";
+    prompt.textContent = hodlTText("Add new note");
+    render.appendChild(prompt);
+  }
+  hodlJournalSyncNotesRender(field);
   hodlJournalSyncCopyButton(field);
 }
 function hodlJournalSyncCopyButton(field, button = document.getElementById("journal-notes-copy")) {
   if (!field || !button) return;
-  let phrase = hodlJournalFormatNotebook(field.value), empty = phrase === "No notes.";
-  button.disabled = empty;
-  if (empty) delete button.dataset.phrase;
-  else button.dataset.phrase = phrase;
+  button.disabled = !field.value.trim();
+  delete button.dataset.phrase;
+}
+async function hodlJournalCopyContent(button, field, notebook = false, isCurrent = () => true) {
+  if (!button || button.disabled || !hodlReadoutIsShown(button) || !hodlReadoutIsShown(field) || !isCurrent()) return false;
+  if (notebook && !field.value.trim()) return false;
+  // Notes and imported debug events can contain secrets, so they copy to
+  // EntropyLab's clipboard, never to the system clipboard. Read them only for this click;
+  // the clipboard control never keeps a second payload copy.
+  let text = notebook ? hodlJournalFormatNotebook(hodlJournalPageNotesText({ ...hodlJournalActivePage(), notesText: field.value })) : field.textContent;
+  let copied = isCurrent() && appClipboardPut(text);
+  if (copied && isCurrent() && hodlReadoutIsShown(button) && hodlReadoutIsShown(field)) hodlShowCopiedIcon(button, {
+    copyIcon: hodlClipboardIconMarkup(),
+    copiedIcon: hodlCopiedIconMarkup(),
+    label: hodlTText(button.dataset.copyLabel || "Copy"),
+    copiedLabel: hodlTText(button.dataset.copiedLabel || "Copied"),
+  });
+  return copied;
+}
+async function hodlJournalCopyLog() {
+  let journal = hodlJournal, log = journal.log, generation = hodlJournalGeneration;
+  let isCurrent = () => generation === hodlJournalGeneration && journal === hodlJournal && log === journal.log && hodlJournalUnlocked();
+  let button = document.getElementById("journal-log-copy"), field = document.getElementById("journal-log-out");
+  if (!isCurrent() || !button || button.disabled || !hodlReadoutIsShown(button) || !hodlReadoutIsShown(field)) return false;
+  // Imported debug events can contain secrets, so the log copies to
+  // EntropyLab's clipboard, never to the system clipboard.
+  let text = hodlJournalFormatLog(log, journal.logDiscarded);
+  let copied = isCurrent() && appClipboardPut(text);
+  if (copied && isCurrent() && hodlReadoutIsShown(button)) hodlShowCopiedIcon(button, {
+    copyIcon: hodlClipboardIconMarkup(), copiedIcon: hodlCopiedIconMarkup(),
+    label: hodlTText(button.dataset.copyLabel || "Copy"),
+    copiedLabel: hodlTText(button.dataset.copiedLabel || "Copied"),
+  });
+  if (isCurrent()) hodlJournalLog(copied ? "copy" : "copy-error", "session-log", "journal");
+  return copied;
+}
+async function hodlJournalCopyNotesSelection(event, field) {
+  if (event.type !== "copy" || event.defaultPrevented || event.cancelable === false || !field || !hodlReadoutIsShown(field)) return false;
+  let start = field.selectionStart, end = field.selectionEnd;
+  if (start === end) return false;
+  let visible = hodlJournalPageNotesText({ ...hodlJournalActivePage(), notesText: field.value });
+  let text = visible.slice(start, end);
+  if (text === field.value.slice(start, end)) return false;
+  // A restarted clock is visual until writing resumes. Copy its visible
+  // selection through the shared writer without altering native edit history.
+  event.preventDefault();
+  return await copyText(text);
 }
 function hodlJournalRevealCopyButton(button, delay = 1100) {
   if (!button) return;
@@ -14679,18 +20601,26 @@ function hodlJournalApplyPageStyle() {
   hodlSyncSelect(document.getElementById("journal-font"), style.font);
   hodlSyncSelect(document.getElementById("journal-size"), style.size);
   hodlSyncSelect(document.getElementById("journal-spacing"), style.spacing);
-  hodlJournalSyncPendingPrompt(document.getElementById("journal-notes-text"));
+  hodlJournalSyncNotesRender(document.getElementById("journal-notes-text"));
 }
 function hodlJournalSetPageStyle(property, value) {
   let page = hodlJournalActivePage();
   if (!page) return;
+  let previous = page.style[property];
   page.style = hodlNormalizeJournalPageStyle({ ...page.style, [property]: value });
+  if (previous !== page.style[property]) hodlJournalMarkDirty();
   hodlJournalApplyPageStyle();
 }
-function hodlJournalStoreNotesText(field) {
+function hodlJournalStoreNotesText(field, markDirty = true) {
+  hodlJournalFinishNoteDrag(field);
+  if (markDirty && hodlJournal.notesText !== field.value) hodlJournalMarkDirty();
   hodlJournal.notesText = field.value;
   let page = hodlJournalActivePage();
-  if (page) page.notesText = field.value;
+  if (page) {
+    page.notesText = field.value;
+    // Editor position belongs to this sitting, not to the saved notebook.
+    page.editorView = { start: field.selectionStart, end: field.selectionEnd, direction: field.selectionDirection, top: field.scrollTop, left: field.scrollLeft };
+  }
   hodlJournalRenderVisual(field);
 }
 function hodlJournalNormalizePageName(name) {
@@ -14715,18 +20645,28 @@ function hodlCreateJournalPageTab(index) {
   button.id = `journal-page-tab-${page.id}`;
   button.className = "tab key-tab journal-page-tab" + (page.name === defaultName ? " is-default" : "") + (active ? " active" : "");
   button.dataset.journalPage = String(index);
+  button.dataset.i18nSkip = "";
+  button.setAttribute("translate", "no");
   button.setAttribute("role", "tab");
   button.setAttribute("aria-controls", "journal-page-panel");
   button.setAttribute("aria-selected", String(active));
-  button.setAttribute("aria-label", page.name + (active ? ", selected. Activate or press F2 to rename." : ". Activate to select."));
-  button.title = active ? "Click again or press F2 to rename" : "Click to select";
+  button.setAttribute("aria-label", active
+    ? hodlTText("{name}, selected. Activate or press F2 to rename.", { name: page.name })
+    : hodlTText("{name}. Activate to select.", { name: page.name }));
+  button.title = hodlTText(active ? "Click again or press F2 to rename" : "Click to select");
   button.tabIndex = active ? 0 : -1;
   fullLabel.className = "key-tab-label journal-page-tab-full";
   fullLabel.textContent = page.name;
   shortLabel.className = "key-tab-label journal-page-tab-short";
   shortLabel.textContent = page.name === defaultName ? `P${page.number}` : page.name;
   button.append(fullLabel, shortLabel);
-  button.onclick = () => index === hodlJournal.activePage ? hodlBeginJournalPageRename(index) : hodlSelectJournalPage(index);
+  button.onclick = () => {
+    if (index === hodlJournal.activePage) hodlBeginJournalPageRename(index);
+    else {
+      hodlSelectJournalPage(index);
+      document.getElementById(button.id)?.focus();
+    }
+  };
   button.onkeydown = (event) => hodlJournalPageTabKeydown(event, index);
   return button;
 }
@@ -14744,15 +20684,23 @@ function hodlBeginJournalPageRename(index) {
   input.className = "key-tab-name-input";
   input.value = previous;
   input.maxLength = 120;
-  input.setAttribute("aria-label", "Rename " + previous);
+  input.setAttribute("aria-label", hodlTText("Rename {name}", { name: previous }));
   input.setAttribute("aria-controls", "journal-page-panel");
+  input.setAttribute("aria-describedby", "journal-notes-status");
+  hodlJournalSetStatus("");
   // One-shot, and a no-op once the page is gone: see hodlBeginKeyRename.
   let done = false;
   let finish = (commit, focus) => {
     if (done || !editor.isConnected || hodlJournal.pages[index] !== page) return;
-    done = true;
     let name = input.value.trim().replace(/\s+/g, " ");
-    let renamed = commit && name && name !== previous && !hodlJournalPageNameTaken(name, index);
+    let invalid = commit && (!name || hodlJournalPageNameTaken(name, index));
+    if (invalid) {
+      hodlJournalSetStatus(hodlTText(name ? "Another note page already uses that name. Choose a different name." : "Enter a name for this note page."), true);
+      input.setAttribute("aria-invalid", "true");
+      if (focus) { input.focus(); return; }
+    } else hodlJournalSetStatus("");
+    done = true;
+    let renamed = commit && !invalid && name !== previous;
     if (renamed) {
       page.name = name;
       hodlJournalLog("page-rename", `page-${page.number}`, "journal");
@@ -14762,7 +20710,13 @@ function hodlBeginJournalPageRename(index) {
     document.getElementById("journal-page-panel")?.setAttribute("aria-labelledby", button.id);
     if (focus) button.focus();
   };
-  input.oninput = () => hodlSizeKeyTabEditor(input);
+  input.oninput = () => {
+    hodlSizeKeyTabEditor(input);
+    if (input.hasAttribute("aria-invalid")) {
+      input.removeAttribute("aria-invalid");
+      hodlJournalSetStatus("");
+    }
+  };
   input.onkeydown = (event) => {
     if (event.key === "Enter") {
       event.preventDefault();
@@ -14815,21 +20769,19 @@ function hodlRenderJournalPageTabs() {
   hodlSyncJournalPageDeleteButton();
 }
 function hodlJournalRestorePage(field = document.getElementById("journal-notes-text")) {
+  hodlJournalFinishNoteDrag(field);
   if (!field) return;
+  delete field.hodlJournalEdit;
   let page = hodlJournalActivePage();
   hodlJournal.notesText = page?.notesText || "";
   field.value = hodlJournal.notesText;
   hodlJournalApplyPageStyle();
   hodlJournalRenderVisual(field);
-  hodlJournalFinishPendingNote(field);
-  let lines = field.value.split("\n"), pending = lines.findIndex((line) => hodlJournalNoteStampPattern.test(line) && !line.replace(hodlJournalNoteStampPattern, "").trim());
-  if (!field.value) hodlJournalResetPendingNote(field, "Add new note");
-  else if (pending >= 0) {
-    field.dataset.pendingNote = "Add new note";
-    field.dataset.pendingNoteMode = "line";
-    field.dataset.pendingNoteLine = String(pending);
-    hodlJournalRefreshPendingNote(field);
-  } else field.setSelectionRange(field.value.length, field.value.length);
+  let view = page?.editorView, end = field.value.length;
+  field.setSelectionRange(view?.start ?? end, view?.end ?? end, view?.direction ?? "none");
+  field.scrollTop = view?.top ?? 0;
+  field.scrollLeft = view?.left ?? 0;
+  hodlJournalSyncNotesRender(field);
 }
 function hodlSelectJournalPage(index) {
   if (index === hodlJournal.activePage || !hodlJournal.pages[index]) return;
@@ -14841,12 +20793,18 @@ function hodlSelectJournalPage(index) {
   hodlJournalLog("page-select", `page-${hodlJournal.pages[index].number}`, "journal");
 }
 function hodlAddJournalPage() {
+  if (hodlJournal.pages.length >= hodlJournalMaxPages) {
+    hodlJournalSetStatus(hodlTText("Notes are limited to {n} pages. Delete a page before adding another.", { n: hodlJournalMaxPages }), true);
+    return;
+  }
+  hodlJournalSetStatus("");
   let field = document.getElementById("journal-notes-text");
   if (field) hodlJournalStoreNotesText(field);
   let style = { ...hodlJournalActivePageStyle() };
   let number = hodlJournal.nextPageNumber++;
   hodlJournal.pages.push({ id: hodlJournal.nextPageId++, number, name: hodlJournalDefaultPageName(number), notesText: "", style });
   hodlJournal.activePage = hodlJournal.pages.length - 1;
+  hodlJournalStartPage();
   hodlRenderJournalPageTabs();
   hodlJournalRestorePage(field);
   hodlJournalLog("page-add", `page-${number}`, "journal");
@@ -14857,20 +20815,35 @@ function hodlDeleteActiveJournalPage() {
     hodlSyncJournalPageDeleteButton();
     return;
   }
-  let field = document.getElementById("journal-notes-text"), deletedIndex = hodlJournal.activePage, deletedNumber = hodlJournal.pages[deletedIndex].number;
+  let journal = hodlJournal, page = journal.pages[journal.activePage];
+  let field = document.getElementById("journal-notes-text");
   if (field) hodlJournalStoreNotesText(field);
-  hodlJournal.pages.splice(deletedIndex, 1);
-  hodlJournal.nextPageNumber = hodlJournal.pages.reduce((latest, page) => Math.max(latest, page.number), 0) + 1;
-  hodlJournal.activePage = Math.min(deletedIndex, hodlJournal.pages.length - 1);
-  hodlRenderJournalPageTabs();
-  hodlJournalRestorePage(field);
-  hodlJournalLog("page-delete", `page-${deletedNumber}`, "journal");
-  document.getElementById("journal-page-tabs")?.children[hodlJournal.activePage]?.focus();
+  const remove = () => {
+    // A dialog opened before Clear or an import cannot target a replacement
+    // page just because it reused this page's number or array position.
+    let index = journal.pages.indexOf(page);
+    if (hodlJournal !== journal || index < 0 || journal.pages.length <= 1) return;
+    journal.pages.splice(index, 1);
+    journal.nextPageNumber = journal.pages.reduce((latest, item) => Math.max(latest, item.number), 0) + 1;
+    journal.activePage = Math.min(index, journal.pages.length - 1);
+    hodlRenderJournalPageTabs();
+    hodlJournalRestorePage(field);
+    hodlJournalLog("page-delete", `page-${page.number}`, "journal");
+    document.getElementById("journal-page-tabs")?.children[journal.activePage]?.focus();
+  };
+  let pending = page.pendingStamp;
+  let untouched = pending?.start === 0 && page.notesText === pending.stamp + "  ";
+  if (!page.notesText.trim() || untouched) { remove(); return; }
+  hodlJournalPageDeleteConfirm ||= initJournalPageDeleteConfirm();
+  hodlJournalPageDeleteConfirm.show({ opener: document.getElementById("delete-journal-page"), onConfirm: remove });
 }
 function hodlJournalLog(action, detail = "", tool = hodlWorkspace) {
   hodlJournalAppend(hodlJournal, { tool, action, detail });
+  // View changes and rejected imports belong in the log, but do not change
+  // the user's content. Successful imports mark dirty only after merging.
+  if (!["workspace", "tool-tab", "station-select", "page-select", "theme", "privacy", "copy", "copy-request", "copy-error", "download", "download-request", "upload-request", "import-request", "export-request", "download-started", "export-error", "journal-unlock", "notebook-import-error", "key-manager-import-error", "derive-start", "derive-cancel", "derive-error", "key-import-decision", "key-import-summary", "grind-start", "grind-complete", "grind-cancel", "grind-error", "load-request", "load-error", "editor-set-request", "editor-set-error"].includes(action)) hodlJournalMarkDirty();
   hodlScheduleJournalStateRefresh();
-  if (hodlWorkspace === "journal" && hodlJournalTool === "log") hodlRenderJournalLog();
+  if (hodlWorkspace === "journal" && hodlJournalTool === "session") hodlRenderJournalLog();
 }
 var hodlJournalAuditedClicks = {
   "key-edit-inputs": ["calc", "edit-input", "current-key"],
@@ -14884,20 +20857,20 @@ var hodlJournalAuditedClicks = {
   "psbt-download": ["psbt", "download", "inspected-psbt"],
   "nonce-wipe": ["psbt", "clear", "session"],
   "nonce-upload": ["psbt", "upload", "psbt-file"],
-  "psbted-load": ["psbt", "load", "editor-text"],
   "psbted-upload": ["psbt", "upload", "psbt-file"],
   "psbted-wipe": ["psbt", "clear", "editor"],
   "psbted-copy-b64": ["psbt", "copy", "edited-psbt-base64"],
   "psbted-copy-hex": ["psbt", "copy", "edited-psbt-hex"],
   "psbted-download": ["psbt", "download", "edited-psbt"],
+  "core-upload": ["core", "upload", "wallet-dat"],
+  "core-download": ["core", "download", "wallet-dat"],
+  "core-wipe": ["core", "clear", "editor"],
+  "core-add-go": ["core", "editor-add", "descriptor"],
   "journal-notes-copy": ["journal", "copy", "notepad-page"],
   "journal-notes-download": ["journal", "download", "notebook"],
-  "journal-notes-upload": ["journal", "upload", "notebook"],
   "journal-keymanager-download": ["journal", "download", "key-manager"],
-  "journal-keymanager-upload": ["journal", "upload", "key-manager"],
   "journal-state-download": ["journal", "download", "session-state"],
-  "journal-log-copy": ["journal", "copy", "session-log"],
-  "journal-log-download": ["journal", "download", "session-log"],
+  "journal-saved-state-download": ["journal", "download", "saved-session-state"],
   "beta-warning-dismiss": ["app", "dismiss", "beta-warning"],
 };
 var hodlJournalActionAuditReady = false, hodlJournalSuppressSettingAudit = false;
@@ -14905,16 +20878,30 @@ function hodlJournalControlTool(control) {
   let id = control?.id || "";
   if (id.startsWith("journal-")) return "journal";
   if (id.startsWith("psbt-") || id.startsWith("psbted-")) return "psbt";
+  if (id.startsWith("core-")) return "core";
+  if (control?.closest?.("#core-card")) return "core";
   if (id.startsWith("bip85-")) return "bip85";
   if (id.startsWith("msig-")) return "msig";
   if (id.startsWith("sp-")) return "sp";
+  if (id.startsWith("vanity-")) return "vanity";
+  if (id.startsWith("ln-")) return "ln";
   if (control?.closest?.("#journal-manager, #journal-notes-card, #journal-keymanager-card, #journal-state-card, #journal-log-card")) return "journal";
   if (control?.closest?.("#psbt-manager, #psbt-card, #psbted-card")) return "psbt";
   if (control?.closest?.("#bip85-manager, #bip85-card")) return "bip85";
   if (control?.closest?.("#msig-manager, #msig-card")) return "msig";
   if (control?.closest?.("#sp-manager, #sp-card")) return "sp";
+  if (control?.closest?.("#vanity-card")) return "vanity";
+  if (control?.closest?.("#ln-card")) return "ln";
   if (control?.closest?.("#key-manager, #calc-card")) return "calc";
   return "app";
+}
+function hodlJournalCopyStart(control) {
+  let journal = hodlJournal, log = journal.log, generation = hodlJournalGeneration;
+  let tool = hodlJournalControlTool(control), detail = control.hasAttribute("data-private-copy") ? "private-readout" : "public-readout";
+  hodlJournalLog("copy-request", detail, tool);
+  return copied => {
+    if (generation === hodlJournalGeneration && journal === hodlJournal && log === journal.log) hodlJournalLog(copied ? "copy" : "copy-error", detail, tool);
+  };
 }
 function hodlJournalAuditedClick(control) {
   let mapped = hodlJournalAuditedClicks[control.id];
@@ -14930,7 +20917,6 @@ function hodlJournalAuditedClick(control) {
   if (control.matches("[data-tx-add]")) return ["psbt", "editor-add", control.dataset.txAdd];
   if (control.matches("[data-txin-del]")) return ["psbt", "editor-delete", "input"];
   if (control.matches("[data-txout-del]")) return ["psbt", "editor-delete", "output"];
-  if (control.matches("[data-build-apply]")) return ["psbt", "editor-set", "output-script"];
   if (control.matches("[data-add]")) return ["psbt", "editor-add", `${control.dataset.add.split(":")[0]}-pair`];
   if (control.matches(".psbted-del[data-kind]")) return ["psbt", "editor-delete", `${control.dataset.kind}-pair`];
   if (control.matches("[data-viz]")) return ["psbt", "editor-view", control.dataset.viz.split(":")[0]];
@@ -14941,23 +20927,33 @@ function hodlJournalSettingDetail(control) {
   let name = control.id || control.name || control.dataset.buildMode || control.dataset.addType || (control.hasAttribute("data-wallet-dat-birthday") ? "wallet-birthday" : "");
   if (!name) return "";
   if (control.type === "radio" && !control.checked) return "";
+  // This freeform field can contain a private value pasted into the wrong input.
+  if (control.id === "derivation-path") return `${name}=changed`;
   let value = control.type === "checkbox" ? control.checked ? "on" : "off" : String(control.value ?? "").slice(0, 80);
   return `${name}=${value}`;
 }
 function hodlInitJournalActionAudit() {
   if (hodlJournalActionAuditReady) return;
   hodlJournalActionAuditReady = true;
+  // Source inputs are part of a complete backup, including unfinished drafts.
+  // Track edits without putting their contents (or keystrokes) in the log.
+  document.addEventListener("input", (event) => {
+    if (!hodlJournalSuppressSettingAudit && !event.target.hodlRestoring && event.target.closest?.("#calc-card") && !event.target.hasAttribute?.("data-private-reveal")) hodlJournalMarkDirty();
+  }, true);
   document.addEventListener("click", (event) => {
     let control = event.target.closest?.("button, a");
     if (!control || control.disabled || control.dataset.journalSilent === "true") return;
     let audited = hodlJournalAuditedClick(control);
-    if (audited) hodlJournalLog(audited[1], audited[2], audited[0]);
+    if (audited) {
+      let action = ["copy", "download", "upload", "import"].includes(audited[1]) ? `${audited[1]}-request` : audited[1];
+      hodlJournalLog(action, audited[2], audited[0]);
+    }
   }, true);
   document.addEventListener("change", (event) => {
     if (hodlJournalSuppressSettingAudit) return;
     let control = event.target;
     if (!(control instanceof HTMLSelectElement || control instanceof HTMLInputElement || control instanceof HTMLTextAreaElement)) return;
-    if (control.id === "journal-key-insert" || control.type === "file") return;
+    if (control.id === "journal-key-insert" || control.id === "journal-state-private" || control.id === "journal-saved-state-private" || control.id === "journal-report-reveal" || control.type === "file") return;
     if (control instanceof HTMLTextAreaElement) {
       if (control.closest("#psbted-card")) hodlJournalLog("editor-edit", "field", "psbt");
       return;
@@ -14965,7 +20961,7 @@ function hodlInitJournalActionAudit() {
     let safeTextIds = new Set(["purpose", "network", "account", "branch-start", "address-start", "derivation-path", "msig-account"]);
     if (control.type && !["checkbox", "radio", "number", "range"].includes(control.type) && !safeTextIds.has(control.id) && !(control instanceof HTMLSelectElement)) return;
     let detail = hodlJournalSettingDetail(control);
-    if (detail) hodlJournalLog("setting", detail, hodlJournalControlTool(control));
+    if (detail) hodlJournalLog(control.hasAttribute?.("data-private-reveal") ? "privacy" : "setting", detail, hodlJournalControlTool(control));
   }, true);
 }
 function hodlSyncJournalTool() {
@@ -14975,55 +20971,60 @@ function hodlSyncJournalTool() {
       tabs = document.getElementById("journal-tool-tabs"),
       unlocked = hodlJournalUnlocked();
   if (intro) intro.hidden = !visible;
-  if (manager) manager.hidden = !visible;
-  if (tabs) {
-    tabs.querySelectorAll("[data-journal-tool]").forEach((button) => {
-      let active = unlocked && button.dataset.journalTool === hodlJournalTool;
-      button.disabled = !unlocked;
-      button.classList.toggle("active", active);
-      button.setAttribute("aria-selected", String(active));
-      button.setAttribute("aria-disabled", String(!unlocked));
-      button.tabIndex = unlocked && active ? 0 : -1;
-    });
+  if (manager) manager.hidden = !visible || !unlocked;
+  if (tabs) tabs.querySelectorAll("[data-journal-tool]").forEach((button) => {
+    let active = unlocked && button.dataset.journalTool === hodlJournalTool;
+    button.disabled = !unlocked;
+    button.classList.toggle("active", active);
+    button.setAttribute("aria-selected", String(active));
+    button.setAttribute("aria-disabled", String(!unlocked));
+    button.tabIndex = unlocked && active ? 0 : -1;
+  });
+  document.getElementById("journal-card").hidden = !visible || unlocked;
+  for (let id of ["notes", "keymanager", "session"]) {
+    document.getElementById(`journal-${id}-card`).hidden = !visible || !unlocked || hodlJournalTool !== id;
   }
-  document.getElementById("journal-card").hidden = !visible || hodlJournalTool !== "book";
-  document.getElementById("journal-notes-card").hidden = !visible || !unlocked || hodlJournalTool !== "notes";
-  document.getElementById("journal-keymanager-card").hidden = !visible || !unlocked || hodlJournalTool !== "keymanager";
-  document.getElementById("journal-state-card").hidden = !visible || !unlocked || hodlJournalTool !== "state";
-  document.getElementById("journal-log-card").hidden = !visible || !unlocked || hodlJournalTool !== "log";
-  if (visible && hodlJournalTool === "book") {
-    hodlJournalFillWallets();
-    hodlJournalShowWork();
+  hodlJournalShowWork();
+  if (!visible || !unlocked) return;
+  if (hodlJournalTool === "notes") hodlRenderJournalNotes();
+  if (hodlJournalTool === "keymanager") hodlKeyManagerRender();
+  if (hodlJournalTool === "session") {
+    hodlJournalRefreshSessionState();
+    hodlRenderJournalLog();
   }
-  if (visible && hodlJournalTool === "notes") hodlRenderJournalNotes();
-  if (visible && hodlJournalTool === "keymanager") hodlKeyManagerRender();
-  if (visible && hodlJournalTool === "state") hodlJournalRefreshSessionState();
-  if (visible && hodlJournalTool === "log") hodlRenderJournalLog();
 }
 function hodlShowJournalTool(id, focus = false) {
-  let next = ["book", "notes", "keymanager", "state", "log"].includes(id) ? id : "book";
-  if (next !== "book" && !hodlJournalUnlocked()) return;
-  let changed = next !== hodlJournalTool;
+  if (!hodlJournalUnlocked()) return;
+  let next = ["notes", "keymanager", "session"].includes(id) ? id : "notes", changed = next !== hodlJournalTool;
   hodlJournalTool = next;
   hodlSyncJournalTool();
   if (changed) hodlJournalLog("tool-tab", hodlJournalTool, "journal");
   if (focus) document.querySelector(`#journal-tool-tabs [data-journal-tool="${hodlJournalTool}"]`)?.focus();
+}
+function hodlJournalMultisigReference(state) {
+  let result = state?.result;
+  if (state?.isLab || result?.kind !== "msig" || !Number.isSafeInteger(result.n) || result.n < 1 || result.n > 15 || !Number.isSafeInteger(result.m) || result.m < 1 || result.m > result.n) return null;
+  let entries = state.createdCosigners || result.scriptOrder || [];
+  let fingerprints = Array.from({ length: result.n }, (_, index) => entries[index]?.fingerprint || "");
+  if (fingerprints.some((value) => typeof value !== "string" || !/^(?:[0-9a-f]{8})?$/i.test(value))) return null;
+  return { name: state.name || hodlMsigPolicyName(result), m: result.m, fingerprints: fingerprints.map((value) => value.toLowerCase()) };
 }
 function hodlRefreshJournalKeyPicker() {
   let select = document.getElementById("journal-key-insert");
   if (!select) return;
   let placeholder = document.createElement("option");
   let keys = (hodlKeys || []).filter((state) => !state.isLab && /^[0-9a-f]{8}$/i.test(state.result?.masterFingerprint || ""));
+  let msigs = (hodlMsigs || []).map((state) => ({ state, reference: hodlJournalMultisigReference(state) })).filter(({ reference }) => reference);
   let bip85Keys = (hodlBip85Children || []).filter((state) => !state.isLab && /^[0-9a-f]{8}$/i.test(state.fingerprint || ""));
   placeholder.value = "";
-  placeholder.textContent = "Insert key";
+  placeholder.textContent = hodlTText("Insert reference");
   placeholder.selected = true;
   placeholder.dataset.customSelectPlaceholder = "true";
   select.replaceChildren(placeholder);
-  if (!keys.length && !bip85Keys.length) {
+  if (!keys.length && !msigs.length && !bip85Keys.length) {
     let empty = document.createElement("option");
     empty.value = "";
-    empty.textContent = "No derived keys yet";
+    empty.textContent = hodlTText("No derived keys or multisig wallets yet");
     empty.disabled = true;
     select.appendChild(empty);
   } else keys.forEach((state) => {
@@ -15035,11 +21036,23 @@ function hodlRefreshJournalKeyPicker() {
     option.dataset.fingerprint = fingerprint;
     select.appendChild(option);
   });
+  msigs.forEach(({ state, reference }) => {
+    let option = document.createElement("option");
+    option.value = `msig:${state.id}`;
+    let policy = hodlMsigPolicyName(state.result);
+    option.textContent = reference.name === policy ? hodlTText("Multisig {policy}", { policy }) : `${reference.name} · ${policy}`;
+    option.dataset.referenceKind = "multisig";
+    option.dataset.keyName = reference.name;
+    option.dataset.msigThreshold = String(reference.m);
+    option.dataset.msigFingerprints = JSON.stringify(reference.fingerprints);
+    select.appendChild(option);
+  });
   bip85Keys.forEach((state) => {
     let option = document.createElement("option"), fingerprint = state.fingerprint.toLowerCase(), app = state.result.app;
     option.value = `bip85:${state.id}`;
-    option.textContent = `BIP-85 · ${hodlBip85AppLabel(app)} · ${fingerprint}`;
-    option.dataset.keyName = `BIP-85 · ${hodlBip85AppLabel(app)}`;
+    let label = app === "bip39" ? "BIP-85" : `BIP-85 · ${hodlBip85AppLabel(app)}`;
+    option.textContent = `${label} · ${fingerprint}`;
+    option.dataset.keyName = label;
     option.dataset.fingerprint = fingerprint;
     option.dataset.referenceKind = "bip85";
     option.dataset.bip85App = app;
@@ -15047,8 +21060,12 @@ function hodlRefreshJournalKeyPicker() {
     select.appendChild(option);
   });
   select.entropylabOptionIcon = (value) => {
-    let option = [...select.options].find((item) => item.value === value && item.dataset.fingerprint);
+    let option = [...select.options].find((item) => item.value === value && (item.dataset.fingerprint || item.dataset.referenceKind === "multisig"));
     if (!option) return null;
+    if (option.dataset.referenceKind === "multisig") {
+      let state = hodlMsigs.find((item) => `msig:${item.id}` === value && hodlJournalMultisigReference(item));
+      return state ? hodlCreateMsigTabMark(state) : null;
+    }
     if (option.dataset.referenceKind === "bip85") {
       let lineage = document.createElement("span");
       lineage.className = "journal-key-lineage";
@@ -15069,22 +21086,34 @@ function hodlRefreshJournalKeyPicker() {
 }
 function hodlJournalInsertKey(select, field) {
   let option = select?.selectedOptions?.[0], fingerprint = option?.dataset.fingerprint;
-  if (!field || !fingerprint) return;
+  let multisig = option?.dataset.referenceKind === "multisig";
+  if (!field || (!fingerprint && !multisig)) return;
   let saved = select.hodlJournalInsertionRange;
   delete select.hodlJournalInsertionRange;
   let start = saved ? Math.min(saved.start, field.value.length) : field.selectionStart;
   let end = saved ? Math.min(saved.end, field.value.length) : field.selectionEnd;
-  let token = option.dataset.referenceKind === "bip85"
+  let token = multisig
+    ? hodlJournalMultisigReferenceToken(option.dataset.keyName, Number(option.dataset.msigThreshold), JSON.parse(option.dataset.msigFingerprints))
+    : option.dataset.referenceKind === "bip85"
     ? hodlJournalBip85ReferenceToken(option.dataset.bip85App, fingerprint)
     : hodlJournalKeyReferenceToken(option.dataset.keyName, fingerprint);
   let prefix = start > 0 && !/\s$/.test(field.value.slice(0, start)) ? " " : "";
   while (end < field.value.length && /[ \t]/.test(field.value[end])) end++;
+  if (!hodlJournalNoteEditAllowed(field.value, start, end, prefix + token + " ")) {
+    hodlJournalRejectNoteEdit();
+    select.value = "";
+    select.dispatchEvent(new Event("entropylab:sync-select"));
+    field.focus({ preventScroll: true });
+    return;
+  }
+  hodlJournalCommitNoteClock(field);
+  hodlJournalRememberNotesEdit(field, start, end);
   field.setRangeText(prefix + token + " ", start, end, "end");
   field.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "insertText", data: token }));
   select.value = "";
   select.dispatchEvent(new Event("entropylab:sync-select"));
   field.focus({ preventScroll: true });
-  hodlJournalLog("key-insert", fingerprint.toLowerCase(), "journal");
+  hodlJournalLog("key-insert", multisig ? "multisig" : fingerprint.toLowerCase(), "journal");
 }
 function hodlJournalSetStatus(message, isError = false) {
   let status = document.getElementById("journal-notes-status");
@@ -15092,27 +21121,78 @@ function hodlJournalSetStatus(message, isError = false) {
   status.textContent = message;
   status.classList.toggle("err", isError);
 }
-function hodlJournalSyncEncryptDownloads(source) {
-  if (source) hodlJournalEncryptDownloads = source.checked;
-  document.querySelectorAll(".journal-encrypt-download").forEach((checkbox) => {
-    checkbox.checked = hodlJournalEncryptDownloads;
-  });
+
+var hodlJournalReportViewer = null, hodlJournalReportRequest = 0;
+function hodlJournalClearReport() {
+  hodlJournalReportRequest++;
+  hodlJournalReportViewer?.clear({ restoreFocus: false });
+  let file = document.getElementById("journal-report-file");
+  if (file) file.value = "";
 }
-async function hodlJournalDownloadContent(kind, filename, text, type = "text/plain;charset=utf-8") {
-  if (!hodlJournalEncryptDownloads) {
-    hodlJournalDownload(filename, text, type);
-    return;
+async function hodlJournalOpenReportFile(file) {
+  if (!file) return;
+  let generation = hodlJournalGeneration, request = ++hodlJournalReportRequest, opened;
+  let isCurrent = () => generation === hodlJournalGeneration && request === hodlJournalReportRequest;
+  try {
+    if (!hodlJournalUnlocked()) throw new Error(hodlTText("Create or open a Journal with the report's password first."));
+    if (file.size > hodlJournalMaxFileLength) throw new Error(hodlTText("That report is larger than the 4 MiB import limit."));
+    let text = await file.text();
+    if (!isCurrent() || !hodlJournalUnlocked()) return;
+    opened = await hodlJournalOpenExport(text, hodlJournalKeys);
+    text = "";
+    if (!isCurrent() || !hodlJournalUnlocked()) return;
+    if (!["session-state", "session-log"].includes(opened.kind)) throw new Error(hodlTText("Choose an exported Session snapshot or debug log."));
+    hodlJournalReportViewer ||= initJournalReportViewer({ privacyMarkup: hodlPrivacyBarMarkup, copyIcon: hodlClipboardIconMarkup });
+    hodlJournalError("");
+    hodlJournalReportViewer.show({ kind: opened.kind, content: opened.content, opener: document.getElementById("journal-report-open") });
+  } catch (error) {
+    if (isCurrent()) hodlJournalError(error?.message || hodlTText("The report could not be opened."));
+  } finally {
+    // The viewer owns its text after show; the decrypted wrapper must not
+    // retain a second payload, including for rejected or obsolete requests.
+    if (opened) opened.content = "";
   }
-  let file = await hodlJournalSealExport(kind, text, hodlJournalKeys);
-  let encryptedName = filename.replace(/\.[^.]+$/, "") + ".encrypted.json";
-  hodlJournalDownload(encryptedName, JSON.stringify(file, null, 2) + "\n", "application/json;charset=utf-8");
+}
+async function hodlJournalDownloadContent(kind, filename, text, isCurrent = () => true) {
+  let generation = hodlJournalGeneration;
+  try {
+    if (!isCurrent()) return false;
+    if (!hodlJournalUnlocked()) throw new Error("Create or open a journal first.");
+    hodlJournalError("");
+    let file = await hodlJournalSealExport(kind, text, hodlJournalKeys);
+    if (generation !== hodlJournalGeneration || !isCurrent()) return false;
+    let encryptedName = filename.replace(/\.[^.]+$/, "") + ".encrypted.json";
+    hodlJournalDownload(encryptedName, JSON.stringify(file, null, 2) + "\n", "application/json;charset=utf-8");
+    return true;
+  } catch (error) {
+    if (generation !== hodlJournalGeneration || !isCurrent()) return false;
+    hodlJournalError(error?.message || hodlTText("The file could not be exported."));
+    return false;
+  }
+}
+async function hodlJournalDownloadLog(isAllowed = () => true) {
+  let journal = hodlJournal, log = journal.log, generation = hodlJournalGeneration;
+  // Direct click handlers pass their event; only an explicit callback adds
+  // the confirmation dialog's cancellation boundary.
+  let allowed = typeof isAllowed === "function" ? isAllowed : () => true;
+  let isCurrent = () => allowed() && generation === hodlJournalGeneration && journal === hodlJournal && log === journal.log && hodlJournalUnlocked();
+  if (!allowed()) return false;
+  if (!isCurrent()) {
+    hodlJournalError(hodlTText("Create or open a journal first."));
+    return false;
+  }
+  let text = hodlJournalFormatLog(log, journal.logDiscarded);
+  hodlJournalLog("export-request", "session-log", "journal");
+  let started = await hodlJournalDownloadContent("session-log", "entropylab-debug-log.txt", text, isCurrent);
+  if (isCurrent()) hodlJournalLog(started ? "download-started" : "export-error", "session-log", "journal");
+  return started;
 }
 async function hodlJournalImportFile(file) {
   if (!file) return;
   let generation = hodlJournalGeneration;
-  if (file.size > 2 * 1024 * 1024) {
+  if (file.size > hodlJournalMaxFileLength) {
     hodlJournalLog("notebook-import-error", "too-large", "journal");
-    hodlJournalSetStatus("That notebook is larger than the 2 MiB import limit.", true);
+    hodlJournalSetStatus(hodlTText("That notebook is larger than the 4 MiB import limit."), true);
     return;
   }
   try {
@@ -15138,66 +21218,84 @@ async function hodlJournalImportFile(file) {
     hodlJournal.notesText = merged.notesText;
     hodlRenderJournalPageTabs();
     hodlJournalRestorePage(field);
-    hodlJournalLog("notebook-import", `${imported.pages.length} page${imported.pages.length === 1 ? "" : "s"}`);
-    hodlJournalSetStatus(`Imported ${imported.pages.length} page${imported.pages.length === 1 ? "" : "s"} from ${file.name}.`);
+    hodlJournalLog("notebook-import", `${imported.pages.length} page${imported.pages.length === 1 ? "" : "s"}`, "journal");
+    hodlJournalSetStatus(imported.pages.length === 1
+      ? hodlTText("Imported {n} page from {name}.", { n: imported.pages.length, name: file.name })
+      : hodlTText("Imported {n} pages from {name}.", { n: imported.pages.length, name: file.name }));
   } catch (error) {
     if (generation !== hodlJournalGeneration) return;
     hodlJournalLog("notebook-import-error", "invalid-file", "journal");
-    hodlJournalSetStatus(error?.message || "The notebook could not be imported.", true);
+    hodlJournalSetStatus(error?.message || hodlTText("The notebook could not be imported."), true);
   }
 }
 async function hodlKeyManagerDownload() {
+  let generation = hodlJournalGeneration;
   try {
     if (!hodlJournalUnlocked()) throw new Error("Create or open a journal first.");
-    let states = hodlKeyManagerStates().filter((state) => hodlKeyManagerIds.has(keyVaultIdentity(state)));
-    if (!states.length) {
-      states = hodlKeyManagerStates();
-      states.forEach((state) => hodlKeyManagerIds.add(keyVaultIdentity(state)));
-    }
-    if (!states.length) throw new Error("Derive or import a key before downloading a key file.");
-    let content = serializeKeyVault(states.map(hodlKeyManagerEntry), hodlKeyManagerIgnored);
+    let secureRefusal = hodlSecureEntryBackupRefusal();
+    if (secureRefusal) throw secureRefusal;
+    let states = hodlKeyManagerStates();
+    if (!states.length && !hodlKeyManagerIgnored.length) throw new Error("Derive or import a key before exporting key inputs.");
+    let content = serializeKeyVault(states.map(hodlKeyManagerEntry), hodlKeyManagerIgnored.map(hodlKeyManagerEntry));
     let file = await hodlJournalSealExport("key-manager", content, hodlJournalKeys);
+    if (generation !== hodlJournalGeneration) return;
     hodlJournalDownload("entropylab-keys.elkeys", JSON.stringify(file, null, 2) + "\n", "application/json;charset=utf-8");
-    hodlKeyManagerRender();
   } catch (error) {
-    hodlKeyManagerStatus(error?.message || "The key file could not be downloaded.", true);
-    hodlJournalLog("key-manager-download-error", "", "journal");
+    if (generation !== hodlJournalGeneration) return;
+    hodlKeyManagerStatus(error?.message || hodlTText("The key file could not be downloaded."), true);
   }
 }
-async function hodlKeyManagerImportFile(file) {
+async function hodlKeyManagerImportFile(file, review = false) {
   if (!file) return;
-  let generation = hodlJournalGeneration;
-  if (file.size > 2 * 1024 * 1024) {
-    hodlKeyManagerStatus("That key file is larger than the 2 MiB import limit.", true);
+  let generation = hodlJournalGeneration, request = ++hodlKeyManagerFileRequest;
+  let isCurrent = () => generation === hodlJournalGeneration && request === hodlKeyManagerFileRequest;
+  const assertAvailable = () => {
+    if (hodlActiveDerivation || hodlJournalKeyDerivation) throw new Error(hodlTText("Wait for the current derivation to finish, or stop it, before importing key inputs."));
+  };
+  if (file.size > hodlJournalMaxFileLength) {
+    hodlKeyManagerStatus(hodlTText("That key file is larger than the 4 MiB import limit."), true);
     hodlJournalLog("key-manager-import-error", "too-large", "journal");
     return;
   }
   try {
+    assertAvailable();
     if (!hodlJournalUnlocked()) throw new Error("Create or open a journal first.");
     let text = await file.text();
-    if (generation !== hodlJournalGeneration) return;
+    if (!isCurrent()) return;
+    assertAvailable();
     let opened = await hodlJournalOpenExport(text, hodlJournalKeys);
-    if (generation !== hodlJournalGeneration) return;
+    if (!isCurrent()) return;
+    assertAvailable();
     if (opened.kind !== "key-manager") throw new Error("That encrypted file is not a Key Manager export.");
-    let imported = parseKeyVault(opened.content), added = 0;
+    let imported = parseKeyVault(opened.content), added = 0, firstImportedId = "", queued = [];
+    let capacityError = hodlKeyManagerCapacityError(hodlKeyManagerStates().length + imported.keys.length, hodlKeyManagerIgnored.length + imported.ignoredKeys.length);
+    if (capacityError) throw new Error(capacityError);
+    if (review && await hodlKeyManagerDecision({ mode: "preview", names: imported.keys.map(entry => entry.name), archivedCount: imported.ignoredKeys.length }) !== (imported.keys.length ? "derive" : "import")) return;
+    if (!isCurrent()) return;
+    assertAvailable();
+    capacityError = hodlKeyManagerCapacityError(hodlKeyManagerStates().length + imported.keys.length, hodlKeyManagerIgnored.length + imported.ignoredKeys.length);
+    if (capacityError) throw new Error(capacityError);
     imported.keys.forEach((entry) => {
       // Cached fingerprints and file-local IDs are not identity evidence.
       // Only a fresh derivation may match an existing station key.
       let state = hodlKeyManagerImportedState(entry);
       hodlKeyManagerPending.push(state);
+      queued.push(state);
       hodlKeyManagerIds.add(keyVaultIdentity(state));
+      if (!added) firstImportedId = keyVaultIdentity(state);
       added++;
     });
     imported.ignoredKeys.forEach((entry) => {
       hodlKeyManagerIgnored.push(hodlKeyManagerImportedState(entry));
     });
-    hodlKeyManagerActiveId = hodlKeyManagerActiveId || keyVaultIdentity(hodlKeyManagerStates()[0]);
+    hodlKeyManagerActiveId = firstImportedId || hodlKeyManagerActiveId || keyVaultIdentity(hodlKeyManagerStates()[0]);
     hodlKeyManagerRender();
-    hodlKeyManagerStatus(hodlTText("{n} unverified input set(s) imported. Use “Load inputs to derive” for each key. Cached outputs were discarded.", { n: added }));
-    hodlJournalLog("key-manager-import", `${added} unverified inputs`, "journal");
+    hodlKeyManagerStatus(hodlTText("{n} active input set(s) and {archived} archived input set(s) imported.", { n: added, archived: imported.ignoredKeys.length }));
+    hodlJournalLog("key-manager-import", `${added} unverified inputs; ${imported.ignoredKeys.length} archived`, "journal");
+    if (review && queued.length) await hodlKeyManagerDeriveInputs(queued);
   } catch (error) {
-    if (generation !== hodlJournalGeneration) return;
-    hodlKeyManagerStatus(error?.message || "The key file could not be imported.", true);
+    if (!isCurrent()) return;
+    hodlKeyManagerStatus(error?.message || hodlTText("The key file could not be imported."), true);
     hodlJournalLog("key-manager-import-error", "invalid-file", "journal");
   }
 }
@@ -15224,20 +21322,29 @@ function hodlInitJournalToolTabs() {
   if (notesText) {
     hodlRenderJournalPageTabs();
     hodlJournalRestorePage(notesText);
-    setInterval(() => hodlJournalRefreshPendingNote(notesText), 1e3);
+    notesText.addEventListener("beforeinput", (event) => hodlJournalNotesBeforeInput(event, notesText));
+    notesText.addEventListener("dragstart", () => hodlJournalBeginNoteDrag(notesText));
+    notesText.addEventListener("dragend", (event) => hodlJournalFinishNoteDrag(notesText, notesText.hodlJournalDrag?.inserted || event.dataTransfer?.dropEffect === "move"));
+    notesText.addEventListener("compositionstart", () => hodlJournalNotesCompositionStart(notesText));
+    notesText.addEventListener("cut", () => {
+      if (notesText.selectionStart !== notesText.selectionEnd) hodlJournalCommitNoteClock(notesText);
+    });
     notesText.addEventListener("input", (event) => hodlJournalUpdateNotesText(notesText, event));
     notesText.addEventListener("keydown", (event) => hodlJournalNotesKeydown(event, notesText));
-    notesText.addEventListener("select", () => hodlJournalProtectStampSelection(notesText));
-    notesText.addEventListener("scroll", () => hodlJournalSyncPendingPrompt(notesText));
+    notesText.addEventListener("copy", (event) => hodlJournalCopyNotesSelection(event, notesText));
+    notesText.addEventListener("scroll", () => hodlJournalSyncNotesRender(notesText));
     notesText.addEventListener("click", () => hodlJournalNotesClick(notesText));
     notesText.addEventListener("mousemove", () => hodlJournalRevealCopyButton(notesCopy));
-    if (typeof ResizeObserver === "function") new ResizeObserver(() => hodlJournalSyncPendingPrompt(notesText)).observe(notesText);
+    if (typeof ResizeObserver === "function") new ResizeObserver(() => hodlJournalSyncNotesRender(notesText)).observe(notesText);
+    setInterval(() => {
+      if (hodlJournalUnlocked()) hodlJournalTickNoteClock(notesText);
+    }, 1000);
   }
   if (notesCopy) {
     notesCopy.onclick = () => {
       hodlJournalSyncCopyButton(notesText, notesCopy);
       if (notesCopy.disabled) return;
-      hodlCopySeedPhraseButton(notesCopy);
+      hodlJournalCopyContent(notesCopy, notesText, true);
       hodlJournalRevealCopyButton(notesCopy, 1900);
     };
     notesCopy.onfocus = () => {
@@ -15265,14 +21372,15 @@ function hodlInitJournalToolTabs() {
     let select = document.getElementById(id);
     if (select) select.onchange = () => hodlJournalSetPageStyle(property, select.value);
   }
-  document.querySelectorAll(".journal-encrypt-download").forEach((checkbox) => {
-    checkbox.addEventListener("change", () => hodlJournalSyncEncryptDownloads(checkbox));
-  });
-  hodlJournalSyncEncryptDownloads();
   let notesDownload = document.getElementById("journal-notes-download");
   if (notesDownload) notesDownload.onclick = async () => {
-    if (notesText) hodlJournalStoreNotesText(notesText);
-    await hodlJournalDownloadContent("notebook", "entropylab-notebook.json", hodlSerializeNotebook(hodlJournal), "application/json;charset=utf-8");
+    hodlJournalSetStatus("");
+    try {
+      if (notesText) hodlJournalStoreNotesText(notesText);
+      await hodlJournalDownloadContent("notebook", "entropylab-notebook.json", hodlSerializeNotebook(hodlJournal));
+    } catch (error) {
+      hodlJournalSetStatus(error?.message || hodlTText("The notebook could not be exported."), true);
+    }
   };
   let notesFile = document.getElementById("journal-notes-file"), notesUpload = document.getElementById("journal-notes-upload");
   if (notesUpload && notesFile) notesUpload.onclick = () => notesFile.click();
@@ -15281,35 +21389,62 @@ function hodlInitJournalToolTabs() {
     notesFile.value = "";
   };
   hodlInitTabDrag(document.getElementById("journal-keymanager-tabs"));
+  document.getElementById("journal-keymanager-create")?.addEventListener("click", () => {
+    hodlShowWorkspace("calc");
+    document.querySelector('#key-tabs [aria-selected="true"]')?.focus();
+  });
+  document.getElementById("journal-keymanager-derive")?.addEventListener("click", () => {
+    if (hodlJournalKeyDerivation) hodlKeyManagerCancelDerivation();
+    else hodlKeyManagerDeriveInputs(hodlKeyManagerPending.slice());
+  });
+  document.getElementById("journal-keymanager-add-all")?.addEventListener("click", hodlKeyManagerUseAllInStation);
   let keyManagerDownload = document.getElementById("journal-keymanager-download");
   if (keyManagerDownload) keyManagerDownload.onclick = hodlKeyManagerDownload;
   let keyManagerFile = document.getElementById("journal-keymanager-file"), keyManagerUpload = document.getElementById("journal-keymanager-upload");
   if (keyManagerUpload && keyManagerFile) keyManagerUpload.onclick = () => keyManagerFile.click();
   if (keyManagerFile) keyManagerFile.onchange = async () => {
-    await hodlKeyManagerImportFile(keyManagerFile.files?.[0]);
+    await hodlKeyManagerImportFile(keyManagerFile.files?.[0], true);
     keyManagerFile.value = "";
   };
+  let reportFile = document.getElementById("journal-report-file"), reportOpen = document.getElementById("journal-report-open");
+  if (reportFile && reportOpen) {
+    reportOpen.onclick = () => reportFile.click();
+    reportFile.onchange = async () => {
+      await hodlJournalOpenReportFile(reportFile.files?.[0]);
+      reportFile.value = "";
+    };
+    document.addEventListener("hodl:conceal", hodlJournalClearReport);
+    addEventListener("pagehide", hodlJournalClearReport);
+  }
   // The snapshot must follow the box on every change, not only when the tab
   // opens: otherwise the conceal sweep's untick (or a manual one) leaves the
   // private recovery texts rendered (security.md B4).
-  document.getElementById("journal-state-private")?.addEventListener("change", () => hodlJournalRefreshSessionState());
+  for (let id of ["journal-state-private", "journal-saved-state-private"]) {
+    document.getElementById(id)?.addEventListener("change", () => hodlJournalRefreshSessionState());
+  }
+  let removeHistory = document.getElementById("journal-state-delete-history");
+  if (removeHistory) removeHistory.onclick = hodlJournalRemoveSavedSnapshot;
   let stateDownload = document.getElementById("journal-state-download");
   if (stateDownload) stateDownload.onclick = async () => {
     hodlJournalRefreshSessionState();
     await hodlJournalDownloadContent("session-state", "entropylab-session.txt", hodlJournal.stateText);
   };
+  let savedDownload = document.getElementById("journal-saved-state-download");
+  if (savedDownload) savedDownload.onclick = () => {
+    let saved = hodlJournal.backup?.snapshot;
+    if (!saved || !document.getElementById("journal-saved-state-private")?.checked) return;
+    return hodlJournalDownloadContent("session-state", "entropylab-saved-session.txt", saved.text);
+  };
   let logDownload = document.getElementById("journal-log-download");
-  if (logDownload) logDownload.onclick = () => hodlJournalDownloadContent("session-log", "entropylab-session-log.txt", hodlJournalFormatLog(hodlJournal.log));
+  if (logDownload) logDownload.onclick = hodlJournalDownloadLog;
   let logOut = document.getElementById("journal-log-out"), logCopy = document.getElementById("journal-log-copy");
-  if (logOut && logCopy) logCopy.onclick = () => {
-    logCopy.dataset.phrase = logOut.textContent || "";
-    hodlCopySeedPhraseButton(logCopy);
-  };
+  if (logOut && logCopy) logCopy.onclick = hodlJournalCopyLog;
   let logClear = document.getElementById("journal-log-clear");
-  if (logClear) logClear.onclick = () => {
-    hodlJournal.log.length = 0;
-    hodlJournalLog("clear", "session-log", "journal");
-  };
+  if (logClear) logClear.onclick = hodlJournalClearLog;
+  for (let direction of ["earlier", "newer", "latest"]) {
+    let button = document.getElementById(`journal-log-${direction}`);
+    if (button) button.onclick = () => hodlRenderJournalLog(direction);
+  }
   hodlSyncJournalTool();
 }
 function hodlJournalDownload(filename, text, type = "text/plain;charset=utf-8") {
@@ -15324,145 +21459,28 @@ function hodlRenderJournalNotes() {
   if (!field) return;
   hodlRenderJournalPageTabs();
   hodlJournalApplyPageStyle();
-  if (!hodlJournal.notesText) {
-    if (!field.dataset.pendingNote) hodlJournalResetPendingNote(field, "Add new note");
-    return;
-  }
   if (field.value !== hodlJournal.notesText) field.value = hodlJournal.notesText;
   hodlJournalRenderVisual(field);
-  if (field.dataset.pendingNote) hodlJournalRenderPendingPrompt(field);
 }
-var hodlJournalNoteStampPattern = /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}  /;
-function hodlJournalStampRanges(value) {
-  let ranges = [], offset = 0;
-  for (let line of String(value).split("\n")) {
-    let stamp = line.match(hodlJournalNoteStampPattern)?.[0];
-    if (stamp) ranges.push({ start: offset, end: offset + stamp.length });
-    offset += line.length + 1;
-  }
-  return ranges;
-}
-function hodlJournalProtectStampSelection(field) {
-  if (!field || field.hodlProtectingStampSelection) return;
-  let start = field.selectionStart, end = field.selectionEnd, direction = field.selectionDirection;
-  let ranges = hodlJournalStampRanges(field.value);
-  let startStamp = ranges.find((range) => start >= range.start && start < range.end);
-  let endStamp = ranges.find((range) => end > range.start && end <= range.end);
-  let nextStart = start, nextEnd = end;
-  if (start === end && startStamp) {
-    nextStart = startStamp.end;
-    nextEnd = startStamp.end;
-  } else {
-    if (startStamp) nextStart = startStamp.end;
-    if (endStamp) nextEnd = endStamp.start;
-    if (nextStart > nextEnd) {
-      nextStart = startStamp?.end || endStamp?.end || end;
-      nextEnd = nextStart;
-    }
-  }
-  if (nextStart === start && nextEnd === end) return;
-  field.hodlProtectingStampSelection = true;
-  field.setSelectionRange(nextStart, nextEnd, nextStart === nextEnd ? "none" : direction);
-  field.hodlProtectingStampSelection = false;
-}
-function hodlJournalLineIndexAt(value, offset) {
-  return value.slice(0, offset).split("\n").length - 1;
-}
-function hodlJournalLineStartAt(value, index) {
-  return value.split("\n").slice(0, index).reduce((start, line) => start + line.length + 1, 0);
-}
-function hodlJournalPendingLineIndex(field) {
-  let index = Number(field.dataset.pendingNoteLine);
-  return field.dataset.pendingNoteMode === "line" && Number.isInteger(index) && index >= 0 && index < field.value.split("\n").length ? index : -1;
-}
-function hodlJournalPendingLineStart(field) {
-  let index = hodlJournalPendingLineIndex(field);
-  return index < 0 ? -1 : hodlJournalLineStartAt(field.value, index);
-}
-function hodlJournalSyncPendingPrompt(field) {
+function hodlJournalSyncNotesRender(field) {
   if (!field) return;
-  let render = document.getElementById("journal-notes-render"), prompt = document.getElementById("journal-notes-prompt");
-  if (render) {
-    render.style.width = `${field.clientWidth}px`;
-    render.style.height = `${field.clientHeight}px`;
-    render.scrollTop = field.scrollTop;
-    render.scrollLeft = field.scrollLeft;
-  }
-  if (!prompt || prompt.hidden) return;
-  prompt.style.width = `${field.clientWidth}px`;
-  prompt.style.height = `${field.clientHeight}px`;
-  prompt.scrollTop = field.scrollTop;
-  prompt.scrollLeft = field.scrollLeft;
-}
-function hodlJournalRenderPendingPrompt(field) {
-  let prompt = document.getElementById("journal-notes-prompt"), before = document.getElementById("journal-notes-prompt-before"), text = document.getElementById("journal-notes-prompt-text");
-  if (!prompt || !before || !text) return;
-  let lineStart = hodlJournalPendingLineStart(field), lineEnd = field.value.indexOf("\n", lineStart);
-  if (lineStart < 0) return;
-  before.textContent = field.value.slice(0, lineEnd < 0 ? field.value.length : lineEnd);
-  text.textContent = field.dataset.pendingNote;
-  field.setAttribute("aria-placeholder", field.dataset.pendingNote);
-  prompt.hidden = false;
-  hodlJournalSyncPendingPrompt(field);
-}
-function hodlJournalFinishPendingNote(field) {
-  delete field.dataset.pendingNote;
-  delete field.dataset.pendingNoteMode;
-  delete field.dataset.pendingNoteLine;
-  let prompt = document.getElementById("journal-notes-prompt");
-  if (prompt) prompt.hidden = true;
-}
-function hodlJournalRefreshPendingNote(field) {
-  let index = hodlJournalPendingLineIndex(field);
-  if (index < 0) return;
-  let lines = field.value.split("\n"), stamp = `${hodlJournalStamp()}  `;
-  lines[index] = stamp;
-  field.value = lines.join("\n");
-  let caret = hodlJournalLineStartAt(field.value, index) + stamp.length;
-  field.setSelectionRange(caret, caret);
-  hodlJournalStoreNotesText(field);
-  hodlJournalRenderPendingPrompt(field);
-}
-function hodlJournalResetPendingNote(field, label, lineIndex = field.value.split("\n").length - 1) {
-  let lines = field.value.split("\n");
-  lineIndex = Math.max(0, Math.min(lineIndex, lines.length - 1));
-  lines[lineIndex] = "";
-  field.value = lines.join("\n");
-  field.dataset.pendingNote = label;
-  field.dataset.pendingNoteMode = "line";
-  field.dataset.pendingNoteLine = String(lineIndex);
-  hodlJournalRefreshPendingNote(field);
-}
-function hodlJournalDeletePendingLine(field) {
-  let index = hodlJournalPendingLineIndex(field);
-  if (index <= 0) return false;
-  let lines = field.value.split("\n"), stamp = lines[index];
-  if (!lines[index - 1].trim()) {
-    lines[index - 1] = stamp;
-    lines.splice(index, 1);
-    field.dataset.pendingNoteLine = String(index - 1);
-  } else {
-    lines.splice(index, 1);
-    hodlJournalFinishPendingNote(field);
-  }
-  field.value = lines.join("\n");
-  let caretLine = field.dataset.pendingNote ? index - 1 : Math.min(index - 1, lines.length - 1);
-  let caret = hodlJournalLineStartAt(field.value, caretLine) + lines[caretLine].length;
-  field.setSelectionRange(caret, caret);
-  hodlJournalStoreNotesText(field);
-  if (field.dataset.pendingNote) hodlJournalRenderPendingPrompt(field);
-  return true;
+  let render = document.getElementById("journal-notes-render");
+  if (!render) return;
+  render.style.width = field.clientWidth + "px";
+  render.style.height = field.clientHeight + "px";
+  render.scrollTop = field.scrollTop;
+  render.scrollLeft = field.scrollLeft;
 }
 function hodlJournalDeleteKeyReference(field, range, inputType) {
   let value = field.value, left = range.start, right = range.end;
   let lineStart = value.lastIndexOf("\n", left - 1) + 1;
-  let structuralStamp = value.slice(lineStart, left).match(hodlJournalNoteStampPattern)?.[0];
-  if (!structuralStamp || structuralStamp.length !== left - lineStart) {
-    while (left > lineStart && /[ \t]/.test(value[left - 1])) left--;
-  }
+  let prefixEnd = hodlJournalStampRanges(value).find((stamp) => stamp.start === lineStart)?.end || lineStart;
+  while (left > prefixEnd && /[ \t]/.test(value[left - 1])) left--;
   while (right < value.length && /[ \t]/.test(value[right])) right++;
   let before = value.slice(0, left), after = value.slice(right);
   let separator = before && after && !/[\n \t]$/.test(before) && !/^\n/.test(after) ? " " : "";
+  if (!hodlJournalNoteEditAllowed(value, left, right, separator)) return hodlJournalRejectNoteEdit();
+  hodlJournalRememberNotesEdit(field, left, right);
   field.setRangeText(separator, left, right, "end");
   field.dispatchEvent(new InputEvent("input", { bubbles: true, inputType, data: null }));
 }
@@ -15486,146 +21504,388 @@ function hodlJournalKeyReferenceKeydown(event, field) {
   return true;
 }
 function hodlJournalNotesClick(field) {
-  hodlJournalProtectStampSelection(field);
   let start = field.selectionStart, end = field.selectionEnd;
   if (start !== end) return;
-  let lines = field.value.split("\n"), clicked = hodlJournalLineIndexAt(field.value, start);
-  let pending = hodlJournalPendingLineIndex(field);
-  if (clicked === pending) {
-    let caret = hodlJournalLineStartAt(field.value, pending) + lines[pending].length;
-    field.setSelectionRange(caret, caret);
-    return;
-  }
-  if (lines[clicked].trim()) {
-    if (pending >= 0) {
-      let removedLength = lines[pending].length;
-      lines[pending] = "";
-      field.value = lines.join("\n");
-      if (pending < clicked) {
-        start -= removedLength;
-        end -= removedLength;
-      }
-      hodlJournalFinishPendingNote(field);
-      field.setSelectionRange(start, end);
-      hodlJournalStoreNotesText(field);
-    }
-    let key = hodlJournalKeyReferenceRanges(field.value).find((range) => start >= range.start && start <= range.end);
-    if (key) field.setSelectionRange(key.start, key.end);
-    return;
-  }
-  let stamp = pending >= 0 ? lines[pending] : `${hodlJournalStamp()}  `;
-  if (pending >= 0) lines[pending] = "";
-  lines[clicked] = stamp;
-  field.value = lines.join("\n");
-  field.dataset.pendingNote = "Add new note";
-  field.dataset.pendingNoteMode = "line";
-  field.dataset.pendingNoteLine = String(clicked);
-  let caret = hodlJournalLineStartAt(field.value, clicked) + stamp.length;
-  field.setSelectionRange(caret, caret);
-  hodlJournalStoreNotesText(field);
-  hodlJournalRenderPendingPrompt(field);
+  let key = hodlJournalKeyReferenceRanges(field.value).find((range) => start >= range.start && start <= range.end);
+  if (key) field.setSelectionRange(key.start, key.end);
 }
-function hodlJournalNoteCount(text) {
-  return String(text).split("\n").filter((line) => hodlJournalNoteStampPattern.test(line) && line.replace(hodlJournalNoteStampPattern, "").trim()).length;
-}
-function hodlJournalUpdateNotesText(field, event) {
-  let previousCount = hodlJournalNoteCount(hodlJournal.notesText), start = field.selectionStart, end = field.selectionEnd;
-  let cursor = 0, stamp = `${hodlJournalStamp()}  `, addedBeforeStart = 0, addedBeforeEnd = 0;
-  let lines = field.value.split("\n").map((line) => {
-    let lineStart = cursor, shouldStamp = line.trim().length > 0 && !hodlJournalNoteStampPattern.test(line);
-    cursor += line.length + 1;
-    if (!shouldStamp) return line;
-    if (lineStart <= start) addedBeforeStart += stamp.length;
-    if (lineStart <= end) addedBeforeEnd += stamp.length;
-    return stamp + line;
+function hodlJournalStampRanges(value) {
+  let ranges = [...String(value).matchAll(/(?:^|\n)(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}  )/g)]
+    .map((match) => ({ start: match.index + match[0].length - match[1].length, end: match.index + match[0].length }));
+  ranges.forEach((range, index) => {
+    let end = ranges[index + 1]?.start ?? value.length;
+    range.noteEnd = Math.max(range.end, end - value.slice(range.end, end).match(/\s*$/)[0].length);
   });
-  let value = lines.join("\n");
-  if (value !== field.value) {
-    field.value = value;
-    field.setSelectionRange(start + addedBeforeStart, end + addedBeforeEnd);
+  return ranges;
+}
+function hodlJournalLogNoteChange(previous, next) {
+  // Count completed note blocks only; the debug log never receives their contents.
+  let count = (value) => hodlJournalStampRanges(value).filter((range) => range.noteEnd > range.end).length;
+  let delta = count(next) - count(previous);
+  if (delta) hodlJournalLog(delta > 0 ? "note-add" : "note-delete", String(Math.abs(delta)), "journal");
+}
+function hodlJournalNoteEditAllowed(value, start, end, replacement) {
+  let next = value.slice(0, start) + replacement + value.slice(end);
+  if (next === value) return true;
+  for (let range of hodlJournalStampRanges(value)) {
+    if (start < range.end && end > range.start) {
+      // A whole note can go, but its prefix cannot be edited independently.
+      if (start <= range.start && end >= range.noteEnd) continue;
+      return false;
+    }
+    if (start === end && start > range.start && start < range.end) return false;
+    let shifted = range.start >= end ? range.start + replacement.length - (end - start) : range.start;
+    // Joining lines must not turn a surviving timestamp into editable body text.
+    if (shifted > 0 && next[shifted - 1] !== "\n") return false;
   }
-  let deleting = event?.inputType?.startsWith("delete");
-  let pending = hodlJournalPendingLineIndex(field);
-  let active = deleting ? hodlJournalLineIndexAt(field.value, field.selectionStart) : pending >= 0 ? pending : hodlJournalLineIndexAt(field.value, field.selectionStart);
-  let lineStart = hodlJournalLineStartAt(field.value, active), lineEnd = field.value.indexOf("\n", lineStart);
-  let line = field.value.slice(lineStart, lineEnd < 0 ? field.value.length : lineEnd);
-  let emptyStampedLine = hodlJournalNoteStampPattern.test(line) && !line.replace(hodlJournalNoteStampPattern, "").trim();
-  if (!field.value) hodlJournalResetPendingNote(field, "Add new note");
-  else if (emptyStampedLine || deleting && !line.trim()) {
-    hodlJournalResetPendingNote(field, "Add new note", active);
-  } else hodlJournalFinishPendingNote(field);
+  return true;
+}
+function hodlJournalRejectNoteEdit() {
+  hodlJournalSetStatus(hodlTText("Select a complete note to delete its timestamp. The date, time, and following spaces stay together."), true);
+  return false;
+}
+function hodlJournalRememberNotesEdit(field, start = field.selectionStart, end = field.selectionEnd) {
+  field.hodlJournalEdit = { start, end, direction: field.selectionDirection, top: field.scrollTop, left: field.scrollLeft };
+}
+function hodlJournalSelectEmptyStamp(field) {
+  if (field.selectionStart !== field.selectionEnd) return false;
+  let empty = hodlJournalStampRanges(field.value).find((range) => range.end === field.selectionStart && range.noteEnd === range.end);
+  if (!empty) return false;
+  field.setSelectionRange(empty.start, empty.end);
+  return true;
+}
+function hodlJournalBeginNoteDrag(field) {
+  hodlJournalFinishNoteDrag(field);
+  let page = hodlJournalActivePage();
+  if (!page || field.selectionStart === field.selectionEnd) return;
+  hodlJournalCommitNoteClock(field);
+  // The page remains the owner of the original text until both halves of a
+  // native move succeed. Either browser event order is validated separately.
+  field.hodlJournalDrag = {
+    page, value: field.value, pending: page.pendingStamp,
+    start: field.selectionStart, end: field.selectionEnd, direction: field.selectionDirection,
+    top: field.scrollTop, left: field.scrollLeft, inserted: false, deleted: false,
+  };
+  hodlJournalFreezeNoteClock();
+}
+function hodlJournalFinishNoteDrag(field, commit = false) {
+  let drag = field?.hodlJournalDrag;
+  if (!drag) return;
+  delete field.hodlJournalDrag;
+  delete field.hodlJournalEdit;
+  if (drag.page !== hodlJournalActivePage()) return;
+  if (commit && field.value === drag.value && (drag.inserted || drag.deleted)) {
+    hodlJournalUpdateNotesText(field, { inputType: drag.inserted ? "insertFromDrop" : "deleteByDrag" }, true);
+    return;
+  }
+  field.value = drag.page.notesText;
+  field.setSelectionRange(drag.start, drag.end, drag.direction);
+  field.scrollTop = drag.top; field.scrollLeft = drag.left;
+  if (drag.pending) drag.page.pendingStamp = drag.pending;
+  hodlJournalRenderVisual(field);
+}
+function hodlJournalNotesBeforeInput(event, field) {
+  if (field.hodlJournalDrag && !["deleteByDrag", "insertFromDrop"].includes(event.inputType)) hodlJournalFinishNoteDrag(field);
+  if (event.inputType === "deleteContentBackward") hodlJournalSelectEmptyStamp(field);
+  hodlJournalRememberNotesEdit(field);
+  let start = field.selectionStart, end = field.selectionEnd, type = event.inputType || "";
+  let replacement = event.data ?? event.dataTransfer?.getData("text/plain") ?? "";
+  let known = start !== end || type.startsWith("insert");
+  if (type === "insertLineBreak" || type === "insertParagraph") replacement = "\n";
+  else if (type.startsWith("insert") && !replacement) replacement = "\ufffc";
+  if (start === end && type === "deleteContentBackward") { start = Math.max(0, start - 1); known = true; }
+  if (start === end && type === "deleteContentForward") { end = Math.min(field.value.length, end + 1); known = true; }
+  if (!type.startsWith("history") && known && !hodlJournalNoteEditAllowed(field.value, start, end, replacement) && event.cancelable) {
+    event.preventDefault();
+    hodlJournalFinishNoteDrag(field);
+    delete field.hodlJournalEdit;
+    return hodlJournalRejectNoteEdit();
+  }
+  if (type === "deleteByDrag" && !field.hodlJournalDrag) hodlJournalBeginNoteDrag(field);
+  let pending = hodlJournalActivePage()?.pendingStamp;
+  let removesPending = pending && type.startsWith("delete") && start <= pending.start && end >= pending.start + pending.stamp.length + 2;
+  if (!type.startsWith("history") && !removesPending) hodlJournalCommitNoteClock(field);
+  hodlJournalRememberNotesEdit(field);
+  hodlJournalFreezeNoteClock();
+  return true;
+}
+function hodlJournalNotesCompositionStart(field) {
+  // IME edits are not always cancelable. Start composition in the body when
+  // the caret or a partial selection is inside a protected prefix.
+  let start = field.selectionStart, end = field.selectionEnd;
+  if (!hodlJournalNoteEditAllowed(field.value, start, end, "\ufffc")) {
+    let range = hodlJournalStampRanges(field.value).find((stamp) => start < stamp.end && end >= stamp.start);
+    if (range) field.setSelectionRange(range.end, range.end);
+  }
+  hodlJournalCommitNoteClock(field);
+  hodlJournalRememberNotesEdit(field);
+  hodlJournalFreezeNoteClock();
+}
+function hodlJournalCommitNoteClock(field) {
+  let pending = hodlJournalActivePage()?.pendingStamp;
+  if (!pending?.preview || pending.preview === pending.stamp || field.value.slice(pending.start) !== pending.stamp + "  ") return;
+  let start = field.selectionStart, end = field.selectionEnd, direction = field.selectionDirection;
+  let top = field.scrollTop, left = field.scrollLeft;
+  hodlJournalFreezeNoteClock();
+  field.focus({ preventScroll: true });
+  field.setSelectionRange(pending.start, field.value.length);
+  hodlJournalRememberNotesEdit(field);
+  // A native edit keeps the deleted body in Undo. Timer ticks themselves only
+  // update the mirror; committing this replacement happens when writing resumes.
+  if (!document.execCommand?.("insertText", false, pending.preview + "  ")) {
+    field.setRangeText(pending.preview + "  ", pending.start, field.value.length, "end");
+    hodlJournalStoreNotesText(field);
+  }
+  field.setSelectionRange(start, end, direction);
+  field.scrollTop = top;
+  field.scrollLeft = left;
+}
+function hodlJournalFreezeNoteClock() {
+  let page = hodlJournalActivePage();
+  if (page) delete page.pendingStamp;
+  document.getElementById("journal-notes-prompt")?.remove();
+}
+function hodlJournalTickNoteClock(field) {
+  let page = hodlJournalActivePage(), pending = page?.pendingStamp;
+  if (!field || !pending) return;
+  // Only an explicit editing action can arm a clock. Imported timestamp-only
+  // text stays historical; never overwrite a change awaiting its input event.
+  if (field.value !== page.notesText || field.value.slice(pending.start) !== pending.stamp + "  ") {
+    hodlJournalFreezeNoteClock();
+    return;
+  }
+  let stamp = hodlJournalStamp();
+  if (stamp === (pending.preview || pending.stamp) || stamp.length !== pending.stamp.length) return;
+  if (pending.preview) {
+    pending.preview = stamp;
+    hodlJournalRenderVisual(field);
+    return;
+  }
+  let start = field.selectionStart, end = field.selectionEnd, direction = field.selectionDirection;
+  let top = field.scrollTop, left = field.scrollLeft;
+  field.setRangeText(stamp, pending.start, pending.start + pending.stamp.length, "preserve");
+  field.setSelectionRange(start, end, direction);
+  field.scrollTop = top;
+  field.scrollLeft = left;
+  pending.stamp = stamp;
+  hodlJournalStoreNotesText(field, false);
+}
+function hodlJournalUpdateNotesText(field, event, dragComplete = false) {
+  let page = hodlJournalActivePage(), drag = field.hodlJournalDrag, previous = drag?.page === page ? drag.value : page?.notesText ?? hodlJournal.notesText, edit = field.hodlJournalEdit;
+  let changedRange, pending = page?.pendingStamp;
+  delete field.hodlJournalEdit;
+  // Freeze on every edit, including edits earlier on the page. Continuing
+  // timer writes after typing would interfere with native undo and IME.
+  hodlJournalFreezeNoteClock();
+  if (!event?.inputType?.startsWith("history") && previous !== field.value) {
+    let start = edit?.start ?? 0, end = edit?.end ?? previous.length, nextEnd = field.value.length - (previous.length - end);
+    let inferred = !edit || nextEnd < start || !field.value.startsWith(previous.slice(0, start)) || !field.value.endsWith(previous.slice(end));
+    if (inferred) {
+      // Some input paths (autocorrect, drop, noncancelable IME) do not expose
+      // a usable target range. Validate their actual change before storing it.
+      start = 0;
+      while (start < previous.length && start < field.value.length && previous[start] === field.value[start]) start++;
+      end = previous.length;
+      nextEnd = field.value.length;
+      while (end > start && nextEnd > start && previous[end - 1] === field.value[nextEnd - 1]) { end--; nextEnd--; }
+    }
+    changedRange = { start, end };
+    let allowed = hodlJournalNoteEditAllowed(previous, start, end, field.value.slice(start, nextEnd));
+    if (!allowed && inferred && nextEnd === start) {
+      // Native commands can omit beforeinput. A common date prefix makes a
+      // whole-note deletion look like a partial date edit. Shift an equivalent
+      // deletion left through matching characters, then check a note boundary.
+      let left = start, right = end;
+      while (left > 0 && previous[left - 1] === previous[right - 1]) { left--; right--; }
+      let boundary = hodlJournalStampRanges(previous).find((range) => range.start >= left && range.start <= start);
+      if (boundary) allowed = hodlJournalNoteEditAllowed(previous, boundary.start, boundary.start + end - start, "");
+    }
+    if (!allowed) {
+      if (drag) {
+        hodlJournalFinishNoteDrag(field);
+        return hodlJournalRejectNoteEdit();
+      }
+      let view = edit || page?.editorView;
+      field.value = previous;
+      field.setSelectionRange(view?.start ?? start, view?.end ?? start, view?.direction ?? "none");
+      if (view) { field.scrollTop = view.top; field.scrollLeft = view.left; }
+      hodlJournalRenderVisual(field);
+      return hodlJournalRejectNoteEdit();
+    }
+  }
+  if (!dragComplete && !drag && page && event?.inputType === "deleteByDrag" && changedRange) {
+    // Some native editing paths omit beforeinput. The validated deletion
+    // still needs an owner until its destination is accepted or cancelled.
+    drag = field.hodlJournalDrag = {
+      page, value: previous, pending, ...changedRange,
+      direction: edit?.direction ?? "none", top: edit?.top ?? field.scrollTop, left: edit?.left ?? field.scrollLeft,
+      inserted: false, deleted: false,
+    };
+  }
+  if (drag) {
+    if (drag.page !== page || !["deleteByDrag", "insertFromDrop"].includes(event?.inputType)) {
+      hodlJournalFinishNoteDrag(field);
+      return;
+    }
+    drag.value = field.value;
+    if (event.inputType === "deleteByDrag") drag.deleted = true;
+    else drag.inserted = true;
+    if (!drag.deleted || !drag.inserted) {
+      hodlJournalRenderVisual(field);
+      return;
+    }
+    previous = page.notesText;
+    delete field.hodlJournalDrag;
+  }
+  hodlJournalSetStatus("");
   hodlJournalStoreNotesText(field);
-  let nextCount = hodlJournalNoteCount(field.value);
-  for (let count = previousCount; count < nextCount; count++) hodlJournalLog("note-add", "", "journal");
-  for (let count = nextCount; count < previousCount; count++) hodlJournalLog("note-delete", "", "journal");
+  hodlJournalLogNoteChange(previous, field.value);
+  // Deleting a note's body returns its existing prefix to the live starter
+  // state. Clearing the prefix itself never recreates a note.
+  if (page && !event?.inputType?.startsWith("history")) {
+    let last = hodlJournalStampRanges(field.value).at(-1);
+    let before = last && hodlJournalStampRanges(previous).find((range) => range.start === last.start);
+    if (last && last.end === field.value.length && before && before.noteEnd > before.end &&
+        previous.slice(before.start, before.end) === field.value.slice(last.start)) {
+      let stamp = field.value.slice(last.start, last.end - 2);
+      page.pendingStamp = { start: last.start, stamp, preview: stamp };
+      hodlJournalRenderVisual(field);
+    }
+  }
+}
+function hodlJournalInsertTimestamp(field) {
+  if (!field) return;
+  hodlJournalCommitNoteClock(field);
+  let separator = !field.value || field.value.endsWith("\n\n") ? "" : field.value.endsWith("\n") ? "\n" : "\n\n";
+  let stamp = hodlJournalStamp(), start = field.value.length + separator.length;
+  let text = separator + stamp + "  ";
+  field.setRangeText(text, field.value.length, field.value.length, "end");
+  field.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "insertText", data: text }));
+  let page = hodlJournalActivePage();
+  if (page) page.pendingStamp = { start, stamp };
+  hodlJournalRenderVisual(field);
+  field.focus({ preventScroll: true });
+  field.scrollTop = field.scrollHeight;
 }
 function hodlJournalNotesKeydown(event, field) {
-  if (hodlJournalKeyReferenceKeydown(event, field)) return;
-  let pendingIndex = hodlJournalPendingLineIndex(field), pendingStart = hodlJournalPendingLineStart(field);
-  if (pendingStart >= 0 && hodlJournalLineIndexAt(field.value, field.selectionStart) === pendingIndex) {
-    if (event.key === "Enter") {
-      event.preventDefault();
-      let lines = field.value.split("\n");
-      lines[pendingIndex] = "";
-      lines.splice(pendingIndex + 1, 0, "");
-      field.value = lines.join("\n");
-      hodlJournalResetPendingNote(field, "Add new note", pendingIndex + 1);
-      return;
-    }
-    if (event.key === "Backspace" || event.key === "Delete") {
-      event.preventDefault();
-      hodlJournalDeletePendingLine(field);
-      return;
-    }
-  }
-  if (event.key === "Backspace" && field.selectionStart === field.selectionEnd
-      && hodlJournalStampRanges(field.value).some((range) => range.end === field.selectionStart)) {
+  if (event.key === "Enter" && (event.ctrlKey || event.metaKey) && !event.shiftKey && !event.altKey && !event.isComposing && event.keyCode !== 229) {
     event.preventDefault();
+    hodlJournalInsertTimestamp(field);
     return;
   }
-  if (event.key !== "Enter" || event.altKey || event.ctrlKey || event.metaKey) return;
-  let start = field.selectionStart, end = field.selectionEnd, value = field.value;
-  let currentLine = hodlJournalLineIndexAt(value, start);
-  let lineStart = value.lastIndexOf("\n", start - 1) + 1, nextBreak = value.indexOf("\n", end);
-  let lineEnd = nextBreak < 0 ? value.length : nextBreak, line = value.slice(lineStart, lineEnd);
-  if (!line.trim()) return;
-  event.preventDefault();
-  let hasSuffix = value.slice(end, lineEnd).length > 0;
-  let stamp = `${hodlJournalStamp()}  `;
-  field.setRangeText(`\n${stamp}`, start, end, "end");
-  if (!hasSuffix) {
-    field.dataset.pendingNote = "Add new note";
-    field.dataset.pendingNoteMode = "line";
-    field.dataset.pendingNoteLine = String(currentLine + 1);
-    hodlJournalRenderPendingPrompt(field);
-  }
-  hodlJournalStoreNotesText(field);
+  // Let the browser delete the selected unit so native undo keeps working.
+  if (event.key === "Backspace" && !event.altKey && !event.ctrlKey && !event.metaKey && !event.isComposing && hodlJournalSelectEmptyStamp(field)) return;
+  hodlJournalKeyReferenceKeydown(event, field);
 }
-function hodlRenderJournalLog() {
+function hodlRenderJournalLog(direction = "") {
   let out = document.getElementById("journal-log-out");
-  if (out) out.textContent = hodlJournalFormatLog(hodlJournal.log);
+  if (!out) return;
+  let log = hodlJournal.log, usage = hodlJournalLogUsage(hodlJournal), pageSize = 400;
+  let top = out.scrollTop, left = out.scrollLeft;
+  let follow = out.clientHeight > 0 && out.scrollHeight - out.clientHeight - top <= 1;
+  if (out.hodlLogSource !== log) {
+    out.hodlLogSource = log;
+    out.hodlLogEnd = null;
+    out.hodlLogLast = null;
+    out.hodlLogAtLatest = true;
+  } else if (!direction && follow && out.hodlLogAtLatest) {
+    out.hodlLogEnd = null;
+  } else if (!direction && out.clientHeight > 0 && !follow && out.hodlLogEnd == null && out.hodlLogLast != null) {
+    // Numeric positions keep a reader's page steady without retaining old
+    // event objects after they are removed from the bounded history.
+    out.hodlLogEnd = out.hodlLogLast;
+  }
+  let end = out.hodlLogEnd == null ? log.length : Math.min(log.length, Math.max(0, out.hodlLogEnd.end - (usage.discarded - out.hodlLogEnd.discarded)));
+  if (!end && log.length) end = Math.min(pageSize, log.length);
+  if (direction === "earlier") end = Math.max(1, end - pageSize);
+  if (direction === "newer") end = Math.min(log.length, end + pageSize);
+  if (direction === "latest") end = log.length;
+  if (direction) out.hodlLogEnd = end === log.length ? null : { end, discarded: usage.discarded };
+  let start = Math.max(0, end - pageSize);
+  out.hodlLogLast = { end, discarded: usage.discarded };
+  out.hodlLogAtLatest = end === log.length;
+  let status = document.getElementById("journal-log-status");
+  if (status) status.textContent = hodlTText("{count} events · {size} / {limit} KiB · {max} events maximum", {
+    count: usage.count, size: (usage.bytes / 1024).toFixed(1), limit: hodlJournalLogMaxBytes / 1024, max: hodlJournalLogLimit,
+  });
+  let range = document.getElementById("journal-log-range");
+  if (range) range.textContent = log.length ? hodlTText("Showing {first}–{last} of {count} retained events · {from} to {to}", {
+    first: start + 1, last: end, count: log.length, from: hodlJournalFormatLogField(log[start].at), to: hodlJournalFormatLogField(log[end - 1].at),
+  }) : "";
+  let truncated = document.getElementById("journal-log-truncated");
+  if (truncated) {
+    truncated.hidden = !usage.discarded;
+    truncated.textContent = usage.discarded ? hodlTText("{count} older events were removed at the history limit. Copy, exports, and backups include the retained events only.", { count: usage.discarded }) : "";
+  }
+  let navigation = document.getElementById("journal-log-navigation");
+  if (navigation) navigation.hidden = log.length <= pageSize && end === log.length;
+  for (let [id, disabled] of [["earlier", start === 0], ["newer", end === log.length], ["latest", end === log.length]]) {
+    let button = document.getElementById(`journal-log-${id}`);
+    if (button) button.disabled = disabled;
+  }
+  let text = hodlJournalFormatLog(log.slice(start, end));
+  if (out.textContent === text) return;
+  out.textContent = text;
+  out.scrollTop = direction ? direction === "latest" ? out.scrollHeight : 0 : follow && out.hodlLogEnd == null ? out.scrollHeight : top;
+  out.scrollLeft = left;
 }
-function hodlJournalRefreshSessionState() {
-  let includePrivate = Boolean(document.getElementById("journal-state-private")?.checked);
+function hodlJournalClearLog() {
+  let journal = hodlJournal, log = journal.log, generation = hodlJournalGeneration;
+  if (!hodlJournalUnlocked() || !log.length) return;
+  let isCurrent = () => hodlJournalUnlocked() && generation === hodlJournalGeneration && journal === hodlJournal && journal.log === log;
+  hodlJournalGetClearConfirm().show(document.getElementById("journal-log-clear"), {
+    title: hodlTText("Clear debug log?"),
+    message: (hodlJournalKeys?.passwordProtected
+      ? hodlTText("Export first downloads a copy protected by your Journal password and keeps this log open.")
+      : hodlTText("Export first downloads a copy with no password protection and keeps this log open. Anyone with the file can read or alter its contents.")) + " " + hodlTText("Check that the file was saved, then choose Clear to remove the recorded events and leave one clear marker. Notes, keys, snapshots, and downloaded files stay unchanged."),
+    downloadLabel: hodlTText("Export first"),
+    discardLabel: hodlTText("Clear"),
+    preparingMessage: hodlTText("Preparing the debug log export…"),
+    successMessage: hodlTText("Export download started. Check that the file was saved before choosing Clear. Your debug log is still here."),
+    errorMessage: hodlTText("The debug log was not exported. It is still here. Retry Export first, or choose Cancel to review the error."),
+    isCurrent,
+    onDownload: (isAllowed) => isCurrent() ? hodlJournalDownloadLog(() => isCurrent() && isAllowed()) : false,
+    onDiscard: () => {
+      if (!isCurrent()) return;
+      for (let event of log) for (let field of ["at", "tool", "action", "detail"]) event[field] = "";
+      log.length = 0;
+      journal.log = [];
+      journal.logDiscarded = 0;
+      hodlJournalLog("clear", "session-log", "journal");
+    },
+  });
+}
+function hodlJournalSessionSnapshot(includePrivate, privateSpans = null, compact = false) {
   let build = document.querySelector(".page-footer-build");
   let commit = document.getElementById("page-footer-lifehash")?.dataset.commit || "";
   let keys = (hodlKeys || []).map((state) => {
     if (!state.result) return { name: state.name, isLab: state.isLab, mode: state.mode, derived: false };
-    let sheet = "";
-    try { sheet = hodlRecoverySheetText(state.result, includePrivate); } catch (e) { sheet = ""; }
+    let sheet = "", sheetSpans = privateSpans ? [] : null;
+    try { sheet = hodlRecoverySheetText(state.result, includePrivate, sheetSpans, compact); } catch (e) {
+      if (compact) throw e;
+      sheet = ""; sheetSpans = null;
+    }
     return {
       name: state.name,
       isLab: state.isLab,
       mode: state.mode,
       derived: true,
       fingerprint: state.result.masterFingerprint || "",
-      sheet,
+      sheet, sheetSpans,
     };
   });
   let msigs = (hodlMsigs || []).map((state) => {
     if (!state.result) return { name: state.name, derived: false };
-    let sheet = "";
-    try { sheet = hodlRecoverySheetText(state.result, includePrivate); } catch (e) { sheet = ""; }
+    // MS Station has public branches, not the HD accounts expected by the
+    // recovery-sheet formatter. Keep only its verified public outputs.
+    let lines = [`Network: ${state.result.network}`, `Script: ${state.result.script}`];
+    if (state.result.walletDescriptor) lines.push("Watch-only wallet descriptor:", state.result.walletDescriptor);
+    for (let branch of hodlAccountAddressBranches(state.result)) {
+      if (branch.publicDescriptor) lines.push(`Watch-only ${hodlAddressBranchLabel(branch.branch).toLowerCase()} descriptor:`, branch.publicDescriptor);
+      if (!compact) hodlSheetAddressRows(lines, `${hodlAddressBranchLabel(branch.branch)} addresses`, branch.rows);
+    }
+    if (compact) lines.push("Derived address rows omitted from this backup snapshot; derive them again from the saved descriptors.");
+    let sheet = lines.join("\n");
     let summary = state.result.m && state.result.n ? `${state.result.m}-of-${state.result.n}` : "";
     return { name: state.name, derived: true, summary, sheet };
   });
@@ -15655,12 +21915,63 @@ function hodlJournalRefreshSessionState() {
     bip85,
     sp,
     psbt,
+  }, privateSpans);
+  return text;
+}
+function hodlJournalRefreshSessionState() {
+  let includePrivate = Boolean(document.getElementById("journal-state-private")?.checked);
+  let privateSpans = [];
+  let currentText = hodlJournalSessionSnapshot(includePrivate, privateSpans);
+  hodlJournal.stateText = currentText;
+  // Historical reports are untrusted text. Their imported privacy flag never
+  // grants visibility, and revealing the live session cannot expose them.
+  let saved = hodlJournal.backup?.snapshot;
+  let history = document.getElementById("journal-state-history");
+  if (history) history.hidden = !saved;
+  let savedBox = document.getElementById("journal-saved-state-private");
+  if (!saved && savedBox) savedBox.checked = false;
+  let showSaved = Boolean(saved && savedBox?.checked);
+  let savedDownload = document.getElementById("journal-saved-state-download");
+  if (savedDownload) savedDownload.disabled = !showSaved;
+  for (let [prefix, text, revealed, available] of [
+    ["journal-state", currentText, includePrivate, true],
+    ["journal-saved-state", showSaved ? saved.text : saved ? hodlTText("Private value hidden") : "", showSaved, showSaved],
+  ]) {
+    let field = document.getElementById(`${prefix}-text`);
+    if (field) {
+      hodlRenderAnnotatedPrivateText(field, text, prefix === "journal-state" ? privateSpans : revealed ? hodlJournalSnapshotPrivateSpans(text) : []);
+      field.toggleAttribute("data-private-value", revealed && available);
+      field.toggleAttribute("data-public-value", !revealed && available);
+    }
+    document.getElementById(`${prefix}-label`)?.classList.toggle("is-revealed", revealed);
+    document.getElementById(`${prefix}-field`)?.classList.toggle("is-revealed", revealed);
+    let copyHost = document.getElementById(`${prefix}-copy`);
+    if (copyHost) {
+      let attribute = revealed ? "data-private-copy" : "data-public-copy";
+      if (!available) copyHost.replaceChildren();
+      else if (!copyHost.firstElementChild?.hasAttribute(attribute)) copyHost.innerHTML = hodlPrivateCopyButton({ label: hodlTText("Copy snapshot"), attribute });
+    }
+  }
+  return currentText;
+}
+function hodlJournalRemoveSavedSnapshot() {
+  let journal = hodlJournal, saved = journal.backup?.snapshot, generation = hodlJournalGeneration;
+  if (!hodlJournalUnlocked() || !saved) return;
+  hodlJournalPageDeleteConfirm ||= initJournalPageDeleteConfirm();
+  hodlJournalPageDeleteConfirm.show({
+    opener: document.getElementById("journal-state-delete-history"),
+    title: hodlTText("Remove saved snapshot?"),
+    message: hodlTText("This removes all historical snapshot text carried in this Journal. The current session, notes, key inputs, and downloaded backups stay unchanged. Future backups will contain the current snapshot without this saved history."),
+    confirmLabel: hodlTText("Remove saved snapshot"),
+    onConfirm: () => {
+      if (!hodlJournalUnlocked() || generation !== hodlJournalGeneration || journal !== hodlJournal || journal.backup?.snapshot !== saved) return;
+      saved.text = "";
+      journal.backup.snapshot = null;
+      hodlJournalLog("snapshot-delete", "saved-session", "journal");
+      hodlJournalRefreshSessionState();
+      document.getElementById("journal-state-summary")?.focus();
+    },
   });
-  hodlJournal.stateText = text;
-  let field = document.getElementById("journal-state-text");
-  if (field) field.textContent = text;
-  let copyHost = document.getElementById("journal-state-copy");
-  if (copyHost && !copyHost.firstElementChild) copyHost.innerHTML = hodlPrivateCopyButton({ label: "Copy session snapshot" });
 }
 function hodlScheduleJournalStateRefresh() {
   if (hodlJournalStateRefreshQueued) return;
@@ -15672,44 +21983,76 @@ function hodlScheduleJournalStateRefresh() {
 }
 // The encrypted entropy notebook gates the Journal tools and keeps its
 // document and Web Crypto keys apart from the session notepad.
-var hodlJournalKeys = null, hodlJournalDoc = null, hodlJournalFileText = "", hodlJournalDirty = false, hodlJournalGate = "create", hodlJournalReveal = false, hodlJournalEditingId = null, hodlJournalDeleteArmed = false, hodlJournalEntryVariants = {}, hodlJournalKeyEntries = new Map();
-function hodlJournalReadEntryVariants(entry) {
-  if (!entry) return {};
-  return Object.fromEntries(["diceMethod", "entropyFormat", "cardMethod", "seedMethod"].filter((field) => entry[field]).map((field) => [field, entry[field]]));
-}
-// Bumped by every notebook teardown (clear, lock, lifecycle disposal). An
+var hodlJournalKeys = null, hodlJournalDoc = null, hodlJournalFileText = "", hodlJournalDirty = false, hodlJournalBackupRevision = 0, hodlJournalGate = "create", hodlJournalReveal = false, hodlJournalEditingId = null, hodlJournalClearConfirm = null, hodlJournalPageDeleteConfirm = null;
+// Bumped by every notebook teardown (clear, lifecycle disposal). An
 // async unlock/create that completes against an older generation must discard
 // its decrypted material, not install it over a wiped session (issue #389).
 var hodlJournalGeneration = 0;
+// The chosen file's pending read, settling to { text } or { error }. Unlock
+// awaits the newest one instead of racing it, and only the latest choice may
+// fill hodlJournalFileText: a slower earlier read, or one a reset discarded,
+// finds itself replaced and drops its text (#889).
+var hodlJournalFileRead = null;
+// Audit L6: a passwordless journal file is authenticated by nothing (the key
+// material derives from the empty password), so opening one installs entries
+// that anyone with the file could have altered. The first open of a given
+// file arms an explicit no-protection acknowledgement instead of installing;
+// this holds that file's text, or "" when nothing is armed.
+var hodlJournalOpenReadyFor = "";
+var hodlJournalUnlockBusy = false;
 function hodlJournalError(message) {
   let error = document.getElementById("journal-error");
   if (error) error.textContent = message || "";
 }
+function hodlJournalSetGateBusy(operation) {
+  hodlJournalUnlockBusy = operation || false;
+  let busy = Boolean(operation);
+  for (let id of ["journal-create", "journal-unlock", "journal-create-password", "journal-create-confirm", "journal-open-password"]) {
+    let control = document.getElementById(id);
+    if (control) control.disabled = busy;
+  }
+  for (let button of document.getElementById("journal-gate-modes")?.querySelectorAll("button") || []) button.disabled = busy;
+  let create = document.getElementById("journal-create"), open = document.getElementById("journal-unlock");
+  if (create) create.textContent = hodlTText(operation?.mode === "create" ? "Creating journal…" : "Create journal");
+  if (open) open.textContent = hodlTText(operation?.mode === "open" ? "Opening journal…" : "Open journal");
+  let panel = document.getElementById("journal-locked-panel"), status = document.getElementById("journal-gate-status");
+  if (panel) panel.ariaBusy = String(busy);
+  if (status) status.textContent = busy ? hodlTText(operation.mode === "create" ? "Creating journal…" : "Opening journal…") : "";
+}
 function hodlJournalWipeNotebook() {
   hodlJournalGeneration++;
+  hodlJournalClearReport();
+  let notes = document.getElementById("journal-notes-text");
+  if (notes) {
+    delete notes.hodlJournalEdit;
+    delete notes.hodlJournalDrag;
+  }
+  hodlJournalSetGateBusy(false);
   hodlJournalWipeDocument(hodlJournalDoc);
   hodlJournalDoc = null;
-  // The AES-GCM and HMAC CryptoKeys are non-extractable, so the only wipeable
-  // bytes are the verify digest; nulling dereferences the keys themselves.
-  if (hodlJournalKeys) hodlJournalWipeBytes(hodlJournalKeys.verify);
+  // The AES-GCM and HMAC CryptoKeys are non-extractable: dropping the
+  // reference is the whole wipe.
   hodlJournalKeys = null;
   hodlJournalFileText = "";
+  hodlJournalFileRead = null;
+  // A wipe also forgets a pending passwordless acknowledgement (audit L6):
+  // the armed token is a full copy of the file's bytes, and the ready row
+  // must not outlive the notebook state it vouched for.
+  hodlJournalOpenReadyFor = "";
+  let openReady = document.getElementById("journal-open-ready");
+  if (openReady) openReady.hidden = true;
   hodlJournalDirty = false;
   hodlJournalReveal = false;
   hodlJournalEditingId = null;
-  hodlJournalDeleteArmed = false;
-  hodlJournalKeyEntries.clear();
 }
 // A notebook whose decryption outlived its session: the generation check in
-// create/unlock routes it here, so its plaintext and verify digest are wiped
-// instead of installed (the CryptoKeys themselves are non-extractable and are
-// simply dropped).
+// create/unlock routes it here, so its plaintext is wiped instead of installed
+// (the CryptoKeys themselves are non-extractable and are simply dropped).
 function hodlJournalDiscardOpened(opened) {
   hodlJournalWipeDocument(opened?.doc);
-  if (opened?.keys) hodlJournalWipeBytes(opened.keys.verify);
 }
 function hodlJournalClearFields() {
-  for (let id of ["journal-create-password", "journal-create-confirm", "journal-open-password", "journal-input", "journal-phrase", "journal-label", "journal-entry-notes", "journal-search"]) {
+  for (let id of ["journal-create-password", "journal-create-confirm", "journal-open-password", "journal-search"]) {
     let field = document.getElementById(id);
     if (field) field.value = "";
   }
@@ -15758,6 +22101,11 @@ function hodlSyncJournalCreatePasswordValidation() {
 }
 function hodlJournalCreatePasswordKeydown(event) {
   if (event.key !== "Enter" || event.altKey || event.ctrlKey || event.metaKey || event.isComposing || event.repeat) return;
+  if (event.currentTarget === document.getElementById("journal-open-password")) {
+    event.preventDefault();
+    hodlJournalUnlock();
+    return;
+  }
   let password = document.getElementById("journal-create-password"),
       confirm = document.getElementById("journal-create-confirm");
   if (!password || !confirm) return;
@@ -15783,12 +22131,18 @@ function hodlJournalSetGate(mode) {
 function hodlJournalUnlocked() {
   return Boolean(hodlJournalKeys && hodlJournalDoc);
 }
+function hodlJournalMarkDirty() {
+  if (!hodlJournalUnlocked()) return;
+  hodlJournalDirty = true;
+  hodlJournalBackupRevision++;
+  let note = document.getElementById("journal-status-note");
+  if (note) note.textContent = hodlJournalNoteText();
+}
 function hodlJournalNoteText() {
-  if (!hodlJournalDoc) return "Create a journal or open a journal file.";
-  let n = hodlJournalDoc.entries.length;
-  let unsaved = hodlJournalDirty ? " Unsaved changes \u2014 download the journal file to preserve them." : "";
-  if (!n) return "No entries yet. Download the journal file after you add one." + unsaved;
-  return `${n} ${n === 1 ? "entry" : "entries"} in this page only.${unsaved}`;
+  if (!hodlJournalDoc) return hodlTText("Create a journal or open a backup.");
+  return hodlTText(hodlJournalDirty
+    ? "Unsaved changes — download a backup to keep them."
+    : "No content changes since opening or downloading a backup.");
 }
 function hodlJournalFillLifehash(image, digest) {
   if (!image) return;
@@ -15820,28 +22174,15 @@ function hodlJournalFillFingerprint(image, fingerprint) {
     image.hidden = true;
   });
 }
-function hodlJournalFillWallets(selected) {
-  let select = document.getElementById("journal-wallet");
-  if (!select) return;
-  let current = selected == null ? select.value : String(selected);
-  select.innerHTML = "";
-  let none = document.createElement("option");
-  none.value = "";
-  none.textContent = "None";
-  select.append(none);
-  hodlKeys.filter((state) => !state.isLab).forEach((state) => {
-    let option = document.createElement("option");
-    option.value = String(state.id);
-    option.textContent = state.name || `Key ${state.number}`;
-    select.append(option);
-  });
-  select.value = [...select.options].some((option) => option.value === current) ? current : "";
-}
 function hodlJournalShowWork() {
   let locked = document.getElementById("journal-locked-panel"), work = document.getElementById("journal-work-panel");
   let unlocked = hodlJournalUnlocked();
   if (locked) locked.hidden = unlocked;
   if (work) work.hidden = !unlocked;
+  let records = document.getElementById("journal-saved-records");
+  if (records) records.hidden = !unlocked || !hodlJournalDoc.entries.length;
+  let actions = document.getElementById("journal-global-actions");
+  if (actions) actions.hidden = !unlocked;
   for (let id of ["journal-global-download", "journal-global-clear"]) {
     let button = document.getElementById(id);
     if (!button) continue;
@@ -15853,13 +22194,12 @@ function hodlJournalShowWork() {
   if (unlocked) {
     let passwordProtected = Boolean(hodlJournalKeys.passwordProtected), title = document.getElementById("journal-status-title");
     if (title) title.textContent = hodlTText(passwordProtected ? "Journal open \u00b7 Password protected" : "Journal open \u00b7 No password protection");
-    document.querySelectorAll(".journal-encrypt-option span").forEach((label) => {
-      label.textContent = hodlTText(passwordProtected ? "Encrypt with Journal password" : "Encode for this Journal (no password protection)");
+    document.querySelectorAll("[data-journal-protection]").forEach((note) => {
+      note.textContent = hodlTText(passwordProtected ? "Encrypted with the Journal password" : "No password protection — anyone with the file can open it");
     });
-    let keyManagerNote = document.querySelector(".journal-keymanager-encryption-note");
-    if (keyManagerNote) keyManagerNote.textContent = hodlTText(passwordProtected ? "Encrypted with the Journal password" : "Encoded for this Journal \u00b7 No password protection");
   }
-  hodlJournalFillLifehash(document.getElementById("journal-lifehash"), hodlJournalKeys?.verify);
+  // Do not render a verifier derived from the Journal KDF output: a captured
+  // icon would let an attacker test password guesses offline (audit L7).
   hodlJournalRenderList();
 }
 function hodlJournalRenderList() {
@@ -15871,12 +22211,16 @@ function hodlJournalRenderList() {
   }
   let entries = hodlJournalSearch(hodlJournalDoc, document.getElementById("journal-search")?.value || "");
   if (!entries.length) {
-    box.innerHTML = `<p class="journal-empty">${hodlJournalDoc.entries.length ? "No labels match that search." : "No entries yet."}</p>`;
+    box.innerHTML = `<p class="muted journal-empty">${hodlT(hodlJournalDoc.entries.length ? "No labels match that search." : "No entries yet.")}</p>`;
     return;
   }
-  box.innerHTML = entries.map((entry) => `<button type="button" class="journal-item" data-journal-id="${entry.id}">
+  // entry.id is a non-negative safe integer by the time it renders here —
+  // journal.js normalizeEntry coerces it to a positive safe integer or 0, and
+  // parseDocument hands out spare ids for 0 — so this escape is defense in
+  // depth against a future path that lets file text through, not a live hole.
+  box.innerHTML = entries.map((entry) => `<button type="button" class="btn secondary journal-item" data-journal-id="${hodlEscapeHtml(String(entry.id))}" aria-controls="journal-view">
       <img class="journal-item-lifehash" alt="" width="32" height="32" hidden>
-      <span class="journal-item-label">${hodlEscapeHtml(entry.label)}</span>
+      <span class="journal-item-label" data-i18n-skip translate="no">${hodlEscapeHtml(entry.label)}</span>
       <span class="journal-item-meta">${hodlEscapeHtml(hodlJournalEntryMethodLabel(entry))} \xB7 ${hodlEscapeHtml(String(entry.created).slice(0, 10))}</span>
     </button>`).join("");
   [...box.querySelectorAll(".journal-item")].forEach((button, index) => {
@@ -15886,38 +22230,105 @@ function hodlJournalRenderList() {
   });
 }
 function hodlJournalHideEditor() {
+  let selectedId = hodlJournalEditingId;
   hodlJournalEditingId = null;
-  let editor = document.getElementById("journal-editor"), view = document.getElementById("journal-view"), list = document.getElementById("journal-list");
-  if (editor) editor.hidden = true;
-  if (view) {
-    view.hidden = true;
-    view.innerHTML = "";
+  hodlJournalReveal = false;
+  hodlJournalPageDeleteConfirm?.hide({ restoreFocus: false });
+  let view = document.getElementById("journal-view"), list = document.getElementById("journal-list"), editor = document.getElementById("journal-editor");
+  // Return to the selected record when it still exists; deletion falls
+  // back to Keys so focus never remains in the removed view.
+  let refocus = document.activeElement && (view?.contains(document.activeElement) || editor?.contains(document.activeElement));
+  if (editor) {
+    editor.hidden = true;
+    delete editor.hodlJournalEdit;
+    editor.onkeydown = null;
   }
-  if (list) list.hidden = false;
   for (let id of ["journal-input", "journal-phrase", "journal-label", "journal-entry-notes"]) {
     let field = document.getElementById(id);
     if (field) field.value = "";
   }
   let method = document.getElementById("journal-method");
-  if (method) method.value = "dice";
-  hodlJournalEntryVariants = {};
-  hodlJournalFillWallets("");
+  if (method) hodlSyncSelect(method, "dice");
+  for (let id of ["journal-commit", "journal-cancel"]) {
+    let button = document.getElementById(id);
+    if (button) button.onclick = null;
+  }
+  if (view) {
+    view.hidden = true;
+    view.innerHTML = "";
+  }
+  if (list) list.hidden = false;
+  if (refocus) {
+    let selected = list?.querySelector(`[data-journal-id="${selectedId}"]`);
+    if (selected) selected.focus();
+    else document.getElementById("journal-keymanager-tab")?.focus();
+  }
 }
-function hodlJournalShowEditor(entry) {
-  if (!hodlJournalUnlocked()) throw new Error("Create or open a journal first.");
-  hodlJournalEditingId = entry?.id ?? null;
-  hodlJournalDeleteArmed = false;
+function hodlJournalShowEditor(id) {
+  let doc = hodlJournalDoc, entry = doc?.entries.find((item) => item.id === id), editor = document.getElementById("journal-editor");
+  if (!hodlJournalUnlocked() || !entry || !editor) return;
+  hodlJournalHideEditor();
+  hodlJournalError("");
+  hodlJournalEditingId = id;
+  let edit = { doc, entry, generation: hodlJournalGeneration };
+  editor.hodlJournalEdit = edit;
   document.getElementById("journal-list").hidden = true;
-  document.getElementById("journal-view").hidden = true;
-  document.getElementById("journal-view").innerHTML = "";
-  document.getElementById("journal-editor").hidden = false;
-  document.getElementById("journal-method").value = entry?.method || "dice";
-  document.getElementById("journal-input").value = entry?.input || "";
-  document.getElementById("journal-phrase").value = entry?.phrase || "";
-  document.getElementById("journal-label").value = entry?.label || "";
-  document.getElementById("journal-entry-notes").value = entry?.notes || "";
-  hodlJournalEntryVariants = hodlJournalReadEntryVariants(entry);
-  hodlJournalFillWallets(entry?.walletId ?? "");
+  for (let [fieldId, value] of [["journal-input", entry.input], ["journal-phrase", entry.phrase], ["journal-label", entry.label], ["journal-entry-notes", entry.notes]]) {
+    document.getElementById(fieldId).value = value || "";
+  }
+  hodlSyncSelect(document.getElementById("journal-method"), entry.method);
+  document.getElementById("journal-commit").onclick = () => hodlJournalCommit(edit);
+  document.getElementById("journal-cancel").onclick = () => {
+    if (editor.hodlJournalEdit !== edit) return;
+    hodlJournalHideEditor();
+    hodlJournalError("");
+    if (hodlJournalDoc === doc && hodlJournalGeneration === edit.generation && doc.entries.includes(entry)) {
+      hodlJournalOpenView(id);
+      document.getElementById("journal-edit")?.focus();
+    }
+  };
+  editor.onkeydown = (event) => {
+    if (event.key !== "Escape" || event.isComposing) return;
+    event.preventDefault();
+    event.stopPropagation();
+    document.getElementById("journal-cancel")?.click();
+  };
+  editor.hidden = false;
+  document.getElementById("journal-label")?.focus();
+}
+function hodlJournalCommit(edit) {
+  let editor = document.getElementById("journal-editor");
+  if (!edit || editor?.hidden || editor?.hodlJournalEdit !== edit) return;
+  hodlJournalError("");
+  if (!hodlJournalUnlocked() || hodlJournalDoc !== edit.doc || hodlJournalGeneration !== edit.generation || !edit.doc.entries.includes(edit.entry)) {
+    hodlJournalHideEditor();
+    return;
+  }
+  try {
+    let fields = {
+      method: document.getElementById("journal-method").value,
+      input: document.getElementById("journal-input").value,
+      phrase: document.getElementById("journal-phrase").value,
+      label: document.getElementById("journal-label").value,
+      notes: document.getElementById("journal-entry-notes").value,
+    };
+    let id = edit.entry.id;
+    // Text corrections keep the historical link. Changed recovery material
+    // has no verified relationship to that wallet or its old fingerprint.
+    if (["method", "input", "phrase"].some((field) => fields[field] !== edit.entry[field])) {
+      fields.walletId = null;
+      fields.walletName = "";
+      fields.fingerprint = "";
+    }
+    hodlJournalReplaceEntry(edit.doc, id, fields);
+    hodlJournalLog("entry-edit", `entry-${id}`);
+    hodlJournalHideEditor();
+    hodlJournalShowWork();
+    hodlJournalOpenView(id);
+    document.getElementById("journal-edit")?.focus();
+  } catch (error) {
+    hodlJournalError(error.message || String(error));
+  }
 }
 // Hidden, the fixed placeholder: the field holds a seed phrase or a
 // passphrase, and its length would narrow a search for either.
@@ -15925,214 +22336,349 @@ function hodlJournalPrivateValue(value) {
   let mask = "************", text = String(value ?? "\u2014");
   if (hodlJournalReveal) return `<span class="secret private-field-value" data-private-value data-i18n-skip translate="no">${hodlEscapeHtml(text)}</span>`;
   let bullets = "\u2022".repeat(mask.length);
-  return `<span class="secret private-field-value secret-placeholder"><span class="secret-placeholder-mask" aria-hidden="true">${bullets}</span><span class="secret-placeholder-message" aria-hidden="true">${mask}</span><span class="secret-placeholder-label">Private value hidden</span></span>`;
+  return `<span class="secret private-field-value secret-placeholder"><span class="secret-placeholder-mask" aria-hidden="true">${bullets}</span><span class="secret-placeholder-message" aria-hidden="true">${mask}</span><span class="secret-placeholder-label">${hodlT("Private value hidden")}</span></span>`;
 }
 function hodlJournalOpenView(id) {
-  let entry = hodlJournalDoc?.entries.find((item) => item.id === id);
+  let doc = hodlJournalDoc, generation = hodlJournalGeneration, entry = doc?.entries.find((item) => item.id === id);
   if (!entry) return;
+  let editor = document.getElementById("journal-editor");
+  if (editor && !editor.hidden) hodlJournalHideEditor();
+  let view = document.getElementById("journal-view"), opening = hodlJournalEditingId !== id || view.hidden;
+  let focusedId = !opening && view.contains(document.activeElement) ? document.activeElement?.id : null;
   // Only a different entry re-masks the seed: the reveal toggle re-renders
   // this same view, and resetting here would undo it before the paint.
   if (hodlJournalEditingId !== id) hodlJournalReveal = false;
   hodlJournalEditingId = id;
-  hodlJournalDeleteArmed = false;
-  document.getElementById("journal-editor").hidden = true;
   document.getElementById("journal-list").hidden = true;
-  let view = document.getElementById("journal-view");
   view.hidden = false;
   let wallet = entry.walletName || (entry.walletId != null ? `Key ${entry.walletId}` : "");
   view.innerHTML = `<section class="wallet-data-section wallet-private-section" aria-labelledby="journal-entry-heading">
       <div class="wallet-data-section-head">
-        <h3 id="journal-entry-heading">${hodlEscapeHtml(entry.label)}</h3>
+        <h3 id="journal-entry-heading" data-i18n-skip translate="no">${hodlEscapeHtml(entry.label)}</h3>
         <p class="muted" id="journal-private-description">${hodlT("Anyone who can open the journal file can read this entry. A file created without a password has no access protection.")}</p>
       </div>
       <div class="wallet-data-actions no-print">
         <label class="reveal-private-toggle">
           <input type="checkbox" id="journal-reveal" data-private-reveal ${hodlJournalReveal ? "checked" : ""} aria-describedby="journal-private-description">
-          <span>Show seed <span class="reveal-private-toggle-note">(air-gap only)</span></span>
+          <span>${hodlT("Show seed")} <span class="reveal-private-toggle-note">${hodlT("(air-gap only)")}</span></span>
         </label>
-        <button class="btn secondary" id="journal-edit" type="button">Edit</button>
-        <button class="btn secondary" id="journal-delete" type="button">Delete</button>
-        <button class="btn secondary" id="journal-back" type="button">Back</button>
+        <button class="btn secondary" id="journal-edit" type="button" aria-controls="journal-editor">${hodlT("Edit saved record")}</button>
+        <button class="btn red" id="journal-delete" type="button">${hodlT("Delete")}</button>
+        <button class="btn secondary" id="journal-back" type="button" aria-controls="journal-list" aria-describedby="journal-entry-heading">${hodlT("Back")}</button>
       </div>
       <div class="wallet-data-fields">
-        ${hodlMetadataFieldHtml("Method", hodlJournalEntryMethodLabel(entry), void 0, "muted")}
-        ${hodlMetadataFieldHtml("Recorded", entry.created, void 0, "muted")}
-        ${wallet ? hodlMetadataFieldHtml("Session wallet", wallet, void 0, "muted") : ""}
-        ${entry.fingerprint ? hodlPublicFieldHtml("Master fingerprint", entry.fingerprint, void 0, "muted") : ""}
-        ${hodlPrivateFieldHtml("Raw input", entry.input || "\u2014", void 0, "muted", true, "journal-copy-input")}
-        ${hodlPrivateFieldMarkup(hodlT("BIP39 seed or passphrase"), hodlJournalPrivateValue(entry.phrase), { labelClass: "muted", revealed: hodlJournalReveal, copyId: "journal-copy-phrase" })}
-        ${entry.notes ? hodlPrivateFieldHtml("Notes", entry.notes, void 0, "muted", true) : ""}
+        ${hodlMetadataFieldHtml("Method", hodlJournalEntryMethodLabel(entry))}
+        ${hodlMetadataFieldHtml("Recorded", entry.created)}
+        ${wallet ? hodlMetadataFieldHtml("Session wallet", wallet) : ""}
+        ${entry.fingerprint ? hodlPublicFieldHtml("Master fingerprint", entry.fingerprint) : ""}
+        ${hodlPrivateFieldHtml("Raw input", entry.input || "\u2014", void 0, "label", hodlJournalReveal, "journal-copy-input")}
+        ${hodlPrivateFieldMarkup(hodlT("BIP39 seed or passphrase"), hodlJournalPrivateValue(entry.phrase), { revealed: hodlJournalReveal, copyId: "journal-copy-phrase" })}
+        ${entry.notes ? hodlPrivateFieldHtml("Notes", entry.notes, void 0, "label", hodlJournalReveal) : ""}
       </div>
     </section>`;
   document.getElementById("journal-reveal")?.addEventListener("change", (event) => {
     hodlJournalReveal = event.target.checked;
     hodlJournalOpenView(id);
-    requestAnimationFrame(() => document.getElementById("journal-reveal")?.focus({ preventScroll: true }));
   });
-  document.getElementById("journal-edit").onclick = () => hodlJournalShowEditor(entry);
+  document.getElementById("journal-edit").onclick = () => {
+    if (hodlJournalDoc === doc && hodlJournalGeneration === generation && doc.entries.includes(entry)) hodlJournalShowEditor(id);
+  };
   document.getElementById("journal-back").onclick = () => {
-    hodlJournalHideEditor();
     hodlJournalRenderList();
+    hodlJournalHideEditor();
   };
   document.getElementById("journal-delete").onclick = () => {
-    if (!hodlJournalDeleteArmed) {
-      hodlJournalDeleteArmed = true;
-      document.getElementById("journal-delete").textContent = "Confirm delete";
-      return;
-    }
-    hodlJournalRemoveEntry(hodlJournalDoc, id);
-    hodlJournalDirty = true;
-    hodlJournalLog("entry-delete", entry.fingerprint || entry.label.slice(0, 60));
-    hodlJournalHideEditor();
-    hodlJournalShowWork();
+    hodlJournalPageDeleteConfirm ||= initJournalPageDeleteConfirm();
+    hodlJournalPageDeleteConfirm.show({
+      opener: document.getElementById("journal-delete"),
+      title: hodlTText("Delete this saved record?"),
+      message: hodlTText("This removes the saved record from this Journal. Downloaded backups are unchanged."),
+      confirmLabel: hodlTText("Delete record"),
+      onConfirm: () => {
+        if (hodlJournalDoc !== doc || hodlJournalGeneration !== generation || hodlJournalEditingId !== id || !doc.entries.includes(entry)) return;
+        hodlJournalRemoveEntry(doc, id);
+        hodlJournalDirty = true;
+        hodlJournalLog("entry-delete", `entry-${id}`);
+        hodlJournalRenderList();
+        hodlJournalHideEditor();
+        hodlJournalShowWork();
+      },
+    });
   };
+  if (opening) document.getElementById("journal-back")?.focus({ preventScroll: true });
+  else if (focusedId) (document.getElementById(focusedId) || document.getElementById("journal-reveal"))?.focus({ preventScroll: true });
 }
-function hodlJournalSyncDerivedKeys(states) {
-  if (!hodlJournalUnlocked()) return { added: 0, updated: 0, matched: 0 };
-  try {
-    // The journal records the words as text, inside its encrypted document.
-    let snapshots = (states || []).filter((state) => state && !state.isLab && state.result).map((state) => hodlJournalKeySnapshot(state, hodlResultMnemonic(state.result) || "")).filter(Boolean);
-    let result = hodlJournalSyncKeySnapshots(hodlJournalDoc, snapshots, hodlJournalKeyEntries);
-    if (result.added || result.updated) hodlJournalDirty = true;
-    return result;
-  } catch (exception) {
-    hodlJournalError(`The key was derived, but its journal entry could not be updated: ${exception.message || String(exception)}`);
-    return { added: 0, updated: 0, matched: 0 };
-  }
-}
-function hodlJournalBackfillDerivedKeys() {
-  let result = hodlJournalSyncDerivedKeys(hodlKeys);
-  if (result.added) hodlJournalLog("entry-auto-add", `${result.added} Key Station ${result.added === 1 ? "key" : "keys"}`);
-  return result;
-}
-function hodlJournalCaptureDerivedKey(state) {
-  let result = hodlJournalSyncDerivedKeys([state]);
-  if (!result.added && !result.updated) return;
-  hodlJournalLog(result.updated ? "entry-auto-update" : "entry-auto-add", state?.result?.masterFingerprint || state?.name || "Key Station key");
-  hodlJournalShowWork();
+function hodlJournalCheckInventory(incoming = null) {
+  if (hodlActiveDerivation || hodlJournalKeyDerivation) throw new Error(hodlTText("Wait for derivation to finish before creating or opening a Journal."));
+  if (hodlWorkspace === "calc") hodlCaptureKey();
+  // Create/Open replace Journal pending and archived inputs, while station
+  // tabs and the unfinished Lab draft remain owned by this session.
+  let retained = hodlKeyManagerStates().filter((state) => hodlKeys.includes(state)).length;
+  let draft = hodlKeys.some((state) => state.isLab && hodlKeyManagerHasInputs(state)) ? 1 : 0;
+  let capacityError = hodlKeyManagerCapacityError(retained + draft + (incoming?.keys.length || 0), incoming?.ignoredKeys.length || 0);
+  if (capacityError) throw new Error(hodlTText("The resulting Journal would exceed its limit of {n} active or archived input sets. Save any inputs you need before removing Key Station tabs, or open the backup in a fresh session.", { n: hodlKeyVaultMaxKeys }));
 }
 async function hodlJournalCreate() {
+  if (hodlJournalUnlockBusy) return;
+  let operation = { mode: "create" };
+  hodlJournalSetGateBusy(operation);
   hodlJournalError("");
   let generation = hodlJournalGeneration;
   try {
+    hodlJournalCheckInventory();
     let created = await hodlJournalCreateDocument(document.getElementById("journal-create-password")?.value || "", document.getElementById("journal-create-confirm")?.value || "");
     if (generation !== hodlJournalGeneration) return hodlJournalDiscardOpened(created);
+    try { hodlJournalCheckInventory(); } catch (exception) {
+      hodlJournalDiscardOpened(created);
+      throw exception;
+    }
     hodlKeyManagerReset();
     hodlJournalWipeNotebook();
+    hodlJournalStartPage();
     hodlJournalKeys = created.keys;
     hodlJournalDoc = created.doc;
     hodlJournalDirty = true;
-    hodlJournalBackfillDerivedKeys();
     document.getElementById("journal-create-password").value = "";
     document.getElementById("journal-create-confirm").value = "";
     hodlJournalHideEditor();
     hodlJournalShowWork();
-    hodlShowJournalTool("book");
-    hodlJournalLog("journal-create");
+    hodlShowJournalTool("notes", true);
+    hodlJournalLog("journal-create", "", "journal");
   } catch (exception) {
+    if (generation !== hodlJournalGeneration) return;
     hodlJournalError(exception.message || String(exception));
+  } finally {
+    if (hodlJournalUnlockBusy === operation) {
+      hodlJournalSetGateBusy(false);
+      document.getElementById("journal-create")?.focus();
+    }
   }
 }
-async function hodlJournalUnlock() {
+function hodlJournalChooseFile(file) {
   hodlJournalError("");
-  let generation = hodlJournalGeneration;
+  hodlJournalFileText = "";
+  // A different file is a different provenance: a pending passwordless
+  // acknowledgement never carries over (audit L6).
+  hodlJournalOpenReadyFor = "";
+  let ready = document.getElementById("journal-open-ready");
+  if (ready) ready.hidden = true;
+  // The reader caps the decoded text at the same length in UTF-16 units. A
+  // file is bytes, and no string exceeds three bytes per unit (+3 for a BOM),
+  // so a larger file is refused before file.text() pulls it into memory.
+  if (file && Number.isFinite(file.size) && file.size > hodlJournalMaxFileLength * 3 + 3) {
+    hodlJournalFileRead = null;
+    hodlJournalError(hodlTText("That journal file is too large to open."));
+    return;
+  }
+  let read = (hodlJournalFileRead = file ? file.text().then((text) => ({ text }), (error) => ({ error })) : null);
+  read?.then((result) => {
+    if (hodlJournalFileRead === read && !result.error) hodlJournalFileText = result.text;
+  });
+}
+async function hodlJournalUnlock() {
+  // One open at a time. A double-click starts two decrypts; the second could
+  // see the first's armed token and install the passwordless file without
+  // the acknowledgement (audit follow-up).
+  if (hodlJournalUnlockBusy) return;
+  let operation = { mode: "open" };
+  hodlJournalSetGateBusy(operation);
+  hodlJournalError("");
+  let generation = hodlJournalGeneration, chosenRead;
   try {
-    if (!hodlJournalFileText) throw new Error("Choose a journal file first.");
-    let opened = await hodlJournalOpenDocument(hodlJournalFileText, document.getElementById("journal-open-password")?.value || "");
-    if (generation !== hodlJournalGeneration) return hodlJournalDiscardOpened(opened);
+    hodlJournalCheckInventory();
+    // Wait for the newest choice: a file chosen while this waits replaces
+    // the read, and a reset cancels this attempt without a late error.
+    let text = hodlJournalFileText;
+    for (let read; (read = hodlJournalFileRead); ) {
+      let result = await read;
+      if (generation !== hodlJournalGeneration) return;
+      if (read !== hodlJournalFileRead) continue;
+      if (result.error) throw result.error;
+      text = result.text;
+      break;
+    }
+    if (!text) throw new Error("Choose a journal file first.");
+    // Keep the bytes this press decrypted: comparing the acknowledgement
+    // against the module variable lets another file choice during the await
+    // empty it, and the armed branch is then skipped for a passwordless file
+    // that was never acknowledged.
+    chosenRead = hodlJournalFileRead;
+    hodlJournalCheckInventory();
+    let opened = await hodlJournalOpenDocument(text, document.getElementById("journal-open-password")?.value || "");
+    if (generation !== hodlJournalGeneration || chosenRead !== hodlJournalFileRead) return hodlJournalDiscardOpened(opened);
+    try { hodlJournalCheckInventory(opened.doc.backup?.keyManager); } catch (exception) {
+      hodlJournalDiscardOpened(opened);
+      throw exception;
+    }
+    if (!opened.keys.passwordProtected && hodlJournalOpenReadyFor !== text) {
+      // Passwordless envelope: the entries it holds are authenticated by
+      // nothing, so the first open of this file only arms the no-protection
+      // acknowledgement — installing waits for a second, knowing press.
+      hodlJournalOpenReadyFor = text;
+      let ready = document.getElementById("journal-open-ready");
+      if (ready) ready.hidden = false;
+      // The ready row says why this press installs nothing; echo it to the
+      // alert region so the state is announced, not only shown.
+      hodlJournalError(ready?.querySelector?.(".journal-open-ready-text")?.textContent || "");
+      // The decrypted document was only needed to learn that no password
+      // protects it; installing waits for the second press, so this copy is
+      // wiped now instead of being left for GC.
+      hodlJournalDiscardOpened(opened);
+      return;
+    }
+    hodlJournalOpenReadyFor = "";
+    let openReady = document.getElementById("journal-open-ready");
+    if (openReady) openReady.hidden = true;
+    let history = opened.doc.backup ? null : { log: hodlJournal.log, logDiscarded: hodlJournal.logDiscarded };
+    if (history) hodlJournalMergeLogHistory(history, []);
     hodlKeyManagerReset();
     hodlJournalWipeNotebook();
     hodlJournalKeys = opened.keys;
     hodlJournalDoc = opened.doc;
     hodlJournalDirty = false;
-    hodlJournalBackfillDerivedKeys();
+    if (opened.doc.backup) {
+      hodlJournalRestoreBackup(opened.doc.backup);
+      delete opened.doc.backup;
+    } else {
+      wipeJournal(hodlJournal);
+      hodlJournal.log = history.log;
+      hodlJournal.logDiscarded = history.logDiscarded;
+    }
     document.getElementById("journal-open-password").value = "";
     document.getElementById("journal-file").value = "";
     hodlJournalFileText = "";
+    hodlJournalFileRead = null;
     hodlJournalHideEditor();
     hodlJournalShowWork();
-    hodlShowJournalTool("book");
-    hodlJournalLog("journal-unlock", `${opened.doc.entries.length} entries`);
+    hodlShowJournalTool("notes", true);
+    hodlJournalLog("journal-unlock", `${opened.doc.entries.length} entries`, "journal");
   } catch (exception) {
+    if (generation !== hodlJournalGeneration || chosenRead !== undefined && chosenRead !== hodlJournalFileRead) return;
     hodlJournalError(exception.message || String(exception));
+  } finally {
+    if (hodlJournalUnlockBusy === operation) {
+      hodlJournalSetGateBusy(false);
+      document.getElementById("journal-unlock")?.focus();
+    }
   }
 }
-async function hodlJournalSaveFile() {
+function hodlJournalCollectBackup() {
+  if (hodlActiveDerivation || hodlJournalKeyDerivation) throw new Error(hodlTText("Wait for derivation to finish before downloading a complete backup."));
+  let secureRefusal = hodlSecureEntryBackupRefusal();
+  if (secureRefusal) throw secureRefusal;
+  if (hodlWorkspace === "calc") hodlCaptureKey();
+  let field = document.getElementById("journal-notes-text");
+  if (field) hodlJournalStoreNotesText(field);
+  // A complete backup includes recovery data regardless of display concealment.
+  // Collect it without changing the visible snapshot or its reveal setting.
+  let currentText = hodlJournalSessionSnapshot(true, null, true);
+  let states = hodlKeyManagerStates(), activeKey = states.findIndex((state) => keyVaultIdentity(state) === hodlKeyManagerActiveId);
+  let draft = hodlKeys.find((state) => state.isLab && hodlKeyManagerHasInputs(state));
+  let capacityError = hodlKeyManagerCapacityError(states.length + (draft ? 1 : 0));
+  if (capacityError) throw new Error(capacityError);
+  let inputs = states.map(hodlKeyManagerArchiveEntry);
+  if (draft) {
+    let input = hodlKeyManagerArchiveEntry(draft);
+    input.name = hodlTText("Unfinished Key Station inputs");
+    // Capturing the form records its encoding family. Preserve the chain
+    // the next derivation uses, including a reviewed setup's explicit choice.
+    let savedNetwork = draft.importedKeyId != null
+      ? draft.importedNetworkChoice ?? hodlKeyManagerPending.find(state => state.id === draft.importedKeyId)?.fields.network ?? draft.fields.network
+      : undefined;
+    input.fields.network = savedNetwork ?? (hodlNetworkFamily(hodlNetworkChoice) === draft.fields.network ? hodlNetworkChoice : draft.fields.network);
+    inputs.push(input);
+  }
+  let hasDerived = hodlKeys.some(state => state.result) || hodlMsigs.some(state => state.result)
+    || hodlBip85Children.some(state => !state.isLab && state.result) || Boolean(hodlSpKeys?.fingerprint);
+  let snapshot = hodlJournalCombineSnapshots(hodlJournal.backup?.snapshot, { text: currentText, includePrivate: true }, hasDerived);
+  return {
+    notebook: hodlSerializeNotebook(hodlJournal),
+    keyManager: serializeKeyVault(inputs, hodlKeyManagerIgnored.map(hodlKeyManagerArchiveEntry)),
+    includedKeys: states.flatMap((state, index) => hodlKeyManagerIds.has(keyVaultIdentity(state)) ? [index] : []),
+    activeKey: activeKey < 0 ? null : activeKey,
+    snapshot,
+    log: hodlJournal.log.map((event) => ({ ...event })),
+    logDiscarded: hodlJournal.logDiscarded || 0,
+  };
+}
+function hodlJournalRestoreBackup(backup) {
+  // Parsing validated every component before this point. Imported keys still
+  // enter Pending with fresh IDs, never the live Key Station or its outputs.
+  let restoreInput = (entry) => hodlKeyManagerImportedState(JSON.parse(JSON.stringify(entry)));
+  let pending = backup.keyManager.keys.map(restoreInput);
+  let ignored = backup.keyManager.ignoredKeys.map(restoreInput);
+  let history = { log: hodlJournal.log, logDiscarded: hodlJournal.logDiscarded };
+  hodlJournalMergeLogHistory(history, backup.log, backup.logDiscarded);
+  wipeJournal(hodlJournal);
+  for (let name of ["pages", "activePage", "nextPageId", "nextPageNumber", "notesText"]) hodlJournal[name] = backup.notebook[name];
+  hodlJournal.log = history.log;
+  hodlJournal.logDiscarded = history.logDiscarded;
+  hodlJournal.backup = { snapshot: backup.snapshot };
+  hodlKeyManagerPending = pending;
+  hodlKeyManagerIgnored = ignored;
+  hodlKeyManagerIds = new Set(backup.includedKeys.map((index) => keyVaultIdentity(pending[index])));
+  hodlKeyManagerActiveId = backup.activeKey === null ? "" : keyVaultIdentity(pending[backup.activeKey]);
+  for (let id of ["journal-state-private", "journal-saved-state-private"]) {
+    let privateBox = document.getElementById(id);
+    if (privateBox) privateBox.checked = false;
+  }
+  // Transfer ownership of these sections before clearing the remaining
+  // parsed key inputs. Keeping them attached to the entry document would
+  // wipe active notes when that document is replaced.
+  backup.notebook = null;
+  backup.snapshot = null;
+  hodlJournalWipeDocument({ entries: [], backup });
+  hodlRenderJournalPageTabs();
+  hodlJournalRestorePage(document.getElementById("journal-notes-text"));
+  hodlJournalApplyPageStyle();
+  hodlRenderJournalLog();
+}
+async function hodlJournalSaveFile(options) {
   hodlJournalError("");
+  let generation = hodlJournalGeneration, backup;
+  let isCurrent = () => generation === hodlJournalGeneration && options?.isCurrent?.() !== false;
+  let assertRecordSaved = () => {
+    let editor = document.getElementById("journal-editor");
+    if (editor && !editor.hidden) throw new Error(hodlTText("Save or cancel the saved record edit before downloading a complete backup."));
+  };
   try {
+    if (!isCurrent()) return false;
     if (!hodlJournalUnlocked()) throw new Error("Create or open a journal first.");
-    let file = await hodlJournalSealDocument(hodlJournalDoc, hodlJournalKeys);
+    hodlJournalLog("export-request", "journal-backup", "journal");
+    assertRecordSaved();
+    backup = hodlJournalCollectBackup();
+    let revision = hodlJournalBackupRevision;
+    let file = await hodlJournalSealBackup(hodlJournalDoc, hodlJournalKeys, backup);
+    if (!isCurrent()) return false;
+    assertRecordSaved();
     let blob = new Blob([JSON.stringify(file, null, 2) + "\n"], { type: "application/json" }), url = URL.createObjectURL(blob), link = document.createElement("a");
     link.href = url;
     link.download = "entropylab-journal.json";
     link.click();
+    hodlJournalLog("download-started", "journal-backup", "journal");
     setTimeout(() => URL.revokeObjectURL(url), 1e3);
-    hodlJournalDirty = false;
+    hodlJournalDirty = revision !== hodlJournalBackupRevision;
     hodlJournalShowWork();
-    hodlJournalLog("journal-save", `${hodlJournalDoc.entries.length} entries`);
+    return true;
   } catch (exception) {
+    if (!isCurrent()) return false;
+    hodlJournalLog("export-error", "journal-backup", "journal");
     hodlJournalError(exception.message || String(exception));
+    return false;
+  } finally {
+    hodlJournalWipeDocument({ entries: [], backup });
   }
 }
-function hodlJournalCommit() {
-  hodlJournalError("");
-  try {
-    if (!hodlJournalUnlocked()) throw new Error("Create or open a journal first.");
-    let wallet = document.getElementById("journal-wallet");
-    let walletId = wallet?.value ? Number(wallet.value) : null;
-    let state = walletId == null ? null : hodlKeys.find((item) => item.id === walletId);
-    let fields = {
-      method: document.getElementById("journal-method")?.value || "dice",
-      ...hodlJournalEntryVariants,
-      input: document.getElementById("journal-input")?.value || "",
-      phrase: document.getElementById("journal-phrase")?.value || "",
-      label: document.getElementById("journal-label")?.value || "",
-      notes: document.getElementById("journal-entry-notes")?.value || "",
-      walletId,
-      walletName: state?.name || "",
-      fingerprint: state?.result?.masterFingerprint || "",
-    };
-    if (hodlJournalEditingId) hodlJournalReplaceEntry(hodlJournalDoc, hodlJournalEditingId, fields);
-    else hodlJournalAddEntry(hodlJournalDoc, fields);
-    hodlJournalDirty = true;
-    hodlJournalLog(hodlJournalEditingId ? "entry-edit" : "entry-add", fields.fingerprint || fields.label.slice(0, 60));
-    hodlJournalHideEditor();
-    hodlJournalShowWork();
-  } catch (exception) {
-    hodlJournalError(exception.message || String(exception));
-  }
+function hodlJournalGetClearConfirm() {
+  if (!hodlJournalClearConfirm) hodlJournalClearConfirm = initJournalClearConfirm({
+    onDownload: (isCurrent) => hodlJournalSaveFile({ isCurrent }),
+    onDiscard: hodlJournalWipeMem,
+  });
+  return hodlJournalClearConfirm;
 }
-function hodlJournalLock() {
-  hodlKeyManagerReset();
-  hodlJournalWipeNotebook();
-  hodlJournalClearFields();
-  hodlJournalHideEditor();
-  hodlJournalSetGate("create");
-  hodlJournalTool = "book";
-  hodlJournalShowWork();
-  hodlSyncJournalTool();
-  // While the private box is ticked, the snapshot readout holds the whole
-  // session's recovery texts; a locked journal must not keep that copy —
-  // nor the notepad or the session log, free text the session pasted
-  // keystrokes into. The journal file itself can restore the notebook, but
-  // the unlocked session's loose text stays only while it stays unlocked
-  // (#522).
-  let stateText = document.getElementById("journal-state-text");
-  if (stateText) stateText.textContent = "";
-  let privateBox = document.getElementById("journal-state-private");
-  if (privateBox) privateBox.checked = false;
-  wipeJournal(hodlJournal);
-  let notes = document.getElementById("journal-notes-text");
-  if (notes) {
-    notes.value = "";
-    hodlJournalResetPendingNote(notes, "Add new note");
-  }
-  hodlRenderJournalPageTabs();
-  hodlJournalApplyPageStyle();
-  let log = document.getElementById("journal-log-out");
-  if (log) log.textContent = "No events yet.";
-  hodlJournalLog("journal-lock");
-  document.getElementById("journal-status-note").textContent = "Journal locked. Password, entries, notepad, and session log were cleared (best effort).";
+function hodlJournalConfirmClear() {
+  if (!hodlJournalUnlocked()) return;
+  hodlJournalGetClearConfirm().show(document.getElementById("journal-global-clear"));
 }
 function hodlInitJournalNotebook() {
   if (!document.getElementById("journal-create")) return;
@@ -16145,55 +22691,86 @@ function hodlInitJournalNotebook() {
   });
   document.getElementById("journal-create")?.addEventListener("click", hodlJournalCreate);
   document.getElementById("journal-unlock")?.addEventListener("click", hodlJournalUnlock);
-  document.getElementById("journal-file")?.addEventListener("change", async (event) => {
-    hodlJournalError("");
-    let file = event.target.files?.[0];
-    hodlJournalFileText = file ? await file.text() : "";
-  });
-  document.getElementById("journal-add")?.addEventListener("click", () => {
-    hodlJournalError("");
-    try { hodlJournalShowEditor(null); } catch (exception) { hodlJournalError(exception.message || String(exception)); }
-  });
-  document.getElementById("journal-save")?.addEventListener("click", hodlJournalSaveFile);
-  document.getElementById("journal-lock")?.addEventListener("click", hodlJournalLock);
+  document.getElementById("journal-open-password")?.addEventListener("keydown", hodlJournalCreatePasswordKeydown);
+  document.getElementById("journal-file")?.addEventListener("change", (event) => hodlJournalChooseFile(event.target.files?.[0]));
   document.getElementById("journal-global-download")?.addEventListener("click", hodlJournalSaveFile);
-  document.getElementById("journal-global-clear")?.addEventListener("click", hodlJournalWipeMem);
-  document.getElementById("journal-commit")?.addEventListener("click", hodlJournalCommit);
-  document.getElementById("journal-method")?.addEventListener("change", () => { hodlJournalEntryVariants = {}; });
-  document.getElementById("journal-cancel")?.addEventListener("click", () => {
-    hodlJournalHideEditor();
-    hodlJournalRenderList();
-  });
+  document.getElementById("journal-global-clear")?.addEventListener("click", hodlJournalConfirmClear);
   document.getElementById("journal-search")?.addEventListener("input", hodlJournalRenderList);
   hodlJournalSetGate("create");
   hodlJournalShowWork();
 }
 function hodlJournalWipeMem() {
+  // Remember focus before hiding or disabling the control can blur it.
+  let active = document.activeElement;
+  hodlKeyManagerCancelDerivation();
+  hodlKeyManagerFileRequest++;
+  hodlJournalKeyImportConfirm?.close({ restoreFocus: false });
+  let refocus = active && ["journal-work-panel", "journal-global-actions"].some((id) => document.getElementById(id)?.contains?.(active));
+  hodlJournalClearConfirm?.hide({ restoreFocus: false });
+  hodlJournalPageDeleteConfirm?.hide({ restoreFocus: false });
   wipeJournal(hodlJournal);
   hodlKeyManagerReset();
   hodlJournalWipeNotebook();
   hodlJournalClearFields();
   hodlJournalHideEditor();
   hodlJournalSetGate("create");
-  hodlJournalTool = "book";
-  hodlJournalEncryptDownloads = true;
-  hodlJournalSyncEncryptDownloads();
+  hodlJournalTool = "notes";
   hodlJournalShowWork();
   hodlSyncJournalTool();
-  let field = document.getElementById("journal-state-text");
-  if (field) field.textContent = "";
-  let privateBox = document.getElementById("journal-state-private");
-  if (privateBox) privateBox.checked = false;
+  for (let id of ["journal-state-text", "journal-saved-state-text"]) {
+    let field = document.getElementById(id);
+    if (field) {
+      field.textContent = "";
+      field.removeAttribute("data-private-value");
+      field.removeAttribute("data-public-value");
+    }
+  }
+  for (let prefix of ["journal-state", "journal-saved-state"]) {
+    document.getElementById(`${prefix}-copy`)?.replaceChildren();
+    document.getElementById(`${prefix}-label`)?.classList.remove("is-revealed");
+    document.getElementById(`${prefix}-field`)?.classList.remove("is-revealed");
+  }
+  for (let id of ["journal-state-private", "journal-saved-state-private"]) {
+    let privateBox = document.getElementById(id);
+    if (privateBox) privateBox.checked = false;
+  }
   let notes = document.getElementById("journal-notes-text");
   if (notes) {
     notes.value = "";
-    hodlJournalResetPendingNote(notes, "Add new note");
+    hodlJournalRenderVisual(notes);
   }
   hodlRenderJournalPageTabs();
   hodlJournalApplyPageStyle();
   hodlJournalSetStatus("");
   let log = document.getElementById("journal-log-out");
-  if (log) log.textContent = "No events yet.";
+  if (log) {
+    log.textContent = hodlTText("No events yet.");
+    for (let property of ["hodlLogSource", "hodlLogEnd", "hodlLogLast", "hodlLogAtLatest"]) delete log[property];
+  }
+  for (let id of ["journal-log-range", "journal-log-status", "journal-log-truncated"]) {
+    let field = document.getElementById(id);
+    if (field) field.textContent = "";
+  }
+  for (let id of ["journal-log-truncated", "journal-log-navigation"]) {
+    let field = document.getElementById(id);
+    if (field) field.hidden = true;
+  }
+  for (let direction of ["earlier", "newer", "latest"]) {
+    let button = document.getElementById(`journal-log-${direction}`);
+    if (button) button.disabled = true;
+  }
+  // The global Clear announces through the status live region. This
+  // also runs on pagehide, where the assignment is harmless.
+  let statusNote = document.getElementById("journal-status-note");
+  if (statusNote) statusNote.textContent = hodlTText("Journal cleared. Password, entries, notepad, and debug log were cleared (best effort).");
+  // The status note sits inside the global toolbar the clear just hid, so it is
+  // out of the accessibility tree and announces nothing; the gate panel's
+  // live region stays visible and carries the announcement.
+  let gateStatus = document.getElementById("journal-gate-status");
+  if (gateStatus) gateStatus.textContent = hodlTText("Journal cleared. Password, entries, notepad, and debug log were cleared (best effort).");
+  // Return focus from closing controls to the gate's primary action. Focus
+  // elsewhere stays alone — this also runs on pagehide.
+  if (refocus) document.getElementById("journal-create")?.focus();
 }
 // The switcher keeps every tool on screen as a folder-tab strip that scrolls
 // when it must, in the shape the Keys section uses for its own tabs.
@@ -16223,7 +22800,7 @@ function hodlSyncWorkspaceOverflow() {
 // or an account index of a wallet the user already holds, and Update key
 // writes it back to that key through the same Edit input → Derive path the
 // Keys tab uses by hand.
-var hodlVanityGrinder = null, hodlVanityMatches = [], hodlVanityFound = 0, hodlVanityRunning = false, hodlVanityReveal = false, hodlVanityDisplayLimit = 100, hodlVanitySource = "", hodlVanityRun = null, hodlVanityApplying = false, hodlVanityStopFirst = false, hodlVanityBench = null, hodlVanityBenchPending = false, hodlVanityLiveRate = 0;
+var hodlVanityGrinder = null, hodlVanityMatches = [], hodlVanityFound = 0, hodlVanityRunning = false, hodlVanityReveal = false, hodlVanityDisplayLimit = 100, hodlVanitySource = "", hodlVanityRun = null, hodlVanityApplying = false, hodlVanityStopFirst = false, hodlVanityBench = null, hodlVanityBenchPending = false, hodlVanityLiveRate = 0, hodlVanityStatusNote = null, hodlVanityErrorNote = null;
 // Only derived HD-root keys are listed — the same set the BIP-85 and Silent
 // Payments pickers offer. A BIP-85 child can be searched, but remains an
 // immutable child of its parent rather than a Key Station key to update.
@@ -16237,8 +22814,7 @@ function hodlVanityKeyLabel(state) {
   return state ? state.result?.masterFingerprint || state.name || "Key " + state.number : "";
 }
 function hodlPickVanitySessionKey(state) {
-  let error = document.getElementById("vanity-error");
-  if (error) error.textContent = "";
+  hodlSetVanityError(null);
   if (!state) return;
   // Vanity has no End Session, so the selected chip toggles: clicking it
   // again releases the key, as a Multi Signature co-signer chip does.
@@ -16327,18 +22903,18 @@ function hodlVanitySyncScriptNote() {
   let meta = hodlVanityScript(), help = document.getElementById("vanity-prefix-help"), input = document.getElementById("vanity-prefix");
   if (help) {
     help.textContent = meta.firstFree
-      ? `The first character encodes the scan key's parity, so it is one of ${[...meta.firstFree].join(" ")}. Live-filtered to lowercase bech32 characters; each further free character multiplies the work by ~32.`
+      ? hodlTText("The first character encodes the scan key's parity, so it is one of {chars}. Live-filtered to lowercase bech32 characters; each further free character multiplies the work by ~32.", { chars: [...meta.firstFree].join(" ") })
       : meta.bech32
-        ? "Live-filtered to lowercase bech32 characters; each free character multiplies the work by ~32."
-        : "Live-filtered to base58 characters; each free character multiplies the work by ~58.";
+        ? hodlTText("Live-filtered to lowercase bech32 characters; each free character multiplies the work by ~32.")
+        : hodlTText("Live-filtered to base58 characters; each free character multiplies the work by ~58.");
   }
   let fixed = document.getElementById("vanity-prefix-fixed");
   if (fixed) fixed.textContent = meta.prefix;
   hodlVanitySyncPrefixResult();
   if (input) {
     input.placeholder = meta.firstFree
-      ? `First character ${[...meta.firstFree].join(" ")}, then your vanity characters`
-      : "Enter your vanity characters here";
+      ? hodlTText("First character {chars}, then your vanity characters", { chars: [...meta.firstFree].join(" ") })
+      : hodlTText("Enter your vanity characters here");
   }
 }
 // The source panel names the selected key and shows its passphrase exactly as
@@ -16358,37 +22934,34 @@ function hodlVanitySyncSource() {
   }
   panel.hidden = !state;
   if (!state) {
-    // The pick was dropped; the block is hidden, and the passphrase it
-    // showed is key material — it goes with the visibility.
-    for (let id of ["vanity-pass", "vanity-pass-note"]) {
-      let el = document.getElementById(id);
-      if (el) el.textContent = "";
-    }
+    // The pick was dropped; the note that described its passphrase goes
+    // with the hidden block.
+    let passNote = document.getElementById("vanity-pass-note");
+    if (passNote) passNote.textContent = "";
   }
   let passphraseOption = document.querySelector('#vanity-method-tabs [data-vanity-method-option="passphrase"]');
   if (state) {
     let label = hodlVanityKeyLabel(state), pass = hodlPassphraseText(state.fields?.pass), hasMnemonic = hodlResultHasSeed(state.result);
-    let name = document.getElementById("vanity-source-name"), kind = document.getElementById("vanity-source-kind"), image = document.getElementById("vanity-source-lifehash"), field = document.getElementById("vanity-pass"), passNote = document.getElementById("vanity-pass-note");
+    let name = document.getElementById("vanity-source-name"), kind = document.getElementById("vanity-source-kind"), image = document.getElementById("vanity-source-lifehash"), passNote = document.getElementById("vanity-pass-note");
     if (name) {
       name.textContent = label;
       name.disabled = !state.result?.masterFingerprint;
     }
-    if (kind) kind.textContent = `${hasMnemonic ? "BIP39 seed words" : "Master xprv"}${state.name && state.name !== label ? ` · ${state.name}` : ""}`;
+    if (kind) kind.textContent = (hasMnemonic ? hodlTText("BIP39 seed words") : hodlTText("Master xprv")) + (state.name && state.name !== label ? ` · ${state.name}` : "");
     let path = document.getElementById("vanity-source-path");
     if (path) path.innerHTML = hodlPublicInlineHtml(hodlDisplayDerivationPath(state.fields?.derivationPath || state.fields?.derivationAccountPath || ""), { clipboard: false });
     if (image) {
       image.hidden = true;
       hodlFillKeyTabLifehash(image, state.result?.masterFingerprint || "");
     }
-    if (field) field.textContent = pass || "No passphrase — the key uses its seed words alone";
     if (passNote) {
       passNote.textContent = state.isBip85Child
         ? hodlTText("This BIP-85 child is immutable. You can search and copy matches, but Update key cannot change the child.")
         : !hasMnemonic
-        ? `Key ${label} was imported as a root xprv: it has no seed words, so its passphrase cannot be extended — only the derivation grind is available.`
+        ? hodlTText("Key {key} was imported as a root xprv: it has no seed words, so its passphrase cannot be extended — only the derivation grind is available.", { key: label })
         : pass.length
-          ? `Copied verbatim from key ${label}'s Optional BIP39 passphrase on the Keys tab. Passphrase grind: candidates are that passphrase followed by the counter characters. Derivation grind: this exact passphrase, with the account index changing.`
-          : `Key ${label} has no passphrase. Passphrase grind: candidates are the counter characters alone. Derivation grind: no passphrase, with the account index changing.`;
+          ? hodlTText("Copied verbatim from key {key}'s Optional BIP39 passphrase on the Keys tab. Passphrase grind: candidates are that passphrase followed by the counter characters. Derivation grind: this exact passphrase, with the account index changing.", { key: label })
+          : hodlTText("Key {key} has no passphrase. Passphrase grind: candidates are the counter characters alone. Derivation grind: no passphrase, with the account index changing.", { key: label });
     }
     if (passphraseOption) passphraseOption.disabled = !hasMnemonic;
     if (!hasMnemonic && hodlVanityMethod() === "passphrase") {
@@ -16410,8 +22983,8 @@ function hodlVanitySyncMethod() {
   if (help) {
     let child = hodlVanitySourceState()?.isBip85Child;
     help.textContent = method === "derivation"
-      ? child ? hodlTText("The passphrase stays as it is; each candidate is the next BIP32 account index. A BIP-85 child stays unchanged; copy any match you need.") : "The passphrase stays as it is; each candidate is the next BIP32 account index at the key's path. A match is an account index holding the vanity address — Update key sets it on the key."
-      : child ? hodlTText("Each candidate extends the BIP-85 child's seed words with a new passphrase. The child stays unchanged; copy any match you need.") : "Each candidate is the starting passphrase followed by the counter characters, stretched into a seed (2,048 PBKDF2 rounds) and derived at the key's path. A match is a new passphrase for this key.";
+      ? child ? hodlTText("The passphrase stays as it is; each candidate is the next BIP32 account index. A BIP-85 child stays unchanged; copy any match you need.") : hodlTText("The passphrase stays as it is; each candidate is the next BIP32 account index at the key's path. A match is an account index holding the vanity address — Update key sets it on the key.")
+      : child ? hodlTText("Each candidate extends the BIP-85 child's seed words with a new passphrase. The child stays unchanged; copy any match you need.") : hodlTText("Each candidate is the starting passphrase followed by the counter characters, stretched into a seed (2,048 PBKDF2 rounds) and derived at the key's path. A match is a new passphrase for this key.");
   }
   hodlVanityEstimate();
 }
@@ -16433,15 +23006,15 @@ function hodlVanityStartBenchmark() {
 }
 function hodlVanityFormatDuration(seconds) {
   if (!Number.isFinite(seconds)) return "";
-  if (seconds < 1) return "under a second";
-  if (seconds < 90) return `${Math.round(seconds)} second${Math.round(seconds) === 1 ? "" : "s"}`;
+  if (seconds < 1) return hodlTText("under a second");
+  if (seconds < 90) return hodlTText(Math.round(seconds) === 1 ? "{n} second" : "{n} seconds", { n: Math.round(seconds) });
   let minutes = seconds / 60;
-  if (minutes < 90) return `${Math.round(minutes)} minutes`;
+  if (minutes < 90) return hodlTText("{n} minutes", { n: Math.round(minutes) });
   let hours = minutes / 60;
-  if (hours < 48) return `${Math.round(hours)} hours`;
+  if (hours < 48) return hodlTText("{n} hours", { n: Math.round(hours) });
   let days = hours / 24;
-  if (days < 730) return `${Math.round(days)} days`;
-  return `${Math.round(days / 365).toLocaleString("en-US")} years`;
+  if (days < 730) return hodlTText("{n} days", { n: Math.round(days) });
+  return hodlTText("{n} years", { n: Math.round(days / 365).toLocaleString("en-US") });
 }
 // Candidates per second for the current method and address type: the live
 // rate while a grind runs, otherwise the benchmark scaled by the worker count.
@@ -16457,10 +23030,13 @@ function hodlVanityEstimate() {
   if (!estimateEl || !input) return;
   try {
     let prefix = validateVanityPrefix(hodlVanityPrefixValue(), scriptId), work = estimateVanityWork(prefix, scriptId), rate = hodlVanityExpectedRate();
+    let workers = document.getElementById("vanity-workers")?.value;
     let timing = rate > 0
-      ? `At about ${hodlVanityFormatCount(Math.round(rate))} candidates/s${hodlVanityRunning ? "" : ` on ${Math.max(1, Math.min(64, Number(document.getElementById("vanity-workers")?.value) || 1))} worker${Number(document.getElementById("vanity-workers")?.value) === 1 ? "" : "s"}`}, expect a match roughly every ${hodlVanityFormatDuration(Number(work) / rate)}.`
-      : hodlVanityBenchPending ? "Measuring this device…" : method === "derivation" ? "Derivation grind: each candidate is a few BIP32 child steps." : "Passphrase grind: each candidate is a full BIP39 seed stretch.";
-    estimateEl.textContent = `Prefix “${prefix}” matches about 1 in ${hodlVanityFormatCount(work)} ${hodlVanityScript().label} candidates on average. ${timing}`;
+      ? hodlVanityRunning
+        ? hodlTText("At about {rate} candidates/s, expect a match roughly every {every}.", { rate: hodlVanityFormatCount(Math.round(rate)), every: hodlVanityFormatDuration(Number(work) / rate) })
+        : hodlTText(Number(workers) === 1 ? "At about {rate} candidates/s on {n} worker, expect a match roughly every {every}." : "At about {rate} candidates/s on {n} workers, expect a match roughly every {every}.", { rate: hodlVanityFormatCount(Math.round(rate)), n: Math.max(1, Math.min(64, Number(workers) || 1)), every: hodlVanityFormatDuration(Number(work) / rate) })
+      : hodlVanityBenchPending ? hodlTText("Measuring this device…") : method === "derivation" ? hodlTText("Derivation grind: each candidate is a few BIP32 child steps.") : hodlTText("Passphrase grind: each candidate is a full BIP39 seed stretch.");
+    estimateEl.textContent = hodlTText("Prefix “{prefix}” matches about 1 in {count} {type} candidates on average.", { prefix, count: hodlVanityFormatCount(work), type: hodlVanityScript().label }) + " " + timing;
     estimateEl.hidden = false;
   } catch {
     // A grey note with nothing in it would still draw its box.
@@ -16478,23 +23054,26 @@ function hodlVanityStopFirstChanged() {
 // grind hangs account indexes below. Matching is mainnet only, so the key's
 // coin type must be 0.
 function hodlVanityPlan(state, method, scriptId) {
-  if (!state) throw new Error("Pick a Key Station key first — the grinder searches that key's passphrase or account index.");
+  if (!state) throw hodlError("Pick a Key Station key first — the grinder searches that key's passphrase or account index.");
   let result = state.result || {}, fields = state.fields || {}, label = hodlVanityKeyLabel(state);
   let accountComponents = vanityPathIndexes(fields.derivationAccountPath || "m/84'/0'/0'");
-  if (accountComponents.length < 3) throw new Error(`Key ${label}'s derivation path needs purpose, coin type, and account components.`);
-  if ((accountComponents[1] & VANITY_MAX_INDEX) !== 0) throw new Error(`Vanity matching is Bitcoin mainnet: key ${label} derives coin type ${accountComponents[1] & VANITY_MAX_INDEX}. Pick a mainnet key (coin type 0).`);
+  if (accountComponents.length < 3) throw hodlError("Key {key}'s derivation path needs purpose, coin type, and account components.", { key: label });
+  if ((accountComponents[1] & VANITY_MAX_INDEX) !== 0) throw hodlError("Vanity matching is Bitcoin mainnet: key {key} derives coin type {coin}. Pick a mainnet key (coin type 0).", { key: label, coin: accountComponents[1] & VANITY_MAX_INDEX });
   let index = (text, hardened) => {
     let value = Number(String(text ?? "0").trim().replace(/['hH]$/, ""));
-    if (!Number.isInteger(value) || value < 0 || value > VANITY_MAX_INDEX) throw new Error(`Key ${label}'s branch and address indexes must be whole numbers from 0 to 2,147,483,647.`);
+    if (!Number.isInteger(value) || value < 0 || value > VANITY_MAX_INDEX) throw hodlError("Key {key}'s branch and address indexes must be whole numbers from 0 to 2,147,483,647.", { key: label });
     return hardened ? value + VANITY_HARDENED : value;
   };
   let path = scriptId === "sp"
     ? [352 + VANITY_HARDENED, VANITY_HARDENED, (accountComponents[2] & VANITY_MAX_INDEX) + VANITY_HARDENED]
     : [...accountComponents, index(fields.branchStart, Boolean(fields.branchHarden)), index(fields.addressStart, Boolean(fields.addressHarden))];
   let passphrase = validateVanityPassphrase(hodlPassphraseText(fields.pass));
-  let plan = { method, script: scriptId, sourceId: state.id, sourceLabel: label, passphrase, accountHardened: path[2] >= VANITY_HARDENED };
+  // The run anchors to the key's identity as it stands at grind start: an
+  // edit to the words or passphrase changes the master fingerprint, which is
+  // what Update key compares before writing (audit B5).
+  let plan = { method, script: scriptId, sourceId: state.id, sourceLabel: label, sourceFingerprint: result.masterFingerprint || "", passphrase, accountHardened: path[2] >= VANITY_HARDENED };
   if (method === "passphrase") {
-    if (!hodlResultHasSeed(result)) throw new Error(`Key ${label} has no seed words (root xprv), so its passphrase cannot be extended — switch to the derivation grind.`);
+    if (!hodlResultHasSeed(result)) throw hodlError("Key {key} has no seed words (root xprv), so its passphrase cannot be extended — switch to the derivation grind.", { key: label });
     // The grinder's workers take the words as text.
     return { ...plan, mnemonic: validateVanityMnemonic(hodlResultMnemonic(result)), path, pathPrefix: [], counterSlot: 0 };
   }
@@ -16503,11 +23082,11 @@ function hodlVanityPlan(state, method, scriptId) {
   let root;
   if (hodlResultHasSeed(result)) root = hodlSeedSessionRoot(result, passphrase);
   else if (hodlResultHasRoot(result)) root = hodlResultRootNode(result);
-  else throw new Error(`Key ${label} carries neither seed words nor a root xprv.`);
+  else throw hodlError("Key {key} carries neither seed words nor a root xprv.", { key: label });
   let parent = null;
   try {
     parent = root.derive(vanityPathString(path.slice(0, 2)));
-    if (!parent.hasPrivateKey) throw new Error(`Key ${label} is watch-only; the derivation grind needs private material.`);
+    if (!parent.hasPrivateKey) throw hodlError("Key {key} is watch-only; the derivation grind needs private material.", { key: label });
     let node = new Uint8Array(64), parentKey = parent.privateKey, parentChain = parent.chainCode;
     try {
       node.set(parentKey, 0);
@@ -16530,7 +23109,12 @@ function hodlVanityParseFields() {
   let parseCounter = (id, label) => {
     let raw = document.getElementById(id).value.trim();
     if (!/^\d+$/.test(raw)) throw new Error(`${label} is a whole number (digits only).`);
-    return BigInt(raw);
+    // A pasted run of digits reached BigInt whole on every keystroke (red-team
+    // sweep 0eed735, part12 #4). Every counter limit is below 10^20, so a
+    // number with more than 20 digits is read as 10^20, which the range
+    // checks refuse the same way.
+    let digits = raw.replace(/^0+(?=\d)/, "");
+    return digits.length > 20 ? 10n ** 20n : BigInt(digits);
   };
   let workers = Math.max(1, Math.min(64, Number(document.getElementById("vanity-workers").value) || 1));
   if (method === "derivation") {
@@ -16558,13 +23142,14 @@ function hodlVanityInputsReady() {
     return false;
   }
 }
-function hodlCopyVanityValue(button, value, label) {
+function hodlCopyVanityValue(button, value, label, { app = false } = {}) {
   if (!value || !button || button.disabled) return;
   let done = () => {
     button.classList.add("is-copied");
     button.innerHTML = hodlCopiedIconMarkup();
-    button.setAttribute("aria-label", "Copied");
-    button.title = "Copied";
+    let copiedLabel = app ? hodlTText("Copied to EntropyLab's clipboard") : hodlTText("Copied");
+    button.setAttribute("aria-label", copiedLabel);
+    button.title = copiedLabel;
     clearTimeout(button.hodlCopiedTimer);
     button.hodlCopiedTimer = setTimeout(() => {
       if (!button.isConnected) return;
@@ -16574,7 +23159,11 @@ function hodlCopyVanityValue(button, value, label) {
       button.title = label;
     }, 1600);
   };
-  copyText(value).then((copied) => { if (copied) done(); });
+  if (app) {
+    if (appClipboardPut(value)) done();
+  } else {
+    copyText(value).then((copied) => { if (copied) done(); });
+  }
 }
 // The master fingerprint the key will carry once a match is applied: a new
 // passphrase is a new seed, so each passphrase-grind row is its own
@@ -16584,9 +23173,9 @@ function hodlCopyVanityValue(button, value, label) {
 function hodlVanityMatchFingerprint(match, run) {
   if (match.fingerprint) return match.fingerprint;
   if (run.method !== "passphrase") return (match.fingerprint = run.sourceLabel);
-  let state = hodlVanitySourceKeys().find((candidate) => candidate.id === run.sourceId), mnemonic = hodlResultMnemonic(state?.result);
-  if (!mnemonic) return "";
-  let seed = hodlMnemonicToSeed(mnemonic, match.passphrase), root = null;
+  let state = hodlVanitySourceKeys().find((candidate) => candidate.id === run.sourceId);
+  if (!state?.result?.entropy) return "";
+  let seed = hodlSeedFromEntropy(state.result.entropy, match.passphrase), root = null;
   try {
     root = hodlHDKey.fromMasterSeed(seed);
     return (match.fingerprint = hodlFingerprintHex(root.fingerprint));
@@ -16600,6 +23189,7 @@ function hodlVanityKeyMarkup(fingerprint) {
   return `<span class="vanity-key"><img class="key-tab-lifehash" width="22" height="22" alt="" hidden data-vanity-lifehash="${hodlEscapeHtml(fingerprint)}">${hodlPublicInlineHtml(fingerprint)}</span>`;
 }
 function hodlRenderVanityOut() {
+  hodlSyncWorkspaceCounts();
   let box = document.getElementById("vanity-out"), heading = document.getElementById("vanity-matches-heading");
   if (!box) return;
   let method = hodlVanityRun?.method || hodlVanityMethod();
@@ -16612,7 +23202,7 @@ function hodlRenderVanityOut() {
     box.innerHTML = `<div class="tool-result"><p class="field-note tool-result-empty">${hodlT("Choose your settings above, then click Start Grinding. Matches appear here.")}</p></div>`;
     return;
   }
-  let run = hodlVanityRun, derivation = run.method === "derivation", meta = VANITY_SCRIPTS[run.script] ?? VANITY_SCRIPTS.p2wpkh, label = hodlEscapeHtml(run.sourceLabel);
+  let run = hodlVanityRun, derivation = run.method === "derivation", meta = VANITY_SCRIPTS[run.script] ?? VANITY_SCRIPTS.p2wpkh;
   let copyMarkup = (attribute, index, title) => attribute === "data-vanity-copy" && !hodlVanityReveal ? "" : `<button type="button" class="copy-button boxed-copy-button" ${attribute}="${index}" aria-label="${title}" title="${title}">${hodlClipboardIconMarkup()}</button>`;
   let keyCell = (match) => `<td class="vanity-key-cell">${hodlVanityKeyMarkup(hodlVanityMatchFingerprint(match, run))}</td>`;
   let applyMarkup = (match, index) => run.sourceKind === "bip85"
@@ -16620,35 +23210,43 @@ function hodlRenderVanityOut() {
     : match.savedTo
     // Just the confirmation in the row; which key it went to stays on hover,
     // for screen readers, and in the status line below the table.
-    ? `<span class="vanity-saved" role="status" title="Saved to key ${hodlEscapeHtml(match.savedTo)}" aria-label="Saved to key ${hodlEscapeHtml(match.savedTo)}">${hodlCopiedIconMarkup()}${hodlT("Saved")}</span>`
-    : `<button type="button" class="btn secondary vanity-apply" data-vanity-apply="${index}" ${hodlVanityApplying ? "disabled" : ""} title="Write this ${derivation ? "account index" : "passphrase"} to key ${label} and re-derive it">${hodlVanityApplying ? "Updating…" : "Update Key"}</button>`;
+    ? `<span class="vanity-saved" role="status" title="${hodlTAttr("Saved to key {key}", { key: match.savedTo })}" aria-label="${hodlTAttr("Saved to key {key}", { key: match.savedTo })}">${hodlCopiedIconMarkup()}${hodlT("Saved")}</span>`
+    : `<button type="button" class="btn secondary vanity-apply" data-vanity-apply="${index}" ${hodlVanityApplying ? "disabled" : ""} title="${hodlTAttr(derivation ? "Write this account index to key {key} and re-derive it" : "Write this passphrase to key {key} and re-derive it", { key: run.sourceLabel })}">${hodlVanityApplying ? hodlT("Updating…") : hodlT("Update Key")}</button>`;
   // Passphrases are private key material: masked until the reveal toggle, and
   // copied from match state (never a DOM attribute) so the wipe drops them.
   let rows = hodlVanityMatches.map((match, index) => {
-    let address = `<td><span class="vanity-secret"><button type="button" class="addr-text mono" data-public-value data-i18n-skip translate="no" data-vanity-copy-address-value="${index}">${hodlEscapeHtml(match.address)}</button>${copyMarkup("data-vanity-copy-address", index, "Copy address")}</span></td>`;
+    let address = `<td><span class="vanity-secret"><button type="button" class="addr-text mono" data-public-value data-i18n-skip translate="no" data-vanity-copy-address-value="${index}">${hodlEscapeHtml(match.address)}</button>${copyMarkup("data-vanity-copy-address", index, hodlTAttr("Copy address"))}</span></td>`;
     if (derivation) {
       return `<tr><th scope="row">${index + 1}</th><td class="mono">${match.index}${run.accountHardened ? "'" : ""}</td><td class="mono">${hodlEscapeHtml(hodlDisplayDerivationPath(match.path))}</td>${address}${keyCell(match)}<td class="vanity-apply-cell">${applyMarkup(match, index)}</td></tr>`;
     }
     let secret = hodlVanityReveal
       ? `<span class="mono vanity-pass-text table-private-field-value" data-private-value data-i18n-skip translate="no">${hodlEscapeHtml(match.passphrase)}</span>`
       : `<span class="mono vanity-pass-text" aria-hidden="true">${hodlEscapeHtml("•".repeat(12))}</span><span class="sr-only">${hodlT("Passphrase hidden — turn on the Private data switch above to reveal")}</span>`;
-    return `<tr><th scope="row">${index + 1}</th><td class="mono">${match.counter.toString()}</td><td><span class="vanity-secret">${secret}${copyMarkup("data-vanity-copy", index, "Copy passphrase")}</span></td>${address}${keyCell(match)}<td class="vanity-apply-cell">${applyMarkup(match, index)}</td></tr>`;
+    // A found passphrase longer than 50 code points may not restore on some
+    // hardware wallets; the note sits under the passphrase it describes. Only
+    // while passphrases show: masked, the note would leak a length the mask
+    // hides (audit A35-3; GLM, MiniMax, DeepSeek and the red team, round 1).
+    let lengthNote = hodlVanityReveal && Array.from(match.passphrase ?? "").length > 50
+      ? `<p class="field-note edge-note is-private">${hodlT("Some hardware wallets cannot restore a passphrase longer than 50 characters. Check yours before relying on it.")}</p>`
+      : "";
+    return `<tr><th scope="row">${index + 1}</th><td class="mono">${match.counter.toString()}</td><td><span class="vanity-secret">${secret}${copyMarkup("data-vanity-copy", index, hodlTAttr("Copy passphrase to EntropyLab's clipboard"))}</span>${lengthNote}</td>${address}${keyCell(match)}<td class="vanity-apply-cell">${applyMarkup(match, index)}</td></tr>`;
   }).join("");
-  let overflow = hodlVanityFound > hodlVanityMatches.length ? `<p class="muted">Only the first ${hodlVanityMatches.length} matches are listed; ${hodlVanityFormatCount(hodlVanityFound)} found in total.</p>` : "";
+  let overflow = hodlVanityFound > hodlVanityMatches.length ? `<p class="muted">${hodlT("Only the first {n} matches are listed; {total} found in total.", { n: hodlVanityMatches.length, total: hodlVanityFormatCount(hodlVanityFound) })}</p>` : "";
+  // Plain text: the description below escapes it once, as a placeholder value.
   let where = meta.code === 4
-    ? `the BIP-352 Silent Payment code of that account (scan ${hodlEscapeHtml(hodlDisplayDerivationPath(run.pathText))}/1h/0, spend …/0h/0)`
-    : `the ${hodlEscapeHtml(meta.label)} address at ${hodlEscapeHtml(hodlDisplayDerivationPath(run.pathText))}`;
+    ? hodlTText("the BIP-352 Silent Payment code of that account (scan {path}/1h/0, spend …/0h/0)", { path: hodlDisplayDerivationPath(run.pathText) })
+    : hodlTText("the {type} address at {path}", { type: meta.label, path: hodlDisplayDerivationPath(run.pathText) });
   let description = run.sourceKind === "bip85"
     ? hodlT("Each match derives from the selected BIP-85 child. The child remains fixed by its parent, application, and index; copy a matching address or passphrase rather than changing the child.")
     : derivation
-    ? `Each row is a BIP32 account index of key ${label} — with its passphrase unchanged, ${where} starts with the prefix. Update key sets that account on the key and re-derives it, so the Keys tab, its exports, and the Journal show this wallet.`
-    : `Each row is a new BIP39 passphrase for key ${label}: the starting passphrase followed by the counter characters. With this key's seed words it derives ${where}. Update key writes the passphrase to the key and re-derives it, so the Keys tab, its exports, and the Journal show this wallet. Anyone holding the words and this passphrase holds the coins.`;
+    ? hodlT("Each row is a BIP32 account index of key {key} — with its passphrase unchanged, {where} starts with the prefix. Update key sets that account on the key and re-derives it, so the Keys tab, its exports, and the Journal show this wallet.", { key: run.sourceLabel, where })
+    : hodlT("Each row is a new BIP39 passphrase for key {key}: the starting passphrase followed by the counter characters. With this key's seed words it derives {where}. Update key writes the passphrase to the key and re-derives it, so the Keys tab, its exports, and the Journal show this wallet. Anyone holding the words and this passphrase holds the coins.", { key: run.sourceLabel, where });
   // The same privacy switch as the key view, red while passphrases show.
   let reveal = derivation ? "" : `<div class="wallet-data-actions no-print">${hodlPrivacyBarMarkup({ id: "vanity-reveal", revealed: hodlVanityReveal, describedBy: "vanity-matches-description" })}</div>`;
-  let actionHeader = run.sourceKind === "bip85" ? hodlT("Child status") : "Update Key";
+  let actionHeader = run.sourceKind === "bip85" ? hodlTText("Child status") : hodlTText("Update Key");
   let head = derivation
-    ? `<th scope="col">#</th><th scope="col">Account</th><th scope="col">Path</th><th scope="col">Address</th><th scope="col">Key</th><th scope="col"><span class="sr-only">${hodlEscapeHtml(actionHeader)}</span></th>`
-    : `<th scope="col">#</th><th scope="col">Counter</th><th scope="col"><span class="private-heading${hodlVanityReveal ? " is-revealed" : ""}">Passphrase${hodlPrivacyEyeMarkup(hodlVanityReveal)}</span></th><th scope="col">Address</th><th scope="col">${run.sourceKind === "bip85" ? hodlT("Derived key") : "Key after update"}</th><th scope="col"><span class="sr-only">${hodlEscapeHtml(actionHeader)}</span></th>`;
+    ? `<th scope="col">#</th><th scope="col">${hodlT("Account")}</th><th scope="col">${hodlT("Path")}</th><th scope="col">${hodlT("Address")}</th><th scope="col">${hodlT("Key")}</th><th scope="col"><span class="sr-only">${hodlEscapeHtml(actionHeader)}</span></th>`
+    : `<th scope="col">#</th><th scope="col">${hodlT("Counter")}</th><th scope="col"><span class="private-heading${hodlVanityReveal ? " is-revealed" : ""}">${hodlT("Passphrase")}${hodlPrivacyEyeMarkup(hodlVanityReveal)}</span></th><th scope="col">${hodlT("Address")}</th><th scope="col">${run.sourceKind === "bip85" ? hodlT("Derived key") : hodlT("Key after update")}</th><th scope="col"><span class="sr-only">${hodlEscapeHtml(actionHeader)}</span></th>`;
   // The matches sit in the card like its other content, not in a frame.
   // Shown, the passphrase column is as wide as the longer of the mask and the
   // longest passphrase. Masked, it is the mask's own width: sizing it by the
@@ -16658,7 +23256,7 @@ function hodlRenderVanityOut() {
   box.style.setProperty("--vanity-pass-width", `${passWidth}ch`);
   box.innerHTML = `<p class="muted label-description" id="vanity-matches-description">${description}</p>
       ${reveal}
-      <div class="wallet-address-table"><div class="wallet-table wallet-table-public" role="region" tabindex="0" aria-label="Matching vanity addresses table"><table aria-rowcount="${hodlVanityMatches.length + 1}"><caption class="sr-only">Matching vanity addresses</caption><thead><tr>${head}</tr></thead><tbody>${rows}</tbody></table></div></div>
+      <div class="wallet-address-table"><div class="wallet-table wallet-table-public" role="region" tabindex="0" aria-label="${hodlTAttr("Matching vanity addresses table")}"><table aria-rowcount="${hodlVanityMatches.length + 1}"><caption class="sr-only">${hodlT("Matching vanity addresses")}</caption><thead><tr>${head}</tr></thead><tbody>${rows}</tbody></table></div></div>
       ${overflow}`;
   // LifeHash images render asynchronously from the fingerprint in the cell.
   box.querySelectorAll("img[data-vanity-lifehash]").forEach((image) => hodlFillKeyTabLifehash(image, image.dataset.vanityLifehash));
@@ -16689,7 +23287,7 @@ function hodlVanitySyncControls() {
     let blocked = hodlVanityApplying || (!hodlVanityRunning && !hodlVanityInputsReady());
     go.disabled = blocked;
     go.setAttribute("aria-disabled", String(blocked));
-    go.title = source ? "" : "Pick a Key Station key first";
+    go.title = source ? "" : hodlTText("Pick a Key Station key first");
   }
   let first = document.getElementById("vanity-first");
   if (first) first.checked = hodlVanityStopFirst;
@@ -16700,9 +23298,26 @@ function hodlVanitySyncControls() {
   }
   if (progress) progress.hidden = !hodlVanityRunning;
 }
-function hodlVanitySetStatus(text) {
+// The status and error lines keep what they say as notes, so a language
+// switch can say it again (hodlRefreshVanityLocale).
+function hodlVanitySetStatus(note) {
+  hodlVanityStatusNote = note;
   let status = document.getElementById("vanity-status");
-  if (status) status.textContent = text;
+  if (status) status.textContent = hodlFormatNote(note);
+}
+function hodlSetVanityError(note) {
+  hodlVanityErrorNote = note || null;
+  let error = document.getElementById("vanity-error");
+  if (error) error.textContent = !note ? "" : note.key ? hodlFormatNote(note) : note.raw || "";
+}
+// The station fills its text in when it renders, so a language switch
+// renders it again; the static sweep cannot match a filled-in string.
+function hodlRefreshVanityLocale() {
+  hodlVanitySyncScriptNote();
+  hodlVanitySyncSource();
+  hodlRenderVanityOut();
+  if (hodlVanityStatusNote) hodlVanitySetStatus(hodlVanityStatusNote);
+  hodlSetVanityError(hodlVanityErrorNote);
 }
 function hodlVanityStop() {
   if (hodlVanityGrinder && hodlVanityRunning) hodlVanityGrinder.stop();
@@ -16712,10 +23327,13 @@ function hodlVanityCancel() {
   if (hodlVanityGrinder) hodlVanityGrinder.cancel();
   hodlVanityRunning = false;
   hodlVanityLiveRate = 0;
-  if (wasRunning) hodlVanitySetStatus("Stopped.");
+  if (wasRunning) {
+    hodlVanitySetStatus(hodlNote("Stopped."));
+    if (hodlVanityRun?.logGeneration === hodlJournalGeneration) hodlJournalLog("grind-cancel", "invalidated", "vanity");
+  }
   hodlVanitySyncControls();
 }
-function hodlVanityClearResults(status = "Idle. No range has been ground this session.") {
+function hodlVanityClearResults(status = hodlNote("Idle. No range has been ground this session.")) {
   hodlVanityMatches = [];
   hodlVanityFound = 0;
   hodlVanityReveal = false;
@@ -16741,36 +23359,38 @@ function hodlVanityMethodChanged() {
   hodlVanitySyncMethod();
 }
 function hodlRunVanity() {
-  let error = document.getElementById("vanity-error");
-  if (error) error.textContent = "";
+  hodlSetVanityError(null);
+  let logGeneration = hodlJournalGeneration, logFailed = false;
   let inputs;
   try {
     inputs = hodlVanityParseInputs();
   } catch (exception) {
-    if (error) error.textContent = exception.message || String(exception);
+    hodlSetVanityError(hodlErrorSpecFrom(exception));
+    hodlJournalLog("grind-error", "invalid-input", "vanity");
     return;
   }
   hodlVanityMatches = [];
   hodlVanityFound = 0;
   // The run's key, method, and passphrase are fixed at start; snapshot them
   // so the results (and Update key) cannot drift if the form changes mid-grind.
-  hodlVanityRun = { method: inputs.method, script: inputs.script, sourceId: inputs.sourceId, sourceLabel: inputs.sourceLabel, sourceKind: hodlVanitySourceState()?.isBip85Child ? "bip85" : "key", passphrase: inputs.passphrase, accountHardened: inputs.accountHardened, path: [...inputs.pathPrefix, ...inputs.path], pathText: vanityPathString([...inputs.pathPrefix, ...inputs.path]) };
+  hodlVanityRun = { method: inputs.method, script: inputs.script, sourceId: inputs.sourceId, sourceLabel: inputs.sourceLabel, sourceFingerprint: inputs.sourceFingerprint, sourceKind: hodlVanitySourceState()?.isBip85Child ? "bip85" : "key", passphrase: inputs.passphrase, accountHardened: inputs.accountHardened, path: [...inputs.pathPrefix, ...inputs.path], pathText: vanityPathString([...inputs.pathPrefix, ...inputs.path]), logGeneration };
   hodlRenderVanityOut();
   hodlVanityRunning = true;
+  hodlJournalLog("grind-start", "", "vanity");
   hodlVanitySyncControls();
-  hodlVanitySetStatus(inputs.method === "derivation" ? `Starting workers — stepping through account indexes of key ${inputs.sourceLabel}…` : `Starting workers — extending key ${inputs.sourceLabel}'s passphrase with the counter characters…`);
+  hodlVanitySetStatus(inputs.method === "derivation" ? hodlNote("Starting workers — stepping through account indexes of key {key}…", { key: inputs.sourceLabel }) : hodlNote("Starting workers — extending key {key}'s passphrase with the counter characters…", { key: inputs.sourceLabel }));
   let progressBar = document.getElementById("vanity-progress");
   hodlVanityGrinder = new VanityGrinder({
     onProgress: ({ done, total, rate }) => {
       let percent = total > 0n ? Number((done * 10000n) / total) / 100 : 0;
       if (progressBar) {
         progressBar.setAttribute("aria-valuenow", String(Math.floor(percent)));
-        progressBar.setAttribute("aria-valuetext", `${percent.toFixed(1)}% complete`);
+        progressBar.setAttribute("aria-valuetext", hodlTText("{percent}% complete", { percent: percent.toFixed(1) }));
         let fill = progressBar.querySelector(".derive-progress-bar"), label = progressBar.querySelector(".derive-progress-label");
         if (fill) fill.style.width = `${percent}%`;
         if (label) label.textContent = `${percent.toFixed(1)}%`;
       }
-      hodlVanitySetStatus(`${hodlVanityFormatCount(done)} / ${hodlVanityFormatCount(total)} candidates · ${hodlVanityFormatCount(Math.round(rate))}/s · ${hodlVanityFound} match${hodlVanityFound === 1 ? "" : "es"}`);
+      hodlVanitySetStatus(hodlNote(hodlVanityFound === 1 ? "{done} / {total} candidates · {rate}/s · {found} match" : "{done} / {total} candidates · {rate}/s · {found} matches", { done: hodlVanityFormatCount(done), total: hodlVanityFormatCount(total), rate: hodlVanityFormatCount(Math.round(rate)), found: hodlVanityFound }));
       // The live rate is the best estimate while the grind runs.
       if (rate > 0 && Math.abs(rate - hodlVanityLiveRate) / rate > 0.05) {
         hodlVanityLiveRate = rate;
@@ -16786,43 +23406,94 @@ function hodlRunVanity() {
       if (hodlVanityStopFirst && hodlVanityRunning) hodlVanityStop();
     },
     onDone: ({ done, stopped, nextStart }) => {
+      if (!logFailed && logGeneration === hodlJournalGeneration) hodlJournalLog(stopped ? "grind-cancel" : "grind-complete", `processed=${done} matches=${hodlVanityFound}`, "vanity");
       hodlVanityRunning = false;
       hodlVanityLiveRate = 0;
       // Only a contiguous processed prefix is safe to skip. After a stop,
       // resuming may repeat work from later buckets but cannot miss a gap.
       let startField = document.getElementById(inputs.method === "derivation" ? "vanity-account-start" : "vanity-start");
       if (startField) startField.value = nextStart.toString();
-      hodlVanitySetStatus(`${stopped ? (hodlVanityStopFirst && hodlVanityFound > 0 ? "Stopped at first match" : "Stopped") : "Range complete"}: ${hodlVanityFormatCount(done)} candidates, ${hodlVanityFound} match${hodlVanityFound === 1 ? "" : "es"}. Next ${inputs.method === "derivation" ? "account" : "counter"}: ${nextStart.toString()}.`);
+      let outcome = stopped ? (hodlVanityStopFirst && hodlVanityFound > 0 ? hodlNote("Stopped at first match") : hodlNote("Stopped")) : hodlNote("Range complete"), accounts = inputs.method === "derivation", one = hodlVanityFound === 1;
+      hodlVanitySetStatus(hodlNote(accounts
+        ? one ? "{outcome}: {done} candidates, {found} match. Next account: {next}." : "{outcome}: {done} candidates, {found} matches. Next account: {next}."
+        : one ? "{outcome}: {done} candidates, {found} match. Next counter: {next}." : "{outcome}: {done} candidates, {found} matches. Next counter: {next}.", { outcome, done: hodlVanityFormatCount(done), found: hodlVanityFound, next: nextStart.toString() }));
       hodlVanitySyncControls();
       hodlVanityEstimate();
     },
     onError: (message) => {
-      if (error) error.textContent = message;
+      logFailed = true;
+      if (logGeneration === hodlJournalGeneration) hodlJournalLog("grind-error", "worker", "vanity");
+      hodlSetVanityError({ raw: message });
     },
   });
   hodlVanityGrinder.start(inputs);
   // The grinder copied the parent node for its workers; this copy is dead.
   if (inputs.node) inputs.node.fill(0);
 }
+// The address the key itself derives for this match: from the key's own seed
+// words (or root xprv) with the match's passphrase or account, at the match's
+// concrete path — computed here the way hodlVanityMatchFingerprint re-derives
+// a row's identity, never from the worker's record. Update key requires the
+// recorded address to equal this before it writes anything, so a worker-side
+// record/payload mismatch fails closed (audit B5).
+function hodlVanityMatchAddress(match, run, state) {
+  let root = null, node = null, scan = null, spend = null;
+  try {
+    if (run.method === "passphrase") {
+      if (!state.result?.entropy) throw hodlError("The key has no seed words, so this match's passphrase cannot be checked.");
+      let seed = hodlSeedFromEntropy(state.result.entropy, match.passphrase);
+      try {
+        root = hodlHDKey.fromMasterSeed(seed);
+      } finally {
+        seed.fill(0);
+      }
+    } else {
+      root = hodlSeedSessionRoot(state.result, run.passphrase);
+    }
+    if (!root) throw hodlError("The key carries no key material to check this match against.");
+    // The derivation grind's counter slot is the account component; the match
+    // substitutes the index it found, keeping the grind's hardened bit — the
+    // same concrete path its row shows.
+    let path = [...run.path];
+    if (run.method === "derivation") path[2] = (match.index | (path[2] & VANITY_HARDENED)) >>> 0;
+    node = root.derive(vanityPathString(path));
+    if ((VANITY_SCRIPTS[run.script] ?? VANITY_SCRIPTS.p2wpkh).code !== 4) return hodlAddressOrThrow(run.script, node.publicKey, "mainnet");
+    scan = node.derive("m/1'/0");
+    spend = node.derive("m/0'/0");
+    return encodeSilentPaymentAddress(hodlSecp256k1.Point.fromBytes(scan.publicKey), hodlSecp256k1.Point.fromBytes(spend.publicKey), "sp");
+  } finally {
+    root?.wipePrivateData();
+    node?.wipePrivateData();
+    scan?.wipePrivateData();
+    spend?.wipePrivateData();
+  }
+}
 // Update key: write the match back to its key and re-derive, through the same
 // Edit input → Derive path the Keys tab uses by hand. The key keeps its tab
 // (id, colour, custom name) even when a new passphrase gives it a new
 // fingerprint; the lab tab gets back whatever the user had in it.
 async function hodlVanityApplyMatch(index) {
-  let error = document.getElementById("vanity-error"), match = hodlVanityMatches[index], run = hodlVanityRun;
-  if (error) error.textContent = "";
+  let match = hodlVanityMatches[index], run = hodlVanityRun;
+  hodlSetVanityError(null);
   if (!match || !run || hodlVanityApplying || match.savedTo) return;
   if (run.sourceKind === "bip85") {
-    if (error) error.textContent = "A BIP-85 child is fixed by its parent and index. Copy the match instead of changing the child.";
+    hodlSetVanityError(hodlNote("A BIP-85 child is fixed by its parent and index. Copy the match instead of changing the child."));
     return;
   }
   let state = hodlKeys.find((candidate) => candidate.id === run.sourceId && !candidate.isLab);
   if (!state) {
-    if (error) error.textContent = `Key ${run.sourceLabel} is no longer in Key Station, so there is nothing to update.`;
+    hodlSetVanityError(hodlNote("Key {key} is no longer in Key Station, so there is nothing to update.", { key: run.sourceLabel }));
+    return;
+  }
+  // The grind is anchored to the key it started on (audit B5): an edit to the
+  // words or passphrase since makes these matches foreign to the key standing
+  // here, and the path check below cannot see it.
+  if ((state.result?.masterFingerprint || "") !== run.sourceFingerprint) {
+    hodlSetVanityError(hodlNote("Key {key} changed since this grind started — its matches belong to the key it was. Grind again.", { key: hodlVanityKeyLabel(state) }));
     return;
   }
   if (hodlActiveDerivation) {
-    if (error) error.textContent = hodlTText("A derivation is already running on the Keys tab — wait for it to finish.");
+    hodlSetVanityError(hodlNote("A derivation is already running on the Keys tab — wait for it to finish."));
     return;
   }
   // The key can be re-derived in place since the grind (same fingerprint,
@@ -16835,19 +23506,36 @@ async function hodlVanityApplyMatch(index) {
     plan.node?.fill(0);
     path = [...plan.pathPrefix, ...plan.path];
   } catch (exception) {
-    if (error) error.textContent = exception.message || String(exception);
+    hodlSetVanityError(hodlErrorSpecFrom(exception));
     return;
   }
   let counterSlot = run.method === "derivation" ? 2 : -1;
   if (path.length !== run.path.length || path.some((component, slot) => slot !== counterSlot && component !== run.path[slot])) {
-    if (error) error.textContent = hodlTText("Key {key} now derives at {now}, but this match was ground at {then}. Set the path back on the Keys tab, or grind again.", { key: hodlVanityKeyLabel(state), now: hodlDisplayDerivationPath(vanityPathString(path)), then: hodlDisplayDerivationPath(run.pathText) });
+    hodlSetVanityError(hodlNote("Key {key} now derives at {now}, but this match was ground at {then}. Set the path back on the Keys tab, or grind again.", { key: hodlVanityKeyLabel(state), now: hodlDisplayDerivationPath(vanityPathString(path)), then: hodlDisplayDerivationPath(run.pathText) }));
+    return;
+  }
+  // Fail closed on the record itself (audit B5): the address the key will
+  // derive for the match is recomputed from the key's own material and must
+  // equal the address the grind recorded before anything is written.
+  let recomputed;
+  try {
+    recomputed = hodlVanityMatchAddress(match, run, state);
+  } catch (exception) {
+    hodlSetVanityError(hodlErrorSpecFrom(exception));
+    return;
+  }
+  if (recomputed !== match.address) {
+    hodlSetVanityError(hodlNote("Key {key} derives {found} at this match's path, not the recorded address {expected} — the match record is inconsistent. Nothing was changed; grind again.", { key: hodlVanityKeyLabel(state), found: recomputed, expected: match.address || hodlNote("(none recorded)") }));
     return;
   }
   hodlVanityApplying = true;
-  hodlRenderVanityOut();
-  hodlVanitySyncControls();
   let lab = hodlKeys.find((candidate) => candidate.isLab) || null;
   try {
+    // Inside the try: a render exception must still reach the `finally` that
+    // clears the applying flag, or the session stays marked as mid-apply and
+    // suppresses its own cleanup for the rest of the page's life (AR-06).
+    hodlRenderVanityOut();
+    hodlVanitySyncControls();
     let labIndex = hodlFillLabFromKey(state), draft = hodlKeys[labIndex];
     draft.fields.pass = hodlStoredPassphraseBytes(match.passphrase);
     let definition = hodlScriptTypes.find((candidate) => candidate.script === run.script);
@@ -16862,16 +23550,37 @@ async function hodlVanityApplyMatch(index) {
     document.getElementById("calc-card").hidden = hodlWorkspace !== "calc";
     await hodlDeriveWithProgress("key", (progress) => hodlCalculateKey(progress, "update"));
     let active = hodlKeys[hodlActiveKey];
-    if (!active || active.isLab || !active.result) throw new Error(active?.error || "Deriving the updated key failed.");
+    if (!active || active.isLab || !active.result) throw active?.error ? new Error(active.error) : hodlError("Deriving the updated key failed.");
     let updated = hodlKeys[hodlActiveKey];
     match.savedTo = hodlVanityKeyLabel(updated);
+    // The key now carries the identity this run just wrote; later matches
+    // from the same run are still checked against it (audit B5).
+    run.sourceFingerprint = updated.result?.masterFingerprint || run.sourceFingerprint;
     // A tool that had this key loaded is holding the old seed: reload it so
     // its chip, fingerprint, and LifeHash follow the key.
     if (hodlSpSource === "key:" + updated.id) hodlPickSpSessionKey(updated);
     if (hodlBip85Source === "key:" + updated.id) hodlPickBip85SessionKey(updated);
-    hodlVanitySetStatus(`Saved to key ${match.savedTo}: ${match.index !== null ? `account ${match.index}` : "the new passphrase"} is now on the key${run.sourceLabel !== match.savedTo ? ` — its master fingerprint and LifeHash changed from ${run.sourceLabel} to ${match.savedTo}` : ""}. Open the Keys tab to review and export it.`);
+    if (hodlPsbtSource === "key:" + updated.id) {
+      // The PSBT session holds private material from the pre-update key;
+      // keeping it would compute ownership and RFC 6979 verdicts against the
+      // old seed while the session line still names this key (audit L10).
+      try {
+        hodlUseActiveKeyForPsbt(updated);
+      } catch {
+        // The updated key has no session material (e.g. an account-level
+        // extended key): fall back to inspect-only rather than abort the
+        // apply — the key itself was already saved.
+        hodlPsbtWipeMem();
+        hodlPaintPsbtSession();
+        hodlSyncPsbtControls();
+      }
+    }
+    let changed = run.sourceLabel !== match.savedTo;
+    hodlVanitySetStatus(hodlNote(match.index !== null
+      ? changed ? "Saved to key {key}: account {n} is now on the key — its master fingerprint and LifeHash changed from {from} to {key}. Open the Keys tab to review and export it." : "Saved to key {key}: account {n} is now on the key. Open the Keys tab to review and export it."
+      : changed ? "Saved to key {key}: the new passphrase is now on the key — its master fingerprint and LifeHash changed from {from} to {key}. Open the Keys tab to review and export it." : "Saved to key {key}: the new passphrase is now on the key. Open the Keys tab to review and export it.", { key: match.savedTo, n: match.index, from: run.sourceLabel }));
   } catch (exception) {
-    if (error) error.textContent = exception.message || String(exception);
+    hodlSetVanityError(hodlErrorSpecFrom(exception));
   } finally {
     if (lab) {
       let current = hodlKeys.findIndex((candidate) => candidate.isLab);
@@ -16933,13 +23642,13 @@ function hodlInitVanity() {
     let secretButton = event.target.closest("[data-vanity-copy]");
     if (secretButton) {
       let match = hodlVanityMatches[Number(secretButton.dataset.vanityCopy)];
-      if (match && hodlVanityReveal && !secretButton.disabled) hodlCopyVanityValue(secretButton, match.passphrase, "Copy passphrase");
+      if (match && hodlVanityReveal && !secretButton.disabled) hodlCopyVanityValue(secretButton, match.passphrase, hodlTText("Copy passphrase to EntropyLab's clipboard"), { app: true });
       return;
     }
     let addressButton = event.target.closest("[data-vanity-copy-address], [data-vanity-copy-address-value]");
     if (addressButton) {
       let index = Number(addressButton.dataset.vanityCopyAddress ?? addressButton.dataset.vanityCopyAddressValue), match = hodlVanityMatches[index], icon = out.querySelector(`[data-vanity-copy-address="${index}"]`);
-      if (match) hodlCopyVanityValue(icon || addressButton, match.address, "Copy address");
+      if (match) hodlCopyVanityValue(icon || addressButton, match.address, hodlTText("Copy address"));
       return;
     }
     let applyButton = event.target.closest("[data-vanity-apply]");
@@ -16979,34 +23688,39 @@ function hodlInitWorkspace() {
   strip.id = "workspace-tabs";
   strip.setAttribute("role", "tablist");
   strip.setAttribute("aria-label", "Tool");
-  hodlWorkspaceTabs.forEach(([id, label, short], index) => {
+  hodlWorkspaceTabs.forEach(([id, label, short, wide = label], index) => {
     let button = document.createElement("button"), active = hodlWorkspace === id;
     button.type = "button";
     button.className = "workspace-tab" + (active ? " active" : "");
     button.dataset.workspace = id;
     button.setAttribute("role", "tab");
     button.setAttribute("aria-selected", String(active));
-    // The panels the tab shows: one card, or for PSBT and Journal whichever
-    // of their stations is current.
+    // The panels the tab shows: one card, or for PSBT, Privacy and Journal
+    // whichever of their stations is current.
     button.setAttribute("aria-controls", {
       psbt: "psbt-card psbted-card nonce-card",
-      journal: "journal-card journal-notes-card journal-keymanager-card journal-state-card journal-log-card",
+      sp: "sp-card bip47-card",
+      journal: "journal-card journal-notes-card journal-keymanager-card journal-session-card",
     }[id] ?? `${id}-card`);
     let fullLabel = document.createElement("span"), shortLabel = document.createElement("span");
     fullLabel.className = "workspace-tab-full";
     shortLabel.className = "workspace-tab-short";
-    fullLabel.textContent = hodlTText(label);
+    fullLabel.dataset.workspaceLabel = "full";
+    shortLabel.dataset.workspaceLabel = "short";
+    fullLabel.textContent = hodlTText(wide);
     shortLabel.textContent = hodlTText(short);
     button.append(fullLabel, shortLabel);
     // The short form is display:none at wide widths and the full one is hidden
     // at narrow ones, and hidden text is not in the accessibility tree — so the
     // name is stated outright rather than left to whichever span is showing.
     button.setAttribute("aria-label", hodlTText(label));
+    if (wide !== label) button.title = hodlTText(label);
     button.onclick = () => hodlShowWorkspace(id);
     button.onkeydown = (event) => hodlWorkspaceTabKeydown(event, index);
     strip.appendChild(button);
   });
   box.append(hint, strip);
+  hodlSyncWorkspaceCounts();
   hodlInitTabDrag(strip);
   // The hint points at tools that are off the right edge, so it answers "is
   // there more that way": it goes once the end is reached, and one click
@@ -17020,15 +23734,21 @@ function hodlInitWorkspace() {
   addEventListener("resize", hodlSyncWorkspaceOverflow);
   new ResizeObserver(hodlSyncWorkspaceOverflow).observe(strip);
   hodlInitPsbtToolTabs();
+  // The station switcher ships in release builds since 2026-10-28.
+  hodlInitPrivacyToolTabs();
+  if (typeof hodlInitBip47 === "function") hodlInitBip47();
   hodlInitJournalToolTabs();
   hodlInitJournalNotebook();
   hodlInitMsig();
   hodlInitPsbt();
-  initPsbtEditor({ networkDefault: () => hodlNetworkDefault, copiedIcon: hodlCopiedIconMarkup, copyIcon: hodlClipboardIconMarkup });
+  initPsbtEditor({ networkDefault: () => hodlInspectorNetwork(), copiedIcon: hodlCopiedIconMarkup, copyIcon: hodlClipboardIconMarkup, journalLog: hodlJournalLog });
+  initCoreWallet({ deps: hodlWalletDatDeps(), onImportIntoStation: hodlCoreImportIntoStation, copiedIcon: hodlCopiedIconMarkup, copyIcon: hodlClipboardIconMarkup });
+  // The descriptor key-reuse check (#164, released 2026-10-26).
+  initDescriptorReuseCheck(document, { onChange: hodlSyncPsbtControls });
   hodlInitBip85();
   hodlInitVanity();
   hodlInitSp();
-  hodlInitLn({ journalLog: hodlJournalLog, copyIcon: hodlClipboardIconMarkup });
+  hodlInitLn({ journalLog: hodlJournalLog, copyIcon: hodlClipboardIconMarkup, qrSvg: hodlQrSvg, pageNetwork: () => hodlInspectorNetwork() });
 }
 var hodlKeyClearSyncQueued = false, hodlMsigClearSyncQueued = false, hodlDeriveSyncQueued = false;
 function hodlQueueKeyClearButtonSync() {
@@ -17223,6 +23943,9 @@ function hodlDefaultCoinType() {
 function hodlApplyNetworkDefault(network) {
   hodlNetworkChoice = ["testnet", "signet", "regtest"].includes(network) ? network : "mainnet";
   hodlNetworkDefault = hodlNetworkChoice === "mainnet" ? "mainnet" : "testnet";
+  let state = hodlKeys[hodlActiveKey];
+  if (state?.isLab && state.importedKeyId != null) state.importedNetworkChoice = hodlNetworkChoice;
+  hodlKeyManagerSyncReviewedContext();
   let coinType = document.getElementById("network");
   if (coinType) {
     let hardened = document.getElementById("network-harden")?.checked !== false;
@@ -17344,7 +24067,17 @@ function hodlInitEndSession() {
 // change handler, so its view re-renders masked exactly as a click would.
 // Five minutes untouched is long enough to copy a phrase onto paper.
 var hodlRevealIdleMs = 5 * 60 * 1000;
-function hodlConcealPrivateValues() {
+function hodlConcealPrivateValues(options) {
+  if (typeof hodlBip47Conceal === "function") hodlBip47Conceal();
+  // Plain blur permits copying the opening/PSBT from another window. Other
+  // conceal triggers retire the pasted host reveal, which remains sensitive.
+  if (options?.reason !== "blur") {
+    const transcript = document.getElementById("psbt-ax-transcript");
+    if (transcript) transcript.value = "";
+    const transcriptSection = document.getElementById("nonce-jade-options");
+    if (transcriptSection) transcriptSection.open = false;
+    hodlNonceLast = null;
+  }
   for (let state of [...hodlKeys, ...hodlBip85Children, ...hodlSpAddresses]) state.reveal = false;
   if (hodlSpVerifyMatches) hodlSpVerifyMatches.reveal = false;
   hodlRevealPrivate = hodlBip85Reveal = hodlVanityReveal = hodlJournalReveal = false;
@@ -17353,20 +24086,43 @@ function hodlConcealPrivateValues() {
     toggle.checked = false;
     toggle.dispatchEvent(new Event("change", { bubbles: true }));
   }
+  // Result panes and mirrors carry the same material without a reveal
+  // switch: a pasted PSBT can hold an xprv in a proprietary field, and the
+  // brain-wallet hash is the key material itself. Leaving the page empties
+  // them rather than leaving them for a screen capture or a print preview.
+  for (let id of ["psbt-out", "nonce-out", "psbted-out", "psbted-compare-out", "brain-lab-hex"]) {
+    let panel = document.getElementById(id);
+    if (panel) panel.textContent = "";
+  }
+  // Body-level overlays (the expandable window, the address/PSBT QR) are
+  // outside every wiped view and listen for this single conceal signal,
+  // including the idle-timer path that fires no blur or print event.
+  document.dispatchEvent(new CustomEvent("hodl:conceal", { detail: { reason: options?.reason } }));
 }
 function hodlInitSecretFieldAutoClear() {
   let clearSecretFields = () => {
-    hodlInvalidateDerivation();
-    hodlPsbtWipeMem();
-    hodlBip85WipeMem();
-    hodlSpWipeMem();
-    hodlLnWipeMem();
+    // One failing wipe must not skip the rest. Each of these touches state
+    // that can be mid-update (a cancelled derivation, a half-built session),
+    // and a throw here would leave every later secret in place.
+    try { hodlKeyManagerCancelDerivation({ wipeDraft: true }); } catch {}
+    try { hodlInvalidateDerivation(); } catch {}
+    try { hodlLowEntropyConfirm?.close({ restoreFocus: false }); } catch {}
+    try { hodlFingerprintCollisionConfirm?.close({ restoreFocus: false }); } catch {}
+    try { hodlJournalKeyImportConfirm?.close({ restoreFocus: false }); } catch {}
+    try { hodlPsbtWipeMem(); } catch {}
+    try { hodlBip85WipeMem(); } catch {}
+    try { hodlSpWipeMem(); } catch {}
+    try { hodlBip47WipeMem(); } catch {}
+    try { hodlLnWipeMem(); } catch {}
     // Every derived wallet's row key bytes, shared results included: the
     // whole session is going (#546 B2). Before the Journal wipe, which empties
-    // the Key Manager's pending keys.
-    for (let result of [hodlWalletResult, ...hodlKeys.map((state) => state.result), ...hodlKeyManagerPending.map((state) => state.result), ...hodlCommittedResults]) hodlWipeWalletKeys(result);
+    // the Key Manager's pending keys. A result can be mid-update and throw,
+    // and its failure must not skip the other wallets or the wipes after them.
+    for (let result of [hodlWalletResult, ...hodlKeys.map((state) => state.result), ...hodlKeyManagerPending.map((state) => state.result), ...hodlCommittedResults]) try {
+      hodlWipeWalletKeys(result);
+    } catch {}
     hodlCommittedResults.clear();
-    hodlJournalWipeMem();
+    try { hodlJournalWipeMem(); } catch {}
     hodlKeys = hodlKeys.map((state) => {
       let fields = state.fields || {}, privateKeys = fields.privateKeys;
       if (privateKeys) Object.keys(privateKeys).forEach((kind) => {
@@ -17401,6 +24157,9 @@ function hodlInitSecretFieldAutoClear() {
       if (field) {
         field.value = "";
         delete field.dataset.previousValue;
+        // A beforeinput with no paired input event (aborted, or IME
+        // composition) leaves this expando holding the field's prior value.
+        delete field.hodlDiceBeforeInput;
       }
     }
     hodlClearPassphraseField();
@@ -17408,12 +24167,30 @@ function hodlInitSecretFieldAutoClear() {
     if (psbtKey) psbtKey.value = "";
     if (psbtPass) psbtPass.value = "";
     hodlClearStationPassphrase("psbt-pass");
-    let psbtText = document.getElementById("psbt-text"), psbtAxTranscript = document.getElementById("psbt-ax-transcript");
+    let psbtText = document.getElementById("psbt-text"), psbtAxTranscript = document.getElementById("psbt-ax-transcript"), psbtAuditBefore = document.getElementById("psbt-audit-before");
     if (psbtText) psbtText.value = "";
     if (psbtAxTranscript) psbtAxTranscript.value = "";
-    for (let id of ["nonce-key", "nonce-pass", "nonce-text"]) {
+    if (psbtAuditBefore) psbtAuditBefore.value = "";
+    // A pending audit upload must not write it back once the read finishes.
+    try { hodlPsbtRetireAuditUploads(); } catch {}
+    try { hodlPsbtRetireInspectorUploads(); } catch {}
+    // The rendered audit holds change addresses and fingerprints derived
+    // from the loaded key; retire it with the field it was computed from.
+    try { hodlPsbtClearSignerAudit(); } catch {}
+    for (let id of ["nonce-key", "nonce-pass", "nonce-text", "descriptor-reuse-text"]) {
       let field = document.getElementById(id);
       if (field) field.value = "";
+    }
+    // The pasted RBF original is a PSBT too: it can hide an xprv in
+    // proprietary fields, so it wipes with the same sweep, and a pending
+    // upload of it retires with the session.
+    let psbtRbfOriginal = document.getElementById("psbt-rbf-original");
+    if (psbtRbfOriginal) psbtRbfOriginal.value = "";
+    try { hodlPsbtRetireRbfUploads(); } catch {}
+    // The key-reuse verdict lists derived keys and paths: retire it with its field.
+    for (let id of ["descriptor-reuse-out", "descriptor-reuse-error"]) {
+      let output = document.getElementById(id);
+      if (output) output.innerHTML = "";
     }
     hodlClearStationPassphrase("nonce-pass");
     hodlSyncPsbtControls();
@@ -17432,8 +24209,10 @@ function hodlInitSecretFieldAutoClear() {
     if (spVins) spVins.value = "";
     let spOut = document.getElementById("sp-out"), spError = document.getElementById("sp-error"), spSession = document.getElementById("sp-session");
     if (spOut) spOut.innerHTML = "";
+    hodlSpVerifyMatches = null;
+    hodlSpSendLast = null;
     if (spError) spError.textContent = "";
-    if (spSession) spSession.textContent = hodlSpNote;
+    if (spSession) hodlPaintSpSession(hodlSpNote);
     let spRecipients = document.getElementById("sp-recipients"), spVerifyVins = document.getElementById("sp-verify-vins"), spVerifyOutputs = document.getElementById("sp-verify-outputs"), spLabel = document.getElementById("sp-label"), spPayname = document.getElementById("sp-payname");
     if (spRecipients) spRecipients.value = "";
     if (spVerifyVins) spVerifyVins.value = "";
@@ -17458,14 +24237,13 @@ function hodlInitSecretFieldAutoClear() {
     hodlVanityRun = null;
     hodlVanitySource = "";
     hodlVanityApplying = false;
-    let vanityPass = document.getElementById("vanity-pass"), vanityOut = document.getElementById("vanity-out"), vanityError = document.getElementById("vanity-error"), vanityStatus = document.getElementById("vanity-status");
-    if (vanityPass) vanityPass.textContent = "";
+    let vanityOut = document.getElementById("vanity-out");
     if (vanityOut) {
       vanityOut.innerHTML = "";
       vanityOut.style.removeProperty("--vanity-pass-width");
     }
-    if (vanityError) vanityError.textContent = "";
-    if (vanityStatus) vanityStatus.textContent = "Idle. No range has been ground this session.";
+    hodlSetVanityError(null);
+    hodlVanitySetStatus(hodlNote("Idle. No range has been ground this session."));
     hodlVanitySyncSource();
     hodlVanitySyncControls();
     // The keys above were just reset, so their passphrases (and thus the
@@ -17500,6 +24278,40 @@ function hodlInitSecretFieldAutoClear() {
     } catch {} finally {
       delete psbtEditorWipe.dataset.journalSilent;
     }
+    try { hodlKeyScan?.destroy(); } catch {}
+    hodlKeyScan = null;
+    try { hodlSeedPicker?.destroy(); } catch {}
+    hodlSeedPicker = null;
+    try { hodlSecureDicePad?.destroy(); } catch {}
+    hodlSecureDicePad = null;
+    // The PSBT panels come down before any decoder is retired (their decoders
+    // live in the same registry as the Key Station's), then the registry goes.
+    try { hodlDestroyPsbtScans(); } catch {}
+    // The seed scan panel shares the Key Station's decoders: it comes down
+    // before they are retired too.
+    try { hodlSeedScan?.destroy(); } catch {}
+    hodlSeedScan = null;
+    hodlSeedScanOpenAfterMount = false;
+    hodlKeyScanOpenAfterMount = false;
+    try { hodlDestroyTextScans(); } catch {}
+    try { hodlKeyScanModule?.retireQrDecoders(); } catch {}
+    try { hodlPsbtScanModule?.retireQrDecoders(); } catch {}
+    try { hodlTextScanModule?.retireQrDecoders(); } catch {}
+    // The form outlives the wipe: give it a fresh, closed panel.
+    try { hodlBindKeyScan(); } catch {}
+    try { hodlBindSeedScan(); } catch {}
+    // The PSBT hosts are static: give them fresh, closed panels too.
+    try { hodlBindPsbtScans(); } catch {}
+    try { hodlBindTextScans(); } catch {}
+    try { hodlSecureEntryConfirm?.close({ restoreFocus: false }); } catch {}
+    try { hodlSecureEntryEnd(); } catch {}
+    // The seed form showed the picker: redraw it as the standard field.
+    try { if (document.getElementById("seed-picker-host")) hodlSetMode(hodlKeyMode); } catch {}
+    try { hodlReleaseSecureKeyField(); } catch {}
+    // The masked key field showed the vault: redraw it as the standard field.
+    try { if (document.querySelector("[data-secure-key]")) hodlSetMode(hodlKeyMode); } catch {}
+    try { if (document.getElementById("secure-dice-host")) hodlSetMode(hodlKeyMode); } catch {}
+    hodlSyncWorkspaceCounts();
   };
   addEventListener("pagehide", clearSecretFields);
   addEventListener("pageshow", (event) => {
@@ -17533,10 +24345,12 @@ function hodlApplyLocale() {
   document.querySelectorAll("#workspace-tabs [data-workspace]").forEach((button) => {
     let entry = hodlWorkspaceTabs.find(([id]) => id === button.dataset.workspace);
     if (!entry) return;
-    let [, label, short] = entry;
-    if (button.firstChild) button.firstChild.textContent = hodlTText(label);
-    if (button.lastChild) button.lastChild.textContent = hodlTText(short);
+    let [, label, short, wide = label] = entry;
+    let fullLabel = button.querySelector('[data-workspace-label="full"]'), shortLabel = button.querySelector('[data-workspace-label="short"]');
+    if (fullLabel) fullLabel.textContent = hodlTText(wide);
+    if (shortLabel) shortLabel.textContent = hodlTText(short);
     button.setAttribute("aria-label", hodlTText(label));
+    if (wide !== label) button.title = hodlTText(label);
   });
   [...hodlKeyModeSelectEl.options].forEach((option) => {
     option.textContent = hodlTText(hodlKeyModeLabels[option.value]);
@@ -17551,6 +24365,9 @@ function hodlApplyLocale() {
   hodlRenderKeyForm();
   if (state) hodlRestoreFormFields(state);
   hodlUpdateSeedLengthControl();
+  // Filled-in help notes are no catalog keys the sweep could carry across.
+  hodlUpdateHardeningHelp();
+  hodlUpdateHardeningHelp("msig-");
   hodlUpdateAddressEstimate();
   hodlUpdateAddressEstimate("msig-");
   hodlUpdateCoinTypeHelp();
@@ -17561,17 +24378,40 @@ function hodlApplyLocale() {
   if (hodlWalletResult?.kind === "msig") hodlShowMsig();
   else if (hodlWalletResult) hodlRefreshKeyResult();
   hodlRefreshPsbtLocale();
+  hodlRefreshVanityLocale();
+  hodlRefreshStationKeyPickers();
+  hodlJournalRenderVisual();
+  // The paste controls fill their field's name into their labels.
+  hodlDecorateAppPaste();
+  // The co-signer titles and labels, the BIP-85 child and the Silent Payments
+  // results fill values into their text, so they render again too.
+  hodlReindexMsigKeys();
+  hodlRenderBip85Out();
+  hodlRefreshSpLocale();
+  // The station tabs fill names into their labels, so they render again too.
+  hodlRenderKeyTabs();
+  hodlRenderMsigTabs();
+  hodlRenderStationTabs(hodlBip85Tabs);
+  hodlRenderStationTabs(hodlSpTabs);
+  hodlPaintKeySummary();
   hodlApplyTheme(hodlReadThemeMode());
   hodlRefreshWorkspaceErrors();
   hodlSecurityLog?.refresh();
   document.querySelectorAll("#msig-keys textarea").forEach((ta) => {
     if (ta.value) hodlCheckXpub(ta);
   });
+  try { hodlDestroyTextScans(); } catch {}
+  try { hodlBindTextScans(); } catch {}
+  // These three hosts are static, so a language switch re-mounts the panels
+  // to pick up the new strings (the Key Station's is re-rendered above).
+  try { hodlDestroyPsbtScans(); } catch {}
+  try { hodlBindPsbtScans(); } catch {}
 }
 async function hodlBoot() {
   hodlInitPassphraseVault();
   hodlInitStationPassphraseVaults();
   hodlInitWorkspace();
+  initOtsVerifier(document);
   hodlInitAddressQr(hodlQrSvg, { copy: hodlClipboardIconMarkup, copied: hodlCopiedIconMarkup }, { frames: hodlPsbtQrFrames });
   hodlLowEntropyConfirm = initLowEntropyConfirm();
   hodlFingerprintCollisionConfirm = initFingerprintCollisionConfirm();
@@ -17593,9 +24433,23 @@ async function hodlBoot() {
   hodlInitAddressBenchmark();
   hodlInitSegmentedControls();
   initQrReferences({ copy: hodlClipboardIconMarkup, copied: hodlCopiedIconMarkup });
-  hodlInitDescriptorCopy();
-  hodlInitPrivateCopy({ copyIcon: hodlClipboardIconMarkup, copiedIcon: hodlCopiedIconMarkup });
+  hodlInitDescriptorCopy({ onCopyStart: hodlJournalCopyStart });
+  initAppClipboard();
+  initAppPaste({ fill: hodlAppPasteInto });
+  hodlDecorateAppPaste();
+  hodlInitPrivateCopy({ copyIcon: hodlClipboardIconMarkup, copiedIcon: hodlCopiedIconMarkup, onCopyStart: hodlJournalCopyStart });
   hodlInitEndSession();
+  hodlBindPsbtScans();
+  // Each PSBT tool's Clear closes its scan panel too.
+  for (let id of ["psbt-wipe", "nonce-wipe", "psbted-wipe"]) document.getElementById(id)?.addEventListener("click", hodlResetPsbtScans);
+  hodlBindTextScans();
+  for (let [button, card] of hodlTextScanClears) document.getElementById(button)?.addEventListener("click", () => hodlResetTextScans(card));
+  // Clear Comparison closes the comparison field's panel only.
+  document.getElementById("psbted-compare-clear")?.addEventListener("click", () => hodlResetPsbtScansIn(document.getElementById("psbted-compare")));
+  // The RBF and signer-audit hosts sit in collapsible sections: collapsing one
+  // hides its panel, so it closes that panel, or the camera would keep
+  // streaming out of sight (Kimi, GLM, DeepSeek).
+  for (let id of ["psbt-rbf-options", "psbt-audit-options"]) document.getElementById(id)?.addEventListener("toggle", (event) => { if (!event.currentTarget.open) hodlResetPsbtScansIn(event.currentTarget); });
   hodlInitLocale(hodlApplyLocale);
 }
 // Curve operations need the WebAssembly module instantiated first (async in

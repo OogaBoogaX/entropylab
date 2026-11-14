@@ -12,10 +12,13 @@ import assert from "node:assert/strict";
 import { HDKey as ScureHDKey } from "@scure/bip32";
 import { mnemonicToSeedSync, entropyToMnemonic } from "@scure/bip39";
 import { wordlist } from "@scure/bip39/wordlists/english.js";
-import { hex } from "@scure/base";
+import { hex, createBase58check } from "@scure/base";
+import { sha256 } from "@noble/hashes/sha2.js";
 import { renderSVG } from "uqr";
 import { VAULT_MASK } from "../src/js/passphrase-vault.js";
 import { loadAppFunctions } from "./app-slice-harness.mjs";
+import { parseKeyVault, serializeKeyVault } from "../src/js/keymanager.js";
+import { JOURNAL_MAX_TEXT_LENGTH } from "../src/js/journal.js";
 
 // BIP39 test vectors (trezor/python-mnemonic vectors.json), passphrase "TREZOR".
 const VECTORS = [
@@ -27,6 +30,14 @@ const rootOf = (words, pass) => ScureHDKey.fromMasterSeed(mnemonicToSeedSync(wor
 const seedQrDigits = (words) => words.split(" ").map((word) => String(wordlist.indexOf(word)).padStart(4, "0")).join("");
 
 const inert = new Proxy(function () {}, { get: (target, key) => key === Symbol.toPrimitive ? () => "" : key === "then" ? undefined : inert, apply: () => inert, construct: () => inert });
+const b58 = createBase58check(sha256);
+// Re-serialize an extended key with SLIP-132 version bytes: same payload, a
+// different prefix (Yprv 0x0295b005, Zprv 0x02aa7a99 — both multisig scope).
+const withVersion = (xkey, ver) => {
+  const payload = b58.decode(xkey);
+  new DataView(payload.buffer, payload.byteOffset).setUint32(0, ver);
+  return b58.encode(payload);
+};
 const load = async (names, stubs = {}, settable = []) => {
   Object.assign(globalThis, { __ENTROPYLAB_TEST_HOOKS__: false, document: inert, window: inert });
   try {
@@ -130,6 +141,47 @@ test("the recovery sheet carries the seed material only when private material is
     const secrets = [vector.words, vector.entropy, vector.seed, ...(words === 12 || words === 24 ? [seedQrDigits(vector.words)] : [])];
     for (const secret of secrets) assert.ok(sheet.includes(secret), `${label}: the private sheet lacks ${secret.slice(0, 12)}…`);
     assert.ok(!secrets.some((secret) => watch.includes(secret)), `${label}: the watch-only sheet carries seed material`);
+    const spans = [], publicSpans = [];
+    assert.equal(hodlRecoverySheetText(wallet, true, spans), sheet, "live annotations preserve recovery-sheet bytes");
+    const values = spans.filter(span => span.kind === "value").map(span => sheet.slice(span.start, span.end));
+    for (const secret of secrets) assert.ok(values.includes(secret), `${label}: private material lacks an exact field annotation`);
+    assert.equal(hodlRecoverySheetText(wallet, false, publicSpans), watch);
+    assert.deepEqual(publicSpans, []);
+  }
+});
+
+test("compact backup recovery sheets keep root recovery material while omitting reproducible address and WIF rows", async () => {
+  const vector = VECTORS[0], wallet = await fromWords(vector);
+  const { hodlRecoverySheetText } = await load(["hodlRecoverySheetText"]);
+  const full = hodlRecoverySheetText(wallet, true), compact = hodlRecoverySheetText(wallet, true, null, true);
+  const root = rootOf(vector.words, vector.pass);
+  for (const secret of [vector.words, vector.entropy, vector.seed, root.privateExtendedKey, seedQrDigits(vector.words)]) {
+    assert.ok(compact.includes(secret), "compact backups must retain the independently verified recovery material");
+  }
+  for (const account of wallet.accounts) for (const branch of account.addressBranches) {
+    assert.ok(compact.includes(branch.publicDescriptor));
+    for (const row of branch.rows) {
+      const path = row.path, privateKey = root.derive(path).privateKey;
+      const wif = b58.encode(new Uint8Array([0x80, ...privateKey, 0x01]));
+      assert.ok(full.includes(row.address) && full.includes(wif), "ordinary recovery exports must retain address and WIF rows");
+      assert.ok(!compact.includes(row.address) && !compact.includes(wif), "compact backups must omit reproducible rows");
+      privateKey.fill(0);
+    }
+  }
+  assert.equal(hodlRecoverySheetText(wallet, true), full, "compact formatting must not mutate normal exports");
+});
+
+test("a 1000-address-range wallet fits the snapshot limit with compact backup recovery material", async () => {
+  const vector = VECTORS[0];
+  const wallet = await builders.hodlMnemonicWalletWithProgress(vector.words, vector.pass, "mainnet", 1000, undefined, 0, 0, tracker, 84, 0);
+  const api = await load(["hodlRecoverySheetText", "hodlWipeWalletKeys"]);
+  try {
+    const full = api.hodlRecoverySheetText(wallet, true), compact = api.hodlRecoverySheetText(wallet, true, null, true);
+    assert.ok(full.length > JOURNAL_MAX_TEXT_LENGTH, "the fixture must reproduce the previous oversized snapshot");
+    assert.ok(compact.length < JOURNAL_MAX_TEXT_LENGTH, "a legal address range must not prevent backing up other Journal data");
+    assert.ok(compact.includes(vector.words) && compact.includes(vector.seed));
+  } finally {
+    api.hodlWipeWalletKeys(wallet);
   }
 });
 
@@ -175,6 +227,44 @@ test("PSBT, BIP-85, SP and Vanity load the wallet's own root and words", async (
   assert.equal(vanity.hodlVanityPlan(state, "passphrase", "p2wpkh").mnemonic, vector.words, "the passphrase grind's words");
   const parent = expected.derive("m/84'/0'"), plan = vanity.hodlVanityPlan(state, "derivation", "p2wpkh");
   assert.equal(hex.encode(plan.node), hex.encode(parent.privateKey) + hex.encode(parent.chainCode), "the derivation grind's node");
+});
+
+// Key Station refuses a multisig extended key outright ("…is a multisig
+// extended key. Use it in Multi Signature…"). The BIP-85 root loader parsed
+// the same keys with no scope check: a depth-0 Yprv/Zprv loaded silently and
+// derived children as if it were an xprv root (audit L9).
+test("the BIP-85 root loader refuses multisig extended keys, like Key Station", async () => {
+  const bip85 = await load(["hodlBip85LoadXprv", "hodlBip85Root"], { hodlBip85WipeParent() {} });
+  const rootXprv = rootOf(VECTORS[0].words, "").privateExtendedKey;
+  assert.throws(() => bip85.hodlBip85LoadXprv(withVersion(rootXprv, 0x0295b005)), /multisig/i, "Yprv");
+  assert.throws(() => bip85.hodlBip85LoadXprv(withVersion(rootXprv, 0x02aa7a99)), /multisig/i, "Zprv");
+  assert.equal(bip85.hodlBip85Root, null, "a refused key must not become the parent");
+  bip85.hodlBip85LoadXprv(rootXprv);
+  assert.ok(bip85.hodlBip85Root.privateKey, "the singlesig root still loads");
+});
+
+// The BIP-85 loader keeps the node the parse built and wipes it before every
+// refusal: it used to build a second node from the same key, and both were
+// dropped with their private keys (red-team sweep 0eed735, part08 #4).
+test("the BIP-85 root loader wipes the parsed node when it refuses a key, and keeps it when it loads", async () => {
+  const { hodlParseExtendedKey: parse } = await load(["hodlParseExtendedKey"]);
+  const parsedNodes = [];
+  const bip85 = await load(["hodlBip85LoadXprv", "hodlBip85Root"], {
+    hodlBip85WipeParent() {},
+    hodlParseExtendedKey: (value) => {
+      const parsed = parse(value);
+      parsedNodes.push(parsed.node);
+      return parsed;
+    },
+  });
+  const root = rootOf(VECTORS[0].words, "");
+  for (const [what, key] of [["a depth-1 key", root.deriveChild(0).privateExtendedKey], ["a Zprv", withVersion(root.privateExtendedKey, 0x02aa7a99)]]) {
+    assert.throws(() => bip85.hodlBip85LoadXprv(key), what);
+    assert.equal(parsedNodes.at(-1).privateKey, null, `${what}: the parsed node is wiped`);
+  }
+  bip85.hodlBip85LoadXprv(root.privateExtendedKey);
+  assert.equal(bip85.hodlBip85Root, parsedNodes.at(-1), "the parsed node is the parent kept");
+  assert.ok(bip85.hodlBip85Root.privateKey, "and it still holds its key");
 });
 
 // Station passphrase fields (SP, PSBT, Nonce) keep the passphrase in a vault.
@@ -260,14 +350,19 @@ test("station passphrase fields hold only bullets and still derive the published
   assert.notEqual(first, second, "a same-length passphrase edit did not change the run stamp");
 });
 
-test("the journal still records a derived key's words", async () => {
-  const vector = VECTORS[0], wallet = await fromWords(vector), doc = { entries: [] };
-  const journal = await load(["hodlJournalSyncDerivedKeys"], { hodlJournalUnlocked: () => true, hodlJournalError() {} }, ["hodlJournalDoc"]);
-  journal.__set.hodlJournalDoc(doc);
-  const synced = journal.hodlJournalSyncDerivedKeys([{ id: 3, isLab: false, mode: "dice", diceMethod: "coldcard", name: "Key 3", fields: { dice: "1 2 3" }, result: wallet }]);
-  assert.equal(synced.added, 1);
-  assert.equal(doc.entries.length, 1);
-  assert.equal(doc.entries[0].phrase, vector.words);
+test("a Journal key export keeps the supplied words and passphrase without trusting cached outputs", async () => {
+  const vector = VECTORS[0], wallet = await fromWords(vector);
+  const pass = new TextEncoder().encode(vector.pass);
+  const { hodlKeyManagerEntry } = await load(["hodlKeyManagerEntry"]);
+  const text = serializeKeyVault([hodlKeyManagerEntry({ id: 3, mode: "seed", name: "Key 3", fields: { seed: vector.words, pass }, result: wallet })]);
+  const imported = parseKeyVault(text).keys[0];
+  assert.equal(imported.fields.seed, vector.words);
+  assert.equal(imported.fields.pass, "TREZOR");
+  assert.equal(imported.result, null);
+  assert.equal(imported.needsDerivation, true);
+  assert.ok(!text.includes(vector.seed), "the backup copied a cached derived seed");
+  assert.equal(new TextDecoder().decode(pass), "TREZOR", "export wiped the live input passphrase");
+  assert.equal(hex.encode(wallet.entropy), vector.entropy, "export wiped the live wallet");
 });
 
 // Hidden, every word masks at the same width (#599), so nothing but the word
@@ -294,4 +389,59 @@ test("a seed wallet's bytes are recorded by the derivation that makes them", asy
   for (const name of ["entropy", "seed"]) assert.ok(control.rowKeys.includes(wallet[name]), `the derivation did not record the ${name}`);
   api.hodlSettleDerivationKeys(control);
   for (const name of ["entropy", "seed"]) assert.ok(wallet[name].every((byte) => byte === 0), `an uncommitted wallet kept its ${name}`);
+});
+
+// Every refusal of an imported extended key wipes the node the parse built:
+// they came before the derivation's own finally, so the private node waited
+// for the collector (red-team sweep 0eed735, part01 #5).
+test("a refused imported extended key has its parsed node wiped", async () => {
+  const { hodlParseExtendedKey: parse } = await load(["hodlParseExtendedKey"]);
+  const nodes = [];
+  const importer = await load(["hodlImportedWalletWithProgress"], {
+    hodlParseExtendedKey: (value) => {
+      const parsed = parse(value);
+      nodes.push(parsed.node);
+      return parsed;
+    },
+  });
+  const root = rootOf(VECTORS[0].words, "");
+  for (const [what, key, network] of [
+    ["a Zprv", withVersion(root.derive("m/48'/0'/0'/2'").privateExtendedKey, 0x02aa7a99), "mainnet"],
+    ["a mainnet key on testnet", root.derive("m/84'/0'/0'").privateExtendedKey, "testnet"],
+    ["a depth-1 key", root.deriveChild(0).privateExtendedKey, "mainnet"],
+  ]) {
+    await assert.rejects(() => importer.hodlImportedWalletWithProgress(key, network, 2, 0, 0, tracker, 84, 0), what);
+    assert.equal(nodes.at(-1).privateKey, null, `${what}: the parsed node is wiped`);
+  }
+  // A stopped import throws from the tracker before the derivation starts,
+  // and is wiped too (#1480 r5 gate, MiniMax).
+  const stopped = { setTotal() { throw new Error("stopped"); }, step() { throw new Error("stopped"); } };
+  await assert.rejects(() => importer.hodlImportedWalletWithProgress(root.derive("m/84'/0'/0'").privateExtendedKey, "mainnet", 2, 0, 0, stopped, 84, 0), /stopped/);
+  assert.equal(nodes.at(-1).privateKey, null, "a stopped import: the parsed node is wiped");
+  // And an import that completes leaves no private key in the parsed node.
+  const done = await importer.hodlImportedWalletWithProgress(root.derive("m/84'/0'/0'").privateExtendedKey, "mainnet", 2, 0, 0, tracker, 84, 0);
+  assert.equal(done.accounts.length, 1);
+  assert.equal(nodes.at(-1).privateKey, null, "a completed import: the parsed node is wiped");
+});
+
+// The wallet.dat bytes are zeroed once the download's Blob holds its own copy:
+// with secrets shown they carry the spend descriptors (red-team sweep
+// 0eed735, part02 #9).
+test("the wallet.dat download zeroes its bytes once the Blob holds them", async () => {
+  const bytes = new Uint8Array(64).fill(7);
+  let clicked = false;
+  const download = await loadAppFunctions(["hodlDownloadWalletDat"], {
+    stubs: {
+      hodlWalletExport: { hasDescriptors: () => true, hasPrivateDescriptors: () => true, buildWalletDat: () => bytes, walletDatFilename: () => "wallet.dat" },
+      hodlWalletExportView: (result) => result,
+      hodlWalletDatDeps: () => ({}),
+      document: { createElement: () => ({ click() { clicked = true; } }) },
+    },
+    settable: ["hodlWalletResult", "hodlRevealPrivate"],
+  });
+  download.__set.hodlWalletResult({ kind: "hd" });
+  download.__set.hodlRevealPrivate(true);
+  download.hodlDownloadWalletDat();
+  assert.equal(clicked, true, "the download still starts");
+  assert.ok(bytes.every((byte) => byte === 0), "the wallet.dat bytes are zeroed");
 });

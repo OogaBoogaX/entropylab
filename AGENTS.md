@@ -2,6 +2,14 @@
 
 Guidelines for AI coding agents.
 
+**Security work:** read [docs/SECURITY_POSTURE.md](docs/SECURITY_POSTURE.md)
+(the evidence map and the known limits),
+[docs/Threat_Model.md](docs/Threat_Model.md), [SECURITY.md](SECURITY.md) and
+[docs/TESTING.md](docs/TESTING.md) first. Check claims against the code at the
+commit you are on: `rock` is the development line, and a pending pull request
+is not shipped behaviour. Link every security claim, in code comments, docs or
+pull requests, to the code or test that backs it.
+
 - Read [CONTRIBUTING.md](CONTRIBUTING.md) before making changes. The short
   version: never generate entropy used for key material, no network egress, output stays a single
   self-contained `entropylab.html`.
@@ -10,7 +18,7 @@ Guidelines for AI coding agents.
 - **Never assume:** when something is unknown, check the documentation or the
   code first, then proceed.
 - Edit sources in `src/` (and the Rust crates in `entropylab-wasm/`,
-  `psbt-wasm/`, and `vanity-wasm/`), never generated build artifacts — that
+  `psbt-wasm/`, `vanity-wasm/`, and `qr-wasm/`), never generated build artifacts — that
   includes `entropylab.html` and the `src/js/*-wasm-b64.js` modules
   (regenerate them with `npm run build:wasm`; it needs Rust, toolchain pinned
   by each crate's `rust-toolchain.toml`).

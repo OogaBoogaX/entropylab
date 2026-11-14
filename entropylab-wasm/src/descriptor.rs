@@ -15,10 +15,10 @@
 //! secret temporaries live only for the call, like the existing BIP32 path
 //! (see the crate doc's residual note).
 
-use crate::{ctx, read, wipe_string};
+use crate::{ctx, read, wipe_string, wipe_xpriv};
 use bitcoin::bip32::ChildNumber;
 use bitcoin::{Network, PublicKey as BtcPublicKey, ScriptBuf};
-use miniscript::descriptor::{checksum, DescriptorPublicKey, DescriptorSecretKey, SinglePubKey, Wildcard};
+use miniscript::descriptor::{checksum, DescriptorPublicKey, DescriptorSecretKey, KeyMap, SinglePubKey, Wildcard};
 use miniscript::{Descriptor, ForEachKey};
 use std::str::FromStr;
 
@@ -155,38 +155,51 @@ fn rewrite_sorted_multi_a(args: &str, index: u32) -> Result<String, String> {
 /// string is validated by rust-miniscript afterwards.
 fn substitute_sorted_multi_a(body: &str, index: u32) -> Result<String, String> {
     let mut out = body.to_owned();
-    let mut cursor = 0usize;
-    while let Some(found) = out[cursor..].find("sortedmulti_a(") {
-        let start = cursor + found;
-        let prev = if start == 0 { None } else { Some(out.as_bytes()[start - 1]) };
-        if !matches!(prev, Some(b'(') | Some(b',') | Some(b'{') | Some(b':')) {
-            return Err("sortedmulti_a() can only appear where a miniscript fragment is expected".into());
-        }
-        let open = start + "sortedmulti_a".len();
-        let bytes = out.as_bytes();
-        let mut depth = 1usize;
-        let mut i = open + 1;
-        let mut close = None;
-        while i < bytes.len() {
-            match bytes[i] {
-                b'(' => depth += 1,
-                b')' => {
-                    depth -= 1;
-                    if depth == 0 {
-                        close = Some(i);
-                        break;
-                    }
-                }
-                _ => {}
+    // The copy can carry an xprv in another key expression; wipe it when a
+    // malformed sortedmulti_a() makes the rewrite bail out.
+    let result = (|| -> Result<(), String> {
+        let mut cursor = 0usize;
+        while let Some(found) = out[cursor..].find("sortedmulti_a(") {
+            let start = cursor + found;
+            let prev = if start == 0 { None } else { Some(out.as_bytes()[start - 1]) };
+            if !matches!(prev, Some(b'(') | Some(b',') | Some(b'{') | Some(b':')) {
+                return Err("sortedmulti_a() can only appear where a miniscript fragment is expected".into());
             }
-            i += 1;
+            let open = start + "sortedmulti_a".len();
+            let bytes = out.as_bytes();
+            let mut depth = 1usize;
+            let mut i = open + 1;
+            let mut close = None;
+            while i < bytes.len() {
+                match bytes[i] {
+                    b'(' => depth += 1,
+                    b')' => {
+                        depth -= 1;
+                        if depth == 0 {
+                            close = Some(i);
+                            break;
+                        }
+                    }
+                    _ => {}
+                }
+                i += 1;
+            }
+            let close = close.ok_or_else(|| "unbalanced sortedmulti_a() expression".to_string())?;
+            let replacement = rewrite_sorted_multi_a(&out[open + 1..close], index)?;
+            // The wiping allocator covers both reallocation and any private
+            // suffix left beyond the new length when this buffer is dropped.
+            out.replace_range(start..=close, &replacement);
+            cursor = start + replacement.len();
         }
-        let close = close.ok_or_else(|| "unbalanced sortedmulti_a() expression".to_string())?;
-        let replacement = rewrite_sorted_multi_a(&out[open + 1..close], index)?;
-        out.replace_range(start..=close, &replacement);
-        cursor = start + replacement.len();
+        Ok(())
+    })();
+    match result {
+        Ok(()) => Ok(out),
+        Err(error) => {
+            wipe_string(&mut out);
+            Err(error)
+        }
     }
-    Ok(out)
 }
 
 struct Derived {
@@ -195,9 +208,22 @@ struct Derived {
     keys: Vec<BtcPublicKey>,
 }
 
+/// Erases the moved-out xprv/WIF keys. The wiping allocator also erases the
+/// original map nodes on deallocation; this consuming iterator alone cannot
+/// erase those allocations, nor a partial map dropped inside a failed parse.
+fn wipe_key_map(secrets: KeyMap) {
+    for (_, mut secret) in secrets {
+        match &mut secret {
+            DescriptorSecretKey::Single(key) => key.key.inner.non_secure_erase(),
+            DescriptorSecretKey::XPrv(key) => wipe_xpriv(&mut key.xkey),
+            DescriptorSecretKey::MultiXPrv(key) => wipe_xpriv(&mut key.xkey),
+        }
+    }
+}
+
 fn derive_miniscript(body: &str, index: u32, network: Network) -> Result<Derived, String> {
     let (descriptor, secrets) = Descriptor::parse_descriptor(ctx(), body).map_err(|e| format!("invalid descriptor: {}", e))?;
-    drop(secrets); // parsed xprv/WIF keys; only their public halves are used
+    wipe_key_map(secrets); // parsed xprv/WIF keys; only their public halves are used
     if descriptor.is_multipath() {
         return Err("a multipath descriptor denotes several wallets; derive one branch at a time".into());
     }
