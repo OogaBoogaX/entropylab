@@ -41,6 +41,7 @@
   --scrollbar-thumb: #4a4a4a;
   /* Fixed colours that do not follow the theme ramp. */
   --image-ground: #fff; /* the white matte behind LifeHash icons and QR codes; QR codes need it to scan */
+  --image-ink: #111111; /* the dark squares drawn on --image-ground, matching the QR images' own ink */
   --on-color: #fff; /* ink on a coloured ground: dismiss buttons, the network glyph, a running Derive */
   --wordmark: #ffffff; /* the EntropyLab wordmark runs to the end of the ramp, not to --fg */
   --progress-start: #c66500; /* derive progress gradient, either side of --accent */
@@ -2646,6 +2647,29 @@ label.field.journal-format-control { min-width: 0; margin-top: 0; }
 #key-scan-video, #seed-scan-video { display: block; width: 100%; max-width: 480px; margin-top: var(--space-component); border-radius: var(--radius-field); }
 #key-scan-confirm, #seed-scan-confirm { margin-top: var(--space-section); }
 #key-scan-confirm .key-scan-value, #seed-scan-confirm .key-scan-value { margin-top: var(--space-control); }
+/* Check a SeedQR copy (Verify tab, preview builds only). The entry grid is a
+   copy template on the QR images' fixed ground and ink: numbered edges, a
+   heavier rule after every 5th square, and a wrong square on the danger edge. */
+#seedqr-check [hidden] { display: none; }
+#seedqr-check .segmented-control, #seedqr-check-grid-panel > .field-note, #seedqr-check-text-panel, #seedqr-check-result > * + * { margin-top: var(--space-component); }
+.seedqr-entry-grid {
+  display: grid; grid-template-columns: auto repeat(var(--seedqr-columns, 25), minmax(0, 1fr));
+  width: 100%; max-width: 640px; margin-top: var(--space-component); padding: var(--inset-box);
+  background: var(--image-ground); border-radius: var(--radius-control); color: var(--image-ink);
+}
+.seedqr-entry-heading, .seedqr-entry-corner { font-family: var(--mono); font-size: var(--text-micro); line-height: 1; text-align: center; align-self: center; padding: var(--space-hairline); }
+.seedqr-entry-heading.is-group-end { font-weight: 700; }
+.seedqr-entry-cell {
+  aspect-ratio: 1; min-width: 0; margin: 0; padding: 0; border-radius: 0; cursor: pointer;
+  border: 1px solid color-mix(in oklab, var(--image-ink) 30%, var(--image-ground)); background: var(--image-ground);
+}
+.seedqr-entry-cell.is-group-end-col { border-right: 2px solid var(--image-ink); }
+.seedqr-entry-cell.is-group-end-row { border-bottom: 2px solid var(--image-ink); }
+.seedqr-entry-cell[aria-pressed="true"] { background: var(--image-ink); }
+.seedqr-entry-cell[data-seedqr-wrong] { box-shadow: inset 0 0 0 3px var(--danger-bright); }
+.seedqr-entry-cell:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.seedqr-check-picture svg, .seedqr-copy-grid-image svg { width: 100%; max-width: 420px; height: auto; }
+#seedqr-check-words-value { flex: 1 1 auto; min-width: 0; }
 #seed-picker-host [hidden] { display: none; }
 #seed-picker-chips, #seed-picker-matches, #seed-picker-replace-matches { flex-wrap: wrap; gap: var(--space-control); }
 #seed-picker-chips .btn, #seed-picker-matches .btn, #seed-picker-replace-matches .btn { min-height: 44px; min-width: 44px; }
