@@ -42,7 +42,8 @@ A row records one match: what was rebuilt, where, and the SHA-256 it matched.
 | 2026-10-03 | `cb220887c052b18c767a32823214010b65ffdd3a` (v1.0.0rc1) | `entropylab.html`, from the committed WASM modules | `7f8685814e2bab0c80f75dd6d2cff1b3354bee51faecd65942a73e12968808a0` | macOS 26.3, arm64, Node 25.8.1, npm 11.14.1, on the host (no container) | payals |
 | 2026-10-06 | `7f48ec4` (v1.0.0rc2, #817) | `entropylab.html`, from the committed WASM modules | `93295d7a001ec831f70b649e4078206a2f2eec7ffcacade8af9f8339a8e26361` | Windows 11 Home 10.0.26200, x86_64, Node 24.14.0, on the host (no container) | MrHodlX |
 | 2026-10-07 | `7f48ec4` (v1.0.0rc2, #817) | `entropylab.html`, from the committed WASM modules | `93295d7a001ec831f70b649e4078206a2f2eec7ffcacade8af9f8339a8e26361` | Debian GNU/Linux 13.7 (trixie) virtual machine run by an AI assistant, x86_64, Linux 6.12, Node v22.23.2, npm 10.9.8, on the host (no container) | breagoth |
-| 2026-10-14 | `c1037ba` (v1.0.0) | `entropylab.html`, from the committed WASM modules | `bdf048ebbf9286a3b18998f28e1cccef1f9f9a0284a880c1864875f903adeb8d` | Windows 11 Home 10.0.26300, x86_64, Node 24.14.0, npm 11.19.1, on the host (no container) | MrHodlX |
+| 2026-10-14 | `c1037ba` (v1.0.0, v1.0.0rc3) | `entropylab.html`, from the committed WASM modules | `bdf048ebbf9286a3b18998f28e1cccef1f9f9a0284a880c1864875f903adeb8d` | Windows 11 Home 10.0.26300, x86_64, Node 24.14.0, npm 11.19.1, on the host (no container) | MrHodlX |
+| 2026-10-17 | `c1037ba` (v1.0.0, v1.0.0rc3) | `entropylab.html`, from the committed WASM modules | `bdf048ebbf9286a3b18998f28e1cccef1f9f9a0284a880c1864875f903adeb8d` | Linux x86_64 environment run by an AI assistant, Node v24.19.0, npm 11.9.0, on the host (no container) | MrHodlX |
 
 For MrHodlX's rows, the dev image was built on his laptop on 2026-09-24
 from the Dockerfile as it stands at `cb55bd9` (unchanged since `8a9eae4`):
@@ -76,3 +77,10 @@ bytes and its SHA-256 matched the published
 [v1.0.0rc1 release](https://github.com/OogaBoogaX/entropylab/releases/tag/v1.0.0rc1)
 manifest. This records HTML assembly from the committed WASM modules; no WASM
 rebuild or cryptographic-safety claim is made.
+
+The two v1.0.0 rows match the release asset (`bdf048eb…`, footer
+`c1037ba3`), not the earlier page committed inside the v1.0.0 git tag
+(`3804d578…`, footer `108becad`); see
+[Verify your download: known issue](Verify_Your_Download.md#known-issue-v100).
+Both v1.0.0 rows are MrHodlX's. A rebuild of the v1.0.0 page by someone else
+would make that release's reproduction independent, as the `cb55bd9` set is.
