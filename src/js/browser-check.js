@@ -130,10 +130,15 @@
   const wasmFailed = failed.includes("WebAssembly (secp256k1 engine)");
   // Lockdown Mode (iPhone, iPad, Mac) disables WebAssembly. There is no JS
   // secp256k1 fallback: wallet math is libsecp256k1 compiled to WASM.
-  const advice = wasmFailed
+  const secureFailed = failed.includes("Secure browser context");
+  const contextAdvice = secureFailed
+    ? `<p class="sanity-failure-advice" data-browser-help="secure-context">This browser or file viewer does not provide a secure context. Some phone file-opening routes cannot run this calculator. Downloading the file alone does not make that route supported, and this check cannot be bypassed.</p>
+    <p class="sanity-failure-advice">For practice only, open <a href="https://entropylab.online" target="_blank" rel="noopener noreferrer">the HTTPS site in your browser</a> instead of a file preview. Do not enter wallet secrets while online. A working HTTPS page does not establish a working offline iPhone setup.</p>`
+    : "";
+  const advice = contextAdvice + (wasmFailed
     ? `<p class="sanity-failure-advice">iPhone, iPad, and Mac Lockdown Mode block WebAssembly. This calculator needs it for secp256k1.</p>
     <p class="sanity-failure-advice">In Safari: tap the page-menu button in the address bar, tap More, turn off Lockdown Mode for this website, then reload. Or open the saved HTML in Firefox on a trusted air-gapped computer. Do not enter seed material until every check passes.</p>`
-    : `<p class="sanity-failure-advice">Open this file in a current, mainstream browser such as Firefox on a trusted, air-gapped computer.</p>`;
+    : `<p class="sanity-failure-advice">Open this file in a current, mainstream browser such as Firefox on a trusted, air-gapped computer.</p>`);
   document.body.innerHTML = `
 <main class="sanity-failure">
   <div class="sanity-failure-card" role="alert">
@@ -179,6 +184,7 @@
   const stepTwo = document.getElementById("beta-disclaimer-step-2");
   const confirm = document.getElementById("beta-disclaimer-confirm");
   const proof = document.getElementById("beta-disclaimer-proof");
+  const confirmTitle = document.getElementById("beta-disclaimer-confirm-title");
   const proofTexts = Array.from({ length: 10 }, (_, n) => document.getElementById(`beta-disclaimer-proof-text-${n}`));
   if (!overlay || !accept || !stepOne || !stepTwo || !confirm || !proof || proofTexts.includes(null)) return;
   const KEY = "entropylab-disclaimer-accepted";
@@ -235,7 +241,9 @@
     stepTwo.hidden = false;
     overlay.setAttribute("aria-labelledby", "beta-disclaimer-confirm-title");
     overlay.setAttribute("aria-describedby", "beta-disclaimer-confirm-text");
-    proof.focus();
+    // Let the warning be read before a phone's editing keyboard takes space.
+    // The reader reaches the input by tapping it or explicitly pressing Tab.
+    confirmTitle?.focus();
   });
   confirm.addEventListener("click", () => {
     if (!proven()) return;
