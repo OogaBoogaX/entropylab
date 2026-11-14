@@ -1,0 +1,1057 @@
+{
+ "source": {
+  "library": "python-shamir-mnemonic (the SLIP-0039 reference implementation)",
+  "version": "0.3.0",
+  "commit": "08bbb74bdcb58c918981836cb3ccf401e57ecfb4",
+  "license": "MIT",
+  "generator": "scripts/slip39-reference.py"
+ },
+ "randomSource": "Block k of stream L is SHA-256(L || uint32_be(k)), bytes drawn in order; 'one buffer every call' returns the start of SHA-256(L) x 4 on every draw; overrides replace single draws.",
+ "sets": [
+  {
+   "name": "1-of-1, 128-bit",
+   "masterSecret": "0bca1d0ba59aca98ff7487c92d29646b",
+   "passphrase": "",
+   "iterationExponent": 0,
+   "extendable": true,
+   "groupThreshold": 1,
+   "groups": [
+    [
+     1,
+     1
+    ]
+   ],
+   "identifier": 3337,
+   "encryptedMasterSecret": "cf2a487112dea133273f30c7dd0fe430",
+   "draws": [
+    {
+     "kind": "identifier",
+     "hex": "0d09"
+    }
+   ],
+   "mnemonics": [
+    [
+     "budget evil academic academic deploy credit charity beard recall papa skin index single segment indicate writing apart wine carve public"
+    ]
+   ]
+  },
+  {
+   "name": "2-of-3, 128-bit, passphrase",
+   "masterSecret": "40d9259cdbe9424b6757d89eec035b0c",
+   "passphrase": "throwaway",
+   "iterationExponent": 0,
+   "extendable": true,
+   "groupThreshold": 1,
+   "groups": [
+    [
+     2,
+     3
+    ]
+   ],
+   "identifier": 30287,
+   "encryptedMasterSecret": "e21c208eb16b5735c338d04632ff02fe",
+   "draws": [
+    {
+     "kind": "identifier",
+     "hex": "f64f"
+    },
+    {
+     "kind": "digest-random",
+     "level": "member",
+     "x": 254,
+     "group": 0,
+     "hex": "63ab5d63087dc76be16efc1e"
+    }
+   ],
+   "mnemonics": [
+    [
+     "ugly keyboard academic acid blanket episode evil lair typical anxiety furl plot freshman advocate heat smart review stadium owner hairy",
+     "ugly keyboard academic agency divorce robin adapt modern frequent actress ajar cards brother daisy chemical sniff airport firefly relate elder",
+     "ugly keyboard academic always artwork rhythm station random angel cargo ultimate impact staff floral network eyebrow evaluate clothes profile penalty"
+    ]
+   ]
+  },
+  {
+   "name": "3-of-5, 256-bit, e=1",
+   "masterSecret": "b2cfadbf8b6a721a7b423b700d2b8e1fc544cddbd21db457de21e97b044fe9fe",
+   "passphrase": "",
+   "iterationExponent": 1,
+   "extendable": true,
+   "groupThreshold": 1,
+   "groups": [
+    [
+     3,
+     5
+    ]
+   ],
+   "identifier": 30988,
+   "encryptedMasterSecret": "2c5e811d6b7a9bf9051548269d951b6dafc3ed5584a5adf3b18ef411a9adb356",
+   "draws": [
+    {
+     "kind": "identifier",
+     "hex": "f90c"
+    },
+    {
+     "kind": "share",
+     "level": "member",
+     "x": 0,
+     "group": 0,
+     "hex": "4c60e01203c219af73da7589d435b06264136bd845a26fc1d069f316d3d1cdac"
+    },
+    {
+     "kind": "digest-random",
+     "level": "member",
+     "x": 254,
+     "group": 0,
+     "hex": "360b5309352520beb77fa344f76c4975001a6e77bd82dd88e37eb628"
+    }
+   ],
+   "mnemonics": [
+    [
+     "vanish graduate academic acne aide branch taught enlarge dramatic lobe profile smell picture gesture spend stadium alarm news best profile lily guitar hunting alpha alcohol kitchen boring expect calcium hazard divorce beyond founder",
+     "vanish graduate academic agree armed priest blanket pumps true vexed galaxy avoid parking email year keyboard lips smear retreat easel manual enforce premium both script intend memory golden crystal desire depict thorn intend",
+     "vanish graduate academic amazing already jump slow excuse remember improve fangs moment leaves security viral scene maximum dream airport spirit mobile elephant elevator memory various teammate prospect nuclear lamp lawsuit friar elegant trust",
+     "vanish graduate academic arcade aspect smear dough radar hormone acne payroll fiction lobe tenant tadpole home arcade have playoff empty obtain herald leader package density triumph cowboy pupal exotic cause finance rainbow script",
+     "vanish graduate academic axle aide patent uncover modern gums receiver extend capture puny tackle focus costume papa debris gums downtown level regular scramble gums critical physics evening victim peasant garden dwarf retailer lawsuit"
+    ]
+   ]
+  },
+  {
+   "name": "5-of-8, 128-bit, not extendable",
+   "masterSecret": "a6a5a55090206ae64a55480ca922def5",
+   "passphrase": "",
+   "iterationExponent": 0,
+   "extendable": false,
+   "groupThreshold": 1,
+   "groups": [
+    [
+     5,
+     8
+    ]
+   ],
+   "identifier": 13166,
+   "encryptedMasterSecret": "d3ae0e28a163ab8ad6116b31c7ed1c32",
+   "draws": [
+    {
+     "kind": "identifier",
+     "hex": "336e"
+    },
+    {
+     "kind": "share",
+     "level": "member",
+     "x": 0,
+     "group": 0,
+     "hex": "83ef4d61a109765a6ad00f78510ea0be"
+    },
+    {
+     "kind": "share",
+     "level": "member",
+     "x": 1,
+     "group": 0,
+     "hex": "cc81b3bcf8a94715a56caa911b3c9cfa"
+    },
+    {
+     "kind": "share",
+     "level": "member",
+     "x": 2,
+     "group": 0,
+     "hex": "e0d67dcb51126ba3c2628ebd3d49da8f"
+    },
+    {
+     "kind": "digest-random",
+     "level": "member",
+     "x": 254,
+     "group": 0,
+     "hex": "83c54d198ff671c038e5295c"
+    }
+   ],
+   "mnemonics": [
+    [
+     "gross husband academic acrobat center unknown detect budget elder install hand prevent afraid item else tricycle daughter swimming theory episode",
+     "gross husband academic aircraft depart legend smart smirk credit energy fiscal fishing cricket midst herd sheriff duration animal hormone shadow",
+     "gross husband academic amount disaster square voice rainbow emerald health medical clothes peanut reunion view ordinary peasant species fortune prospect",
+     "gross husband academic argue beam remember emission science funding snapshot safari diagnose numerous fluff teacher crunch forward expand species divorce",
+     "gross husband academic beard counter devote chew family tenant manual timely sled flea slush various relate impulse unfold camera stilt",
+     "gross husband academic blanket cubic frozen purchase escape traffic pregnant wavy primary canyon anatomy faint enjoy symbolic holiday faint alive",
+     "gross husband academic broken disaster alto sharp eclipse genuine prevent leaves math custody glimpse pancake crystal database ending trip romantic",
+     "gross husband academic camera alpha home beaver worthy building alive unfair album jury platform duckling easy hand medal peasant hawk"
+    ]
+   ]
+  },
+  {
+   "name": "2 of 3 groups, 128-bit, not extendable",
+   "masterSecret": "98479e7229799b9b346699b14dbb4050",
+   "passphrase": "Pass phrase 1",
+   "iterationExponent": 0,
+   "extendable": false,
+   "groupThreshold": 2,
+   "groups": [
+    [
+     2,
+     3
+    ],
+    [
+     3,
+     5
+    ],
+    [
+     1,
+     1
+    ]
+   ],
+   "identifier": 8044,
+   "encryptedMasterSecret": "e2f7208bb0bee94544fbf00b43db470b",
+   "draws": [
+    {
+     "kind": "identifier",
+     "hex": "9f6c"
+    },
+    {
+     "kind": "digest-random",
+     "level": "group",
+     "x": 254,
+     "hex": "f7c4adca76c2d16c7e510929"
+    },
+    {
+     "kind": "digest-random",
+     "level": "member",
+     "x": 254,
+     "group": 0,
+     "hex": "8d88cecc9bc2877ccc149a98"
+    },
+    {
+     "kind": "share",
+     "level": "member",
+     "x": 0,
+     "group": 1,
+     "hex": "406015d11710ff83ccdefe1105bf0172"
+    },
+    {
+     "kind": "digest-random",
+     "level": "member",
+     "x": 254,
+     "group": 1,
+     "hex": "3040e74f2b26af3be4b1a75d"
+    }
+   ],
+   "mnemonics": [
+    [
+     "dwarf garden acrobat leaf burning genuine tension moisture educate language execute acquire finger tendency angry hybrid squeeze slush marvel ambition",
+     "dwarf garden acrobat lily crisis airline famous rebuild budget diminish describe cage elephant debris listen capital earth union building best",
+     "dwarf garden acrobat lungs dress plastic unkind sugar vitamins ultimate soul numerous reject flip knife arcade length fridge paces papa"
+    ],
+    [
+     "dwarf garden beard learn away garden flame beaver scandal yoga average slice rocky beard boring upgrade freshman false always species",
+     "dwarf garden beard lips academic luxury medal should depart suitable energy withdraw trust teacher sled hanger evoke dynamic grief enemy",
+     "dwarf garden beard luxury devote enforce editor spew category elbow ancestor crucial level move drink cinema problem verify public zero",
+     "dwarf garden beard march clothes promise network aviation staff grocery elbow building square golden ting repeat rhyme overall switch havoc",
+     "dwarf garden beard method adorn quarter fumes axle judicial grownup faint railroad flash unfair evoke fatigue voice evidence webcam aspect"
+    ],
+    [
+     "dwarf garden ceramic leader antenna dining duckling pencil lips aviation froth total company glasses flash tackle frozen rich force deal"
+    ]
+   ]
+  },
+  {
+   "name": "3 of 4 groups, 256-bit",
+   "masterSecret": "a141f8916af4f91e9dd5f8e5ef818a3bbaf0150cd202d81602361b682f1bdc9c",
+   "passphrase": "",
+   "iterationExponent": 0,
+   "extendable": true,
+   "groupThreshold": 3,
+   "groups": [
+    [
+     1,
+     1
+    ],
+    [
+     2,
+     2
+    ],
+    [
+     3,
+     4
+    ],
+    [
+     2,
+     5
+    ]
+   ],
+   "identifier": 28703,
+   "encryptedMasterSecret": "0ed67351b08fb50acdc3634a7155ccf0a8cb76ec339ecbcb362b3a4bba12b863",
+   "draws": [
+    {
+     "kind": "identifier",
+     "hex": "f01f"
+    },
+    {
+     "kind": "share",
+     "level": "group",
+     "x": 0,
+     "hex": "bace028e2f984d5a529488c8ec5f333fe68e1a3c566851126bcbb06309a8ac20"
+    },
+    {
+     "kind": "digest-random",
+     "level": "group",
+     "x": 254,
+     "hex": "5b1e4c73f8fc36958b551ea51c469b71257dae5c02b1a6ba9c7dc2f0"
+    },
+    {
+     "kind": "digest-random",
+     "level": "member",
+     "x": 254,
+     "group": 1,
+     "hex": "ac51e0d5120d5aad89d16af003fbdd8c389caa016d752c7168fd4ce3"
+    },
+    {
+     "kind": "share",
+     "level": "member",
+     "x": 0,
+     "group": 2,
+     "hex": "25d8b46672a30742c911711924ae8512305040b2cdf0cfa1ccf6dfcaa8afadd7"
+    },
+    {
+     "kind": "digest-random",
+     "level": "member",
+     "x": 254,
+     "group": 2,
+     "hex": "b55c3f499b011015f0a968d48291375a274124195d10ac680621624d"
+    },
+    {
+     "kind": "digest-random",
+     "level": "member",
+     "x": 254,
+     "group": 3,
+     "hex": "47d37bac6f646cf0ced09d77fe907145cc23cb22baeceb545ad9cff4"
+    }
+   ],
+   "mnemonics": [
+    [
+     "taught wisdom adequate romp antenna quick admit disease weapon best forecast erode envelope deliver typical kitchen deploy weapon maximum gums science nylon fact equation retailer type glasses cluster making aluminum universe trial game"
+    ],
+    [
+     "taught wisdom behavior roster alive headset group graduate album presence install desire loud ticket guitar sweater increase owner sunlight toxic express erode rainbow scandal blanket mama leaf herald always nuclear decent punish says",
+     "taught wisdom behavior scared album dwarf adapt reward likely remove leader tension unknown anxiety voice tofu short angel cinema expand negative explain crowd spill diminish mama glasses hush parking armed sled science editor"
+    ],
+    [
+     "taught wisdom check round adjust inside racism numerous crazy sack elegant cleanup born endless client render fact manual extra adorn cubic keyboard smirk loud smell receiver shrimp patrol width insect repeat survive craft",
+     "taught wisdom check scatter aircraft again brother argue havoc relate umbrella pharmacy holiday destroy mama helpful permit ambition username trouble column dramatic roster have force finger fantasy pecan market editor salon liberty salon",
+     "taught wisdom check shaft album already mineral mineral pulse permit together simple extra havoc warn wits prune apart favorite depart snapshot tenant fused level course silent worthy math manager critical artwork hour kernel",
+     "taught wisdom check skin acrobat inmate drift aircraft valuable symbolic epidemic equation criminal bucket fitness criminal emission lying video suitable superior parcel facility hunting review cover graduate manager work carve insect debris method"
+    ],
+    [
+     "taught wisdom deliver roster aide adult party sweater visual package duke memory envelope headset health relate change exchange alarm clinic isolate maximum airline painting numb fridge already identify coal inherit mobile adapt species",
+     "taught wisdom deliver scared alpha health frozen olympic coastal enlarge armed amazing method fiscal acid mansion plot justice credit glasses freshman privacy leader wrist domain anatomy fangs ordinary curly mama husband herd again",
+     "taught wisdom deliver shadow afraid mother edge froth fiber debut flea living floral mule reunion radar mule pharmacy funding priest lecture lungs black branch humidity victim promise scene change award sharp daughter jacket",
+     "taught wisdom deliver sister acid withdraw reunion campus lizard tolerate hazard admit lecture predator stadium lobe camera metric impulse trust petition pink military ending skin pajamas window corner criminal vampire credit election profile",
+     "taught wisdom deliver smug angel crystal laser system quick loyalty velvet paid surface staff sweater slow exotic swing raspy forbid ocean election coastal result insect envy evoke building costume script rainbow dish always"
+    ]
+   ]
+  },
+  {
+   "name": "2-of-2, 192-bit, e=2",
+   "masterSecret": "cbe5f3bc315559f732a09b4873798a29a03decf910a30bc1",
+   "passphrase": "",
+   "iterationExponent": 2,
+   "extendable": true,
+   "groupThreshold": 1,
+   "groups": [
+    [
+     2,
+     2
+    ]
+   ],
+   "identifier": 30025,
+   "encryptedMasterSecret": "76ae97b3295d6690996c180889123656333566250b625799",
+   "draws": [
+    {
+     "kind": "identifier",
+     "hex": "7549"
+    },
+    {
+     "kind": "digest-random",
+     "level": "member",
+     "x": 254,
+     "group": 0,
+     "hex": "baf23d1e6de5d3d09bace8970b4612c6dc891038"
+    }
+   ],
+   "mnemonics": [
+    [
+     "triumph exact academic acid academic tolerate imply impact earth garlic dining ancient expect lilac cause extra always skunk believe ultimate diminish smear minister vexed theory advance true",
+     "triumph exact academic agency acquire depend lamp exotic pregnant swing member rebuild scroll prayer paper zero squeeze senior move decrease spider method club busy analysis cubic modify"
+    ]
+   ]
+  },
+  {
+   "name": "4 of 5 groups, 160-bit",
+   "masterSecret": "efa0ef716475ef47b42444dcf91dbcd384c89ab4",
+   "passphrase": "",
+   "iterationExponent": 0,
+   "extendable": true,
+   "groupThreshold": 4,
+   "groups": [
+    [
+     2,
+     3
+    ],
+    [
+     1,
+     1
+    ],
+    [
+     4,
+     4
+    ],
+    [
+     2,
+     2
+    ],
+    [
+     3,
+     3
+    ]
+   ],
+   "identifier": 14907,
+   "encryptedMasterSecret": "d9b38aec8ceb4df87a66d6e7ac8894df691c5a1f",
+   "draws": [
+    {
+     "kind": "identifier",
+     "hex": "3a3b"
+    },
+    {
+     "kind": "share",
+     "level": "group",
+     "x": 0,
+     "hex": "47004eaf109cb28270ae04a7b5aba6884ac6e247"
+    },
+    {
+     "kind": "share",
+     "level": "group",
+     "x": 1,
+     "hex": "bbfad05c566927bbece8a0ee932abbc90bcbd5c8"
+    },
+    {
+     "kind": "digest-random",
+     "level": "group",
+     "x": 254,
+     "hex": "de074642fe9bb9b952c6181f7b06255e"
+    },
+    {
+     "kind": "digest-random",
+     "level": "member",
+     "x": 254,
+     "group": 0,
+     "hex": "9163f881dc999b3221df708c3694752c"
+    },
+    {
+     "kind": "share",
+     "level": "member",
+     "x": 0,
+     "group": 2,
+     "hex": "e3cb0d9a6fae16e254145dbc148d6401107aa724"
+    },
+    {
+     "kind": "share",
+     "level": "member",
+     "x": 1,
+     "group": 2,
+     "hex": "265fc6d855665dd0f436c43029c5841cd7154da7"
+    },
+    {
+     "kind": "digest-random",
+     "level": "member",
+     "x": 254,
+     "group": 2,
+     "hex": "9fd1b70405615122745dd93d1f25c3da"
+    },
+    {
+     "kind": "digest-random",
+     "level": "member",
+     "x": 254,
+     "group": 3,
+     "hex": "d313ea0e51aa885810f8603f5d8469fe"
+    },
+    {
+     "kind": "share",
+     "level": "member",
+     "x": 0,
+     "group": 4,
+     "hex": "61e32f3ebf7aeddc3080803cb59ee482ee6aebb2"
+    },
+    {
+     "kind": "digest-random",
+     "level": "member",
+     "x": 254,
+     "group": 4,
+     "hex": "bcc7436935b6a729c404d375db543561"
+    }
+   ],
+   "mnemonics": [
+    [
+     "industry surprise advance acid faint profile western patrol member endless making voter junction blimp lunar lungs floral often family gesture quarter national hobo",
+     "industry surprise advance agency salary adjust premium liberty husband hormone prospect welfare thunder elite round reward friendly havoc junk regular warmth black thunder",
+     "industry surprise advance always helpful nuclear fitness percent hawk body universe crunch game society remember petition fake jewelry beard bracelet beard rebound owner"
+    ],
+    [
+     "industry surprise best academic resident trust ajar blimp hairy owner rival divorce pants repair density problem shaped darkness revenue impact garbage process empty"
+    ],
+    [
+     "industry surprise cinema acquire theory crunch strategy often prisoner founder clock aircraft frost upstairs envy floral acrobat either pleasure shaped purple maiden elite",
+     "industry surprise cinema aide club large holiday blessing grin involve aviation artist scandal round omit general calcium frequent fiction hanger evidence priority floral",
+     "industry surprise cinema ambition evaluate laundry method blue hanger alpha punish kernel lecture beyond domain herald junior sweater failure march provide galaxy bike",
+     "industry surprise cinema arena universe solution trouble overall timber judicial organize program venture smith raisin execute describe swimming nervous pitch dictate junction species"
+    ],
+    [
+     "industry surprise depend acid domain gums switch gesture dramatic exact source august suitable quiet story firefly activity verdict cricket mouse payment aquatic crystal",
+     "industry surprise depend agency mama mouse counter pistol coal discuss glimpse chew member idea duke regular coal both liquid total premium wisdom morning"
+    ],
+    [
+     "industry surprise elephant acne genuine march very promise junior rebuild satisfy category leader velvet forbid relate liberty remind prize ugly category elevator video",
+     "industry surprise elephant agree leader frost tendency calcium bracelet aide dynamic clock wavy exhaust away western speak detect lecture merit visual maiden downtown",
+     "industry surprise elephant amazing much erode lyrics credit album island similar webcam album order energy luxury inside yield taught reward pencil subject justice"
+    ]
+   ]
+  },
+  {
+   "name": "run 1",
+   "masterSecret": "dd0b9d68d60e745059b321c37e60b874",
+   "passphrase": "",
+   "iterationExponent": 1,
+   "extendable": true,
+   "groupThreshold": 1,
+   "groups": [
+    [
+     3,
+     5
+    ]
+   ],
+   "identifier": 12738,
+   "encryptedMasterSecret": "dfdb6d907400f105e4fc4918b9e758f1",
+   "draws": [
+    {
+     "kind": "identifier",
+     "hex": "31c2"
+    },
+    {
+     "kind": "share",
+     "level": "member",
+     "x": 0,
+     "group": 0,
+     "hex": "ffff3e4cc51278ad6c25d5e50dafee69"
+    },
+    {
+     "kind": "digest-random",
+     "level": "member",
+     "x": 254,
+     "group": 0,
+     "hex": "cf98a0ea0b3c73582457ed5f"
+    }
+   ],
+   "mnemonics": [
+    [
+     "glimpse birthday academic acne easel yelp wavy sister emerald ivory random salary injury thunder dictate year oasis impulse hormone senior",
+     "glimpse birthday academic agree demand diet gray pile patrol cowboy ancestor duke kernel petition echo violence vampire package either regret",
+     "glimpse birthday academic amazing aluminum column race scatter syndrome lobe distance primary river aircraft nuclear pipeline public husky hospital advance",
+     "glimpse birthday academic arcade airport unhappy costume process disaster starting loan faint punish employer unusual payroll sunlight organize edge include",
+     "glimpse birthday academic axle corner animal actress inside visual video papa bishop welcome permit slavery airport promise always prize payment"
+    ]
+   ]
+  },
+  {
+   "name": "run 2",
+   "masterSecret": "5a5619148db74329100c896057113316",
+   "passphrase": "",
+   "iterationExponent": 1,
+   "extendable": true,
+   "groupThreshold": 1,
+   "groups": [
+    [
+     3,
+     5
+    ]
+   ],
+   "identifier": 16345,
+   "encryptedMasterSecret": "7a00a1e7a4d48f9fa2b9c948a4582ef3",
+   "draws": [
+    {
+     "kind": "identifier",
+     "hex": "bfd9"
+    },
+    {
+     "kind": "share",
+     "level": "member",
+     "x": 0,
+     "group": 0,
+     "hex": "15ed6147b220116a307ebb964cc04f0c"
+    },
+    {
+     "kind": "digest-random",
+     "level": "member",
+     "x": 254,
+     "group": 0,
+     "hex": "e5c513cdb665eb03f4621049"
+    }
+   ],
+   "mnemonics": [
+    [
+     "laundry sister academic acne airline uncover listen junk lunch beaver pitch alto problem multiple depart aide satisfy award brave album",
+     "laundry sister academic agree beard herald beaver average sister marvel teacher eraser photo swing index pickup holiday thunder morning away",
+     "laundry sister academic amazing crowd chew standard mason parking advance replace triumph gasoline strike demand academic drug geology describe knife",
+     "laundry sister academic arcade easel payroll element wealthy tidy paces vegan picture guest mixed improve peasant mobile lying recover headset",
+     "laundry sister academic axle alive campus install arena spray vampire family merchant analysis either garbage adapt garlic cricket public withdraw"
+    ]
+   ]
+  },
+  {
+   "name": "run 1 restarted",
+   "masterSecret": "b84c65b85bde7dc2a0564bb79d108914",
+   "passphrase": "",
+   "iterationExponent": 1,
+   "extendable": true,
+   "groupThreshold": 1,
+   "groups": [
+    [
+     3,
+     5
+    ]
+   ],
+   "identifier": 12738,
+   "encryptedMasterSecret": "e08bd82b01c8096e67d302ee712b15bc",
+   "draws": [
+    {
+     "kind": "identifier",
+     "hex": "31c2"
+    },
+    {
+     "kind": "share",
+     "level": "member",
+     "x": 0,
+     "group": 0,
+     "hex": "ffff3e4cc51278ad6c25d5e50dafee69"
+    },
+    {
+     "kind": "digest-random",
+     "level": "member",
+     "x": 254,
+     "group": 0,
+     "hex": "cf98a0ea0b3c73582457ed5f"
+    }
+   ],
+   "mnemonics": [
+    [
+     "glimpse birthday academic acne easel yelp wavy sister emerald ivory random salary injury thunder dictate year oasis impulse hormone senior",
+     "glimpse birthday academic agree born staff soldier eclipse snake sniff pecan arcade plains fantasy glen declare patrol dwarf writing bundle",
+     "glimpse birthday academic amazing crunch romantic cricket ending auction lungs party umbrella multiple should oral lungs debris brave branch pistol",
+     "glimpse birthday academic arcade aide national adjust sidewalk oasis charity quick class eraser keyboard sharp enjoy amazing fawn lunch kernel",
+     "glimpse birthday academic axle ancient early license bedroom boundary failure clock punish campus royal society snake dough glance omit husky"
+    ]
+   ]
+  },
+  {
+   "name": "run 1 restarted, 2-of-3",
+   "masterSecret": "8eda51e8fd77df158ec656891795c7c3",
+   "passphrase": "",
+   "iterationExponent": 1,
+   "extendable": true,
+   "groupThreshold": 1,
+   "groups": [
+    [
+     2,
+     3
+    ]
+   ],
+   "identifier": 12738,
+   "encryptedMasterSecret": "9dca26616f7a441f73301693b6c08b00",
+   "draws": [
+    {
+     "kind": "identifier",
+     "hex": "31c2"
+    },
+    {
+     "kind": "digest-random",
+     "level": "member",
+     "x": 254,
+     "group": 0,
+     "hex": "ffff3e4cc51278ad6c25d5e5"
+    }
+   ],
+   "mnemonics": [
+    [
+     "glimpse birthday academic acid deliver knife brave alarm sister calcium exercise merit worthy permit grumpy hesitate analysis living capital solution",
+     "glimpse birthday academic agency avoid symbolic presence river umbrella grocery acne various grill ocean apart dish public blimp execute both",
+     "glimpse birthday academic always award club camera greatest aluminum training starting therapy shrimp strike stick intimate dryer clinic percent detailed"
+    ]
+   ]
+  },
+  {
+   "name": "one buffer every call",
+   "masterSecret": "6fd59c570c025ba7729c7ae780eea3f8",
+   "passphrase": "",
+   "iterationExponent": 1,
+   "extendable": true,
+   "groupThreshold": 1,
+   "groups": [
+    [
+     3,
+     5
+    ]
+   ],
+   "identifier": 4418,
+   "encryptedMasterSecret": "3e20eadc0ce3bc0276eb6f1d10ef7d6d",
+   "draws": [
+    {
+     "kind": "identifier",
+     "hex": "1142"
+    },
+    {
+     "kind": "share",
+     "level": "member",
+     "x": 0,
+     "group": 0,
+     "hex": "114237209878eaf8c87840aaee69b116"
+    },
+    {
+     "kind": "digest-random",
+     "level": "member",
+     "x": 254,
+     "group": 0,
+     "hex": "114237209878eaf8c87840aa"
+    }
+   ],
+   "mnemonics": [
+    [
+     "chest birthday academic acne agency elbow sweater analysis capital trouble thank luck away plunge remind observe employer sack quick estimate",
+     "chest birthday academic agree ajar armed parking flexible install genuine guitar hospital valid expand surface trash desert enforce award secret",
+     "chest birthday academic amazing camera human national drove infant parcel crazy destroy alive training display lily reunion home shaft detect",
+     "chest birthday academic arcade cage category triumph herald calcium cricket parcel surprise ting artist fortune voter skunk transfer inform remove",
+     "chest birthday academic axle broken tension distance crush inmate lawsuit beaver lunar device fiber graduate racism lift hamster endless evil"
+    ]
+   ]
+  },
+  {
+   "name": "zero digest random",
+   "masterSecret": "19b2239c0fead5afb5a04015be8c49be",
+   "passphrase": "",
+   "iterationExponent": 1,
+   "extendable": true,
+   "groupThreshold": 1,
+   "groups": [
+    [
+     2,
+     3
+    ]
+   ],
+   "identifier": 13923,
+   "encryptedMasterSecret": "6825f05272ac6c8b9323c25dfa2cc1dd",
+   "draws": [
+    {
+     "kind": "identifier",
+     "hex": "b663"
+    },
+    {
+     "kind": "digest-random",
+     "level": "member",
+     "x": 254,
+     "group": 0,
+     "hex": "000000000000000000000000"
+    }
+   ],
+   "mnemonics": [
+    [
+     "herd buyer academic acid ceiling vexed example shaped swimming hamster devote funding yield calcium capture hormone duke ancient fishing peaceful",
+     "herd buyer academic agency argue upstairs genuine maximum island ajar brave herald award edge vocal patent epidemic regret mixture artwork",
+     "herd buyer academic always drove withdraw boring enforce single pumps adorn making flip pharmacy payroll tracks firefly ancient actress busy"
+    ]
+   ]
+  },
+  {
+   "name": "repeated byte share",
+   "masterSecret": "dae41c452414a629c66f5ca749750bd2c349635289d96d2c2120d7c02f89d19e",
+   "passphrase": "",
+   "iterationExponent": 1,
+   "extendable": true,
+   "groupThreshold": 1,
+   "groups": [
+    [
+     3,
+     5
+    ]
+   ],
+   "identifier": 12235,
+   "encryptedMasterSecret": "a48a3768abef322635187716dde1a5a3341fafd401e85de848d78aa4f17fa3ad",
+   "draws": [
+    {
+     "kind": "identifier",
+     "hex": "2fcb"
+    },
+    {
+     "kind": "share",
+     "level": "member",
+     "x": 0,
+     "group": 0,
+     "hex": "a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7"
+    },
+    {
+     "kind": "digest-random",
+     "level": "member",
+     "x": 254,
+     "group": 0,
+     "hex": "9b28195249cd58674cad0f8e0a957ba76aa71d124f2a3dce72786e72"
+    }
+   ],
+   "mnemonics": [
+    [
+     "game frequent academic acne ancient trial piece overall jump trial piece overall jump trial piece overall jump trial piece overall jump trial piece overall jump trial piece overall jump trial grownup flame carbon",
+     "game frequent academic agree antenna famous retailer square inside chubby spelling holy counter detect diet pregnant step photo curious smell example divorce total intend airport lilac slap mixed alcohol ounce remember hesitate weapon",
+     "game frequent academic amazing acne swing wisdom strike modify ruler branch fridge chubby ranked acne pulse daughter estate scared march rescue sister force shame fantasy slush steady teammate cultural dynamic national twice fluff",
+     "game frequent academic arcade activity grin tolerate midst paid antenna helpful privacy image hand mineral lift mason airline exhaust switch math carpet bulge center crystal peaceful python ultimate fake envy equip soldier rhythm",
+     "game frequent academic axle amount mortgage rhythm venture tricycle activity lizard orange story slow retreat daughter learn soul sidewalk sister junk pregnant plan mustang therapy salt satisfy paces simple decision duckling plunge modify"
+    ]
+   ]
+  },
+  {
+   "name": "counter digest random",
+   "masterSecret": "829d1c24dda32d92705e1c03b18923cf",
+   "passphrase": "",
+   "iterationExponent": 1,
+   "extendable": true,
+   "groupThreshold": 1,
+   "groups": [
+    [
+     3,
+     5
+    ]
+   ],
+   "identifier": 20915,
+   "encryptedMasterSecret": "f166bfacbe842c7be8495104133944e4",
+   "draws": [
+    {
+     "kind": "identifier",
+     "hex": "d1b3"
+    },
+    {
+     "kind": "share",
+     "level": "member",
+     "x": 0,
+     "group": 0,
+     "hex": "d1bbbef455a16d4494ee2925b1484867"
+    },
+    {
+     "kind": "digest-random",
+     "level": "member",
+     "x": 254,
+     "group": 0,
+     "hex": "101112131415161718191a1b"
+    }
+   ],
+   "mnemonics": [
+    [
+     "peaceful omit academic acne desert research wireless emphasis guilt hobo being exotic main clogs scholar lips bucket founder twice deliver",
+     "peaceful omit academic agree describe premium trouble avoid slap fangs punish mama ocean dictate trend legal pharmacy flavor ugly metric",
+     "peaceful omit academic amazing criminal pumps repeat thunder cinema security dream ambition mama omit shame aquatic usual holy snapshot slap",
+     "peaceful omit academic arcade cricket phrase preach promise loan webcam package slap object member thorn analysis exotic genre station hunting",
+     "peaceful omit academic axle dining dynamic envelope fiction cinema flash moment alarm slow album finance lunch exercise bumpy genuine package"
+    ]
+   ]
+  },
+  {
+   "name": "groups run 1",
+   "masterSecret": "0ac0bb75d3f8efd77a5892baac36cff7",
+   "passphrase": "",
+   "iterationExponent": 1,
+   "extendable": true,
+   "groupThreshold": 2,
+   "groups": [
+    [
+     2,
+     3
+    ],
+    [
+     3,
+     4
+    ]
+   ],
+   "identifier": 28931,
+   "encryptedMasterSecret": "ec0218a82301342e194fb5288ad6652f",
+   "draws": [
+    {
+     "kind": "identifier",
+     "hex": "f103"
+    },
+    {
+     "kind": "digest-random",
+     "level": "group",
+     "x": 254,
+     "hex": "f2b66a3e059a7b32314383c5"
+    },
+    {
+     "kind": "digest-random",
+     "level": "member",
+     "x": 254,
+     "group": 0,
+     "hex": "772012483a73cf0e9942348f"
+    },
+    {
+     "kind": "share",
+     "level": "member",
+     "x": 0,
+     "group": 1,
+     "hex": "1c511e0dc1c41b324c11cae879242bca"
+    },
+    {
+     "kind": "digest-random",
+     "level": "member",
+     "x": 254,
+     "group": 1,
+     "hex": "5b5227cef5fb3e8663b911f2"
+    }
+   ],
+   "mnemonics": [
+    [
+     "tension buyer acrobat echo aluminum glimpse election wireless task wisdom spider weapon platform home frequent tricycle velvet scene painting blue",
+     "tension buyer acrobat email building funding hush have source lecture traffic species testify knit tofu market mental duckling duke spider",
+     "tension buyer acrobat entrance crystal browser chubby gums scout alarm primary response yield envy curly nail execute camera relate gasoline"
+    ],
+    [
+     "tension buyer beard eclipse alive fact isolate surprise idea bumpy shaped ruin improve training threaten election vegan dominant wisdom coal",
+     "tension buyer beard emerald alcohol strategy forbid soul armed artist problem tactics inside hamster fraction shadow have random rumor phrase",
+     "tension buyer beard envelope adorn raisin always tenant force teaspoon engage prisoner photo museum diet axle nervous smoking rhyme image",
+     "tension buyer beard exact advance dryer cradle unwrap club voter cause puny payment bracelet magazine oasis acid funding lift valuable"
+    ]
+   ]
+  },
+  {
+   "name": "groups run 2",
+   "masterSecret": "a21062c2b8b6787f4a75abc5183f2a0d",
+   "passphrase": "",
+   "iterationExponent": 1,
+   "extendable": true,
+   "groupThreshold": 2,
+   "groups": [
+    [
+     2,
+     3
+    ],
+    [
+     3,
+     4
+    ]
+   ],
+   "identifier": 16987,
+   "encryptedMasterSecret": "91e388ab79d8e63efda32fea6615169c",
+   "draws": [
+    {
+     "kind": "identifier",
+     "hex": "425b"
+    },
+    {
+     "kind": "digest-random",
+     "level": "group",
+     "x": 254,
+     "hex": "83618d2caa7a768fd6ac0e83"
+    },
+    {
+     "kind": "digest-random",
+     "level": "member",
+     "x": 254,
+     "group": 0,
+     "hex": "647bdfad1c9227ed6d1b94d1"
+    },
+    {
+     "kind": "share",
+     "level": "member",
+     "x": 0,
+     "group": 1,
+     "hex": "efa47c11eb47ec1f9ea19b8ba86392b0"
+    },
+    {
+     "kind": "digest-random",
+     "level": "member",
+     "x": 254,
+     "group": 1,
+     "hex": "8f80106ef3f72c81de0d88e6"
+    }
+   ],
+   "mnemonics": [
+    [
+     "lips survive acrobat echo domestic keyboard engage hamster mule level piece much election season museum galaxy fluff mental large broken",
+     "lips survive acrobat email biology email daisy jury network inmate steady focus grant likely round document skunk insect eraser forward",
+     "lips survive acrobat entrance change arcade moment exchange mandate iris fragment presence lungs explain false clinic imply harvest fake aircraft"
+    ],
+    [
+     "lips survive beard eclipse dragon penalty upstairs carbon soldier type lair tricycle gross mandate parcel dismiss pregnant campus deadline spend",
+     "lips survive beard emerald avoid fitness enlarge material memory romantic enforce primary fawn script wealthy premium depict mama custody dish",
+     "lips survive beard envelope custody true lend playoff spark bulge pacific pickup wisdom sidewalk olympic tidy declare dish galaxy custody",
+     "lips survive beard exact browser brave document dismiss mason epidemic photo teacher slush loud scene hybrid problem prize friendly ruin"
+    ]
+   ]
+  },
+  {
+   "name": "groups run 3, reusing run 1's group-level R",
+   "masterSecret": "0320496bd359b7632a6003b84526bab6",
+   "passphrase": "",
+   "iterationExponent": 1,
+   "extendable": true,
+   "groupThreshold": 2,
+   "groups": [
+    [
+     2,
+     3
+    ],
+    [
+     3,
+     4
+    ]
+   ],
+   "identifier": 19044,
+   "encryptedMasterSecret": "e7e340a7a4f51bc3e3d9869a3817f095",
+   "draws": [
+    {
+     "kind": "identifier",
+     "hex": "4a64"
+    },
+    {
+     "kind": "digest-random",
+     "level": "group",
+     "x": 254,
+     "hex": "f2b66a3e059a7b32314383c5"
+    },
+    {
+     "kind": "digest-random",
+     "level": "member",
+     "x": 254,
+     "group": 0,
+     "hex": "745e0d18fdd94246757ccf8d"
+    },
+    {
+     "kind": "share",
+     "level": "member",
+     "x": 0,
+     "group": 1,
+     "hex": "7801a218c9fe31f728dde1652aa3145e"
+    },
+    {
+     "kind": "digest-random",
+     "level": "member",
+     "x": 254,
+     "group": 1,
+     "hex": "feeae888d354199566af2065"
+    }
+   ],
+   "mnemonics": [
+    [
+     "mother cleanup acrobat echo density escape fiscal change diminish laser saver mayor evening salt industry fragment scholar guilt warmth acne",
+     "mother cleanup acrobat email duration birthday axle level railroad miracle invasion pecan alive beam forbid ounce reaction hobo eraser quarter",
+     "mother cleanup acrobat entrance cricket visitor purple station debris rhyme plot silver believe ladle darkness stay grasp zero pleasure junior"
+    ],
+    [
+     "mother cleanup beard eclipse capital actress lungs march laundry decrease sweater math item gravity plot declare boundary lily punish dominant",
+     "mother cleanup beard emerald cover wrist ambition chemical sack envelope tadpole critical order single umbrella makeup eraser grill robin sharp",
+     "mother cleanup beard envelope device guard plan junction smear zero document photo hairy liberty stick either equip regular pupal remind",
+     "mother cleanup beard exact adorn negative craft spew identify location dive acquire manual crucial pacific welcome birthday formal retreat evidence"
+    ]
+   ]
+  }
+ ]
+}

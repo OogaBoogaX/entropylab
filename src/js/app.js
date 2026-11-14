@@ -7115,6 +7115,24 @@ const hodlPsbtScanHosts = [
   ["psbt-scan-host", "psbt-text"], ["nonce-scan-host", "nonce-text"], ["psbted-scan-host", "psbted-text"],
   ["rbf-scan-host", "psbt-rbf-original"], ["audit-scan-host", "psbt-audit-before"], ["psbted-compare-scan-host", "psbted-compare-text"],
 ];
+// Check a SLIP-39 backup (Verify tab) is preview-only the same way: release
+// builds fold the flag, so the module is never imported and there is no host.
+var hodlSlip39Check = null;
+function hodlBindSlip39Check() {
+  if (typeof __ENTROPYLAB_PREVIEW__ !== "undefined" && __ENTROPYLAB_PREVIEW__) {
+    import("./slip39-check.js").then((module) => {
+      let host = document.getElementById("slip39-check-host");
+      if (!host || hodlSlip39Check) return;
+      hodlSlip39Check = module.mountSlip39Check(host, {
+        translate: hodlTText,
+        network: () => hodlNetworkChoice,
+        // The Key Station's own readouts: a copyable field and the address table.
+        fieldHtml: (label, value) => hodlPublicFieldHtml(label, value),
+        addressTableHtml: (rows) => hodlAddressTable(rows, hodlTText("First receive addresses"), false, "slip39-receive"),
+      });
+    }).catch(() => {});
+  }
+}
 function hodlKeyScanHostMarkup() {
   return '<div id="key-scan-host"></div>';
 }
@@ -24069,6 +24087,7 @@ function hodlInitEndSession() {
 var hodlRevealIdleMs = 5 * 60 * 1000;
 function hodlConcealPrivateValues(options) {
   if (typeof hodlBip47Conceal === "function") hodlBip47Conceal();
+  try { hodlSlip39Check?.conceal(); } catch {}
   // Plain blur permits copying the opening/PSBT from another window. Other
   // conceal triggers retire the pasted host reveal, which remains sensitive.
   if (options?.reason !== "blur") {
@@ -24297,6 +24316,7 @@ function hodlInitSecretFieldAutoClear() {
     try { hodlKeyScanModule?.retireQrDecoders(); } catch {}
     try { hodlPsbtScanModule?.retireQrDecoders(); } catch {}
     try { hodlTextScanModule?.retireQrDecoders(); } catch {}
+    try { hodlSlip39Check?.clear(); } catch {}
     // The form outlives the wipe: give it a fresh, closed panel.
     try { hodlBindKeyScan(); } catch {}
     try { hodlBindSeedScan(); } catch {}
@@ -24400,6 +24420,8 @@ function hodlApplyLocale() {
   document.querySelectorAll("#msig-keys textarea").forEach((ta) => {
     if (ta.value) hodlCheckXpub(ta);
   });
+  // Check a SLIP-39 backup relabels in place: re-mounting would drop the shares.
+  try { hodlSlip39Check?.retranslate(); } catch {}
   try { hodlDestroyTextScans(); } catch {}
   try { hodlBindTextScans(); } catch {}
   // These three hosts are static, so a language switch re-mounts the panels
@@ -24412,6 +24434,7 @@ async function hodlBoot() {
   hodlInitStationPassphraseVaults();
   hodlInitWorkspace();
   initOtsVerifier(document);
+  hodlBindSlip39Check();
   hodlInitAddressQr(hodlQrSvg, { copy: hodlClipboardIconMarkup, copied: hodlCopiedIconMarkup }, { frames: hodlPsbtQrFrames });
   hodlLowEntropyConfirm = initLowEntropyConfirm();
   hodlFingerprintCollisionConfirm = initFingerprintCollisionConfirm();

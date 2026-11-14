@@ -643,6 +643,50 @@ permission-prompt exception. Supersession and destruction leave the capture
 stopped, and activation callbacks that stop it cannot allocate a stale timer.
 Browser/OS copies and camera buffers remain outside reliable erasure.
 
+### Preview-only SLIP-39 backup check
+
+Check a SLIP-39 backup (Verify tab, `src/js/slip39-check.js`) reads the
+SLIP-39 shares a user types, one per field, and combines them with
+`src/js/slip39.js`, written from the SLIP-0039 specification. It shares no
+code with any wallet and never splits a secret or makes a random value. A
+share is read only with a valid RS1024 checksum, a valid length and zero
+padding. A set is combined only when every share agrees on identifier,
+extendable flag, iteration exponent, group threshold, group count and
+length, each group has exactly its threshold of distinct members, there are
+exactly the group threshold of groups, and the digest verifies at the member
+and the group level; anything else is refused with a reason and shows no
+wallet (`test/slip39.test.mjs`, all 45 official SLIP-0039 vectors including
+the invalid ones). The passphrase must be printable ASCII and is held in a
+`PassphraseVault` field. The decrypted master secret is the BIP32 seed: it
+is used once to derive the master fingerprint and first receive addresses
+for every network, then zeroed, so a network change redraws stored public
+addresses. Decryption runs PBKDF2-HMAC-SHA256 on the page's thread, so the
+panel refuses iteration exponents above 6 instead of freezing the page.
+
+Its randomness test compares two threshold sets from two throwaway wallets.
+It reconstructs each set's random values (the random part R of each digest
+share and, where 3 or more shares are needed, the shares drawn at random)
+and reports runs of 8 or more bytes repeated between or within the sets,
+a repeated identifier or encrypted secret, and trivial values (all zero,
+one byte repeated, a short block repeated, a counter). It decrypts nothing
+and needs no passphrase, and a share entered in both sets is compared, not
+refused: a generator restarted from the same state gives two wallets the
+same random share word for word. The rebuilt values are checked against the
+draws of the SLIP-0039 reference implementation
+(`test/slip39-reference.test.mjs`). It is a tripwire for generators that
+repeat or are broken, not a measure of randomness: a generator that never repeats can
+still be predictable. The panel tells the user to enter throwaway wallets
+only.
+
+Typed shares, the passphrase and everything combined from them live in page
+memory and the panel's DOM only; there are no storage, clipboard or console
+writes (`test/slip39-check.test.mjs`). The master fingerprint and addresses
+are public readouts and copy like the Key Station's. Every conceal trigger takes the typed
+shares off the page until the user asks for them again, and Clear, Clear
+Fields, End Session and page exit empty the panel. This is best effort, as
+below: the fields' own text and the strings handed to the parser cannot be
+zeroed.
+
 ## What the page can and cannot erase
 
 EntropyLab overwrites the secrets it holds once you are done with them, on a

@@ -2646,6 +2646,11 @@ label.field.journal-format-control { min-width: 0; margin-top: 0; }
 #key-scan-video, #seed-scan-video { display: block; width: 100%; max-width: 480px; margin-top: var(--space-component); border-radius: var(--radius-field); }
 #key-scan-confirm, #seed-scan-confirm { margin-top: var(--space-section); }
 #key-scan-confirm .key-scan-value, #seed-scan-confirm .key-scan-value { margin-top: var(--space-control); }
+/* Check a SLIP-39 backup (Verify tab, preview builds only). */
+#slip39-check [hidden] { display: none; }
+#slip39-check .segmented-control, #slip39-check-random-panel > .edge-note, #slip39-check-result > * + * { margin-top: var(--space-component); }
+/* The verdict note's headline, findings and tally keep the gap .edge-note > p + p states. */
+#slip39-check-status > * + * { margin-top: var(--space-control); }
 #seed-picker-host [hidden] { display: none; }
 #seed-picker-chips, #seed-picker-matches, #seed-picker-replace-matches { flex-wrap: wrap; gap: var(--space-control); }
 #seed-picker-chips .btn, #seed-picker-matches .btn, #seed-picker-replace-matches .btn { min-height: 44px; min-width: 44px; }
