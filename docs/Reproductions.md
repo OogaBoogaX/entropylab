@@ -82,5 +82,11 @@ The two v1.0.0 rows match the release asset (`bdf048eb…`, footer
 `c1037ba3`), not the earlier page committed inside the v1.0.0 git tag
 (`3804d578…`, footer `108becad`); see
 [Verify your download: known issue](Verify_Your_Download.md#known-issue-v100).
-Both v1.0.0 rows are MrHodlX's. A rebuild of the v1.0.0 page by someone else
+Both v1.0.0 rows are MrHodlX's. The 2026-10-14 Windows rebuild was made on
+the computer that held MrHodlX's revoked signing key and was later reported
+as compromised in SECURITY.md's
+[Release signing keys](../SECURITY.md#release-signing-keys) section; the
+2026-10-17 Linux rebuild ran in a separate hosted environment run by an AI
+assistant, not on that computer.
+A rebuild of the v1.0.0 page by someone else
 would make that release's reproduction independent, as the `cb55bd9` set is.
