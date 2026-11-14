@@ -45,8 +45,9 @@ A row records one match: what was rebuilt, where, and the SHA-256 it matched.
 | 2026-10-14 | `c1037ba` (v1.0.0, v1.0.0rc3) | `entropylab.html`, from the committed WASM modules | `bdf048ebbf9286a3b18998f28e1cccef1f9f9a0284a880c1864875f903adeb8d` | Windows 11 Home 10.0.26300, x86_64, Node 24.14.0, npm 11.19.1, on the host (no container) | MrHodlX |
 | 2026-10-17 | `c1037ba` (v1.0.0, v1.0.0rc3) | `entropylab.html`, from the committed WASM modules | `bdf048ebbf9286a3b18998f28e1cccef1f9f9a0284a880c1864875f903adeb8d` | Linux x86_64 environment run by an AI assistant, Node v24.19.0, npm 11.9.0, on the host (no container) | MrHodlX |
 
-For MrHodlX's rows, the dev image was built on his laptop on 2026-09-24
-from the Dockerfile as it stands at `cb55bd9` (unchanged since `8a9eae4`):
+For MrHodlX's `cb55bd9` rows, the dev image was built on his laptop on
+2026-09-24 from the Dockerfile as it stands at `cb55bd9` (unchanged since
+`8a9eae4`):
 Node v22.23.2, clang 18.1.3, the 20260916 Ubuntu snapshot. Image
 `sha256:fc1c4cd530d05822c76e5d8dadb48642bad3eb7df4cc7ce31ae00b404ab9181b`.
 The modules were compiled from a clean clone with one cargo job
@@ -83,10 +84,9 @@ The two v1.0.0 rows match the release asset (`bdf048eb…`, footer
 (`3804d578…`, footer `108becad`); see
 [Verify your download: known issue](Verify_Your_Download.md#known-issue-v100).
 Both v1.0.0 rows are MrHodlX's. The 2026-10-14 Windows rebuild was made on
-the computer that held MrHodlX's revoked signing key and was later reported
-as compromised in SECURITY.md's
-[Release signing keys](../SECURITY.md#release-signing-keys) section; the
-2026-10-17 Linux rebuild ran in a separate hosted environment run by an AI
-assistant, not on that computer.
+the computer that held MrHodlX's revoked signing key, which
+[Release signing keys](../SECURITY.md#release-signing-keys) says was later
+found to be compromised; the 2026-10-17 Linux rebuild ran in a separate
+hosted environment run by an AI assistant, not on that computer.
 A rebuild of the v1.0.0 page by someone else
 would make that release's reproduction independent, as the `cb55bd9` set is.
