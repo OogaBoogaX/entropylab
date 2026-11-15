@@ -474,13 +474,15 @@ test("the audit checks block is open when the tier is not pass", () => {
 
 const insertOverall = evaluate("hodlPsbtInsertOverall", { hodlT: interpolate });
 
-function overallHarness({ tier, analysis }) {
+function overallHarness({ tier, analysis, rbf }) {
   const section = fakeElement({ dataset: tier ? { auditTier: tier } : {} });
   const analysisElement = analysis ? { dataset: { psbtAnalysisOverall: analysis } } : null;
+  const rbfElement = rbf ? { dataset: { rbfVerdict: rbf } } : null;
   const output = fakeElement({
     querySelector(selector) {
       if (selector === "[data-audit-section]") return section;
       if (selector === "[data-psbt-analysis-overall]") return analysisElement;
+      if (selector === "[data-rbf-verdict]") return rbfElement;
       return null;
     },
   });
@@ -511,6 +513,31 @@ test("the overall line is amber otherwise", () => {
 
 test("no overall line without an audit", () => {
   assert.equal(overallState({ tier: undefined, analysis: "complete" }), null);
+});
+
+test("the overall line counts the RBF verdict", () => {
+  assert.equal(overallState({ tier: "pass", analysis: "complete", rbf: "red" }), "bad", "a red fee-bump verdict is never green");
+  assert.equal(overallState({ tier: "pass", analysis: "complete", rbf: "amber" }), "warn", "an amber fee-bump verdict is never green");
+  assert.equal(overallState({ tier: "pass", analysis: "complete", rbf: "green" }), "ok");
+  assert.equal(overallState({ tier: "pass", analysis: "complete", rbf: "neutral" }), "ok");
+  assert.equal(overallState({ tier: "pass", analysis: "complete" }), "ok", "no note changes nothing");
+  assert.equal(overallState({ tier: "fail", analysis: "complete", rbf: "green" }), "bad", "a green note never softens a failed audit");
+});
+
+test("the overall line fails closed on the RBF verdict", () => {
+  // Only green, neutral and no verdict leave "no problems" open: a verdict
+  // the note would show as a caution is never green here.
+  assert.equal(overallState({ tier: "pass", analysis: "complete", rbf: "caution" }), "warn", "an unknown verdict is never green");
+  // A verdict handed in by a paint whose note is not on screen still counts.
+  const handed = (rbfStored, options) => {
+    const { output, section } = overallHarness(options);
+    insertOverall(output, rbfStored);
+    return section.inserted[0].html.match(/data-psbt-overall-state='(\w+)'/)[1];
+  };
+  assert.equal(handed("red", { tier: "pass", analysis: "complete" }), "bad", "a red verdict with no note on screen is still red");
+  assert.equal(handed("amber", { tier: "pass", analysis: "complete" }), "warn");
+  assert.equal(handed("", { tier: "pass", analysis: "complete" }), "ok");
+  assert.equal(handed("green", { tier: "pass", analysis: "complete", rbf: "red" }), "bad", "the painted note wins over a handed-in verdict");
 });
 
 test("with no key loaded and no other problem the overall line is not amber", () => {

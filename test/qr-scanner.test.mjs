@@ -222,14 +222,19 @@ test("a two-code frame reports two-codes and keeps scanning", async () => {
   assert.equal(decoder.calls.length, 2);
 });
 
-test("the timeout stops the camera and start() resumes", async () => {
+test("the timeout stops the camera and start() resumes", async (t) => {
+  // Mocked setTimeout: a real 5 ms timer could fire before tick() under CPU
+  // load. tick() uses setImmediate, which stays real.
+  t.mock.timers.enable({ apis: ["setTimeout"] });
   const { media, video, statuses, scanner } = build({ timeoutMs: 5 });
   scanner.start();
   const first = makeStream();
   media.pending[0].resolve(first);
   await tick();
   assert.deepEqual(statuses, ["scanning"]);
-  await new Promise((resolve) => setTimeout(resolve, 30));
+  t.mock.timers.tick(4);
+  assert.deepEqual(statuses, ["scanning"]);
+  t.mock.timers.tick(1);
   assert.deepEqual(statuses, ["scanning", "timeout"]);
   assert.ok(first.tracks.every((track) => track.stopped));
   assert.equal(video.srcObject, null);
@@ -265,6 +270,32 @@ test("stop() is idempotent", async () => {
   scanner.stop();
   scanner.stop();
   assert.deepEqual(statuses, ["scanning", "stopped"]);
+});
+
+test("stopping during activation allocates no deadline or next frame", async (t) => {
+  const deadlines = [];
+  t.mock.method(globalThis, "setTimeout", (callback, delay) => {
+    deadlines.push({ callback, delay });
+    return 1;
+  });
+  for (const continuous of [false, true]) {
+    let ctx;
+    const statuses = [];
+    ctx = build({ continuous, onStatus(code) {
+      statuses.push(code);
+      if (code === "scanning") ctx.scanner.stop();
+    } });
+    const stream = makeStream();
+    ctx.scanner.start();
+    ctx.media.pending[0].resolve(stream);
+    await tick();
+    assert.deepEqual(statuses, ["scanning", "stopped"]);
+    assert.ok(stream.tracks.every((track) => track.stopped));
+    assert.equal(ctx.video.srcObject, null);
+    assert.equal(deadlines.length, 0, "an invalidated grant must not leave a deadline behind");
+    assert.equal(ctx.frames.queue.length, 0, "an invalidated grant must not request another frame");
+    assert.equal(ctx.decoder.calls.length, 0);
+  }
 });
 
 test("scanImage refuses svg and oversize files", async () => {
@@ -372,4 +403,136 @@ test("a decoder retired under a running scan reports an error", async () => {
   decoder.pending[0].reject(Object.assign(new Error("STOPPED"), { code: "STOPPED" }));
   await tick();
   assert.deepEqual(statuses.slice(-1), ["error"], "the caller is not left on scanning");
+});
+
+test("continuous acquisition retains one stream across successful decodes", async () => {
+  const ctx = build({ continuous: true });
+  const stream = makeStream();
+  try {
+    ctx.scanner.start();
+    ctx.media.pending[0].resolve(stream);
+    await tick();
+    for (const value of [1, 2, 3]) {
+      ctx.frames.run();
+      ctx.decoder.pending.at(-1).resolve({ code: 1, payload: new Uint8Array([value]) });
+      await tick();
+      assert.ok(stream.tracks.every((track) => !track.stopped), "a decoded part never releases the stream");
+      assert.equal(ctx.video.srcObject, stream);
+    }
+    assert.deepEqual(ctx.results.map((payload) => payload[0]), [1, 2, 3]);
+    assert.equal(ctx.media.calls.length, 1);
+    assert.equal(ctx.video.plays, 1);
+    assert.deepEqual(ctx.statuses, ["scanning"]);
+  } finally {
+    ctx.scanner.stop();
+  }
+  assert.ok(stream.tracks.every((track) => track.stopped));
+  assert.equal(ctx.video.srcObject, null);
+  const decodes = ctx.decoder.calls.length;
+  while (ctx.frames.queue.length) ctx.frames.run();
+  assert.equal(ctx.decoder.calls.length, decodes, "queued frames do nothing after stop");
+});
+
+test("successful continuous parts share one deadline and late timeout replies are wiped", async (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  const ctx = build({ continuous: true, timeoutMs: 10 });
+  const stream = makeStream();
+  try {
+    ctx.scanner.start();
+    ctx.media.pending[0].resolve(stream);
+    await tick();
+    for (let i = 0; i < 3; i += 1) {
+      t.mock.timers.tick(3);
+      ctx.frames.run();
+      assert.equal(ctx.decoder.pending.length, i + 1, "the same session keeps decoding");
+      ctx.decoder.pending[i].resolve({ code: 1, payload: new Uint8Array([i + 1]) });
+      await tick();
+    }
+    assert.equal(ctx.results.length, 3);
+    ctx.frames.run();
+    assert.equal(ctx.decoder.pending.length, 4);
+    t.mock.timers.tick(1);
+    assert.deepEqual(ctx.statuses, ["scanning", "timeout"], "parts never extend the original deadline");
+    assert.ok(stream.tracks.every((track) => track.stopped));
+    assert.equal(ctx.video.srcObject, null);
+    const late = new Uint8Array([9]);
+    ctx.decoder.pending[3].resolve({ code: 1, payload: late });
+    await tick();
+    assert.equal(ctx.results.length, 3);
+    assert.ok(late.every((byte) => byte === 0));
+    const decodes = ctx.decoder.calls.length;
+    while (ctx.frames.queue.length) ctx.frames.run();
+    assert.equal(ctx.decoder.calls.length, decodes, "no canvas read or decode after timeout");
+  } finally {
+    ctx.scanner.stop();
+  }
+});
+
+test("continuous callbacks may stop capture without scheduling another frame", async () => {
+  let ctx;
+  ctx = build({ continuous: true, onResult: () => ctx.scanner.stop() });
+  const stream = makeStream();
+  ctx.scanner.start();
+  ctx.media.pending[0].resolve(stream);
+  await tick();
+  ctx.frames.run();
+  ctx.decoder.pending[0].resolve({ code: 1, payload: new Uint8Array([1]) });
+  await tick();
+  assert.ok(stream.tracks.every((track) => track.stopped));
+  assert.deepEqual(ctx.statuses, ["scanning", "stopped"]);
+  while (ctx.frames.queue.length) ctx.frames.run();
+  assert.equal(ctx.decoder.calls.length, 1);
+});
+
+test("continuous capture keeps at most one decode and one queued frame", async () => {
+  const ctx = build({ continuous: true });
+  try {
+    ctx.scanner.start();
+    ctx.media.pending[0].resolve(makeStream());
+    await tick();
+    ctx.frames.run();
+    ctx.decoder.pending[0].resolve({ code: 1, payload: new Uint8Array([1]) });
+    await tick();
+    for (let i = 0; i < 500; i += 1) ctx.frames.run();
+    assert.equal(ctx.decoder.calls.length, 2, "a burst cannot overlap the pending second decode");
+    assert.equal(ctx.frames.queue.length, 1);
+    ctx.decoder.pending[1].resolve({ code: -1 });
+    await tick();
+    ctx.frames.run();
+    assert.equal(ctx.decoder.calls.length, 3, "capture resumes when the pending decode settles");
+  } finally {
+    ctx.scanner.stop();
+  }
+});
+
+test("a replacement session ignores the previous session's grant and decoder reply", async () => {
+  const ctx = build({ continuous: true });
+  const first = makeStream();
+  const staleGrant = makeStream();
+  const current = makeStream();
+  try {
+    ctx.scanner.start();
+    ctx.media.pending[0].resolve(first);
+    await tick();
+    ctx.frames.run();
+    ctx.scanner.start();
+    ctx.scanner.start();
+    ctx.media.pending[1].resolve(staleGrant);
+    ctx.media.pending[2].resolve(current);
+    const late = new Uint8Array([7]);
+    ctx.decoder.pending[0].resolve({ code: 1, payload: late });
+    await tick();
+    assert.ok(first.tracks.every((track) => track.stopped));
+    assert.ok(staleGrant.tracks.every((track) => track.stopped));
+    assert.ok(current.tracks.every((track) => !track.stopped));
+    assert.equal(ctx.video.srcObject, current);
+    assert.equal(ctx.results.length, 0);
+    assert.ok(late.every((byte) => byte === 0));
+    // The first queued callback belongs to the retired session.
+    ctx.frames.run();
+    ctx.frames.run();
+    assert.equal(ctx.decoder.calls.length, 2);
+  } finally {
+    ctx.scanner.stop();
+  }
 });

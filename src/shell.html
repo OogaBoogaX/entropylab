@@ -17,6 +17,11 @@
       <div class="beta-warning-text" data-i18n-rich><strong>Experimental software</strong> EntropyLab is experimental and should be used only for testing and educational purposes.</div>
       <button type="button" class="beta-warning-dismiss" id="beta-warning-dismiss" aria-label="Dismiss the experimental software warning"><svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M18 6 6 18M6 6l12 12"/></svg></button>
     </div>
+    <!-- dev-build -->
+    <div class="beta-warning" id="dev-build-warning" role="alert">
+      <div class="beta-warning-text" data-i18n-rich><strong>Development build — unsigned.</strong> For testing only. Do not use it with real funds or real seeds. The signed release is at entropylab.online.</div>
+    </div>
+    <!-- /dev-build -->
 <noscript>
       <div class="beta-warning no-print" role="alert">
         <div class="beta-warning-text"><strong>JavaScript is required</strong> EntropyLab performs wallet calculations locally inside your browser. With JavaScript disabled the calculator cannot derive keys or addresses. Enable JavaScript, then run this file offline on an air-gapped computer.</div>
@@ -49,7 +54,7 @@
         <button type="button" class="workspace-tab" role="tab" aria-selected="false" aria-controls="msig-card" aria-label="Multi Signature" title="Multi Signature"><span class="workspace-tab-full">MultiSig</span><span class="workspace-tab-short">MultiSig</span></button>
         <button type="button" class="workspace-tab" role="tab" aria-selected="false" aria-controls="psbt-card psbted-card nonce-card" aria-label="Transactions"><span class="workspace-tab-full">Transactions</span><span class="workspace-tab-short">Txns</span></button>
         <button type="button" class="workspace-tab" role="tab" aria-selected="false" aria-controls="ln-card" aria-label="Lightning"><span class="workspace-tab-full">Lightning</span><span class="workspace-tab-short">LN</span></button>
-        <button type="button" class="workspace-tab" role="tab" aria-selected="false" aria-controls="core-card" aria-label="Core Wallet"><span class="workspace-tab-full">Core Wallet</span><span class="workspace-tab-short">Core</span></button>
+        <button type="button" class="workspace-tab" role="tab" aria-selected="false" aria-controls="core-card" aria-label="Bitcoin Core"><span class="workspace-tab-full">Bitcoin Core</span><span class="workspace-tab-short">Core</span></button>
         <button type="button" class="workspace-tab" role="tab" aria-selected="false" aria-controls="bip85-card" aria-label="BIP-85 Child" title="BIP-85 Child"><span class="workspace-tab-full">BIP-85</span><span class="workspace-tab-short">BIP-85</span></button>
         <button type="button" class="workspace-tab" role="tab" aria-selected="false" aria-controls="sp-card bip47-card" aria-label="Privacy"><span class="workspace-tab-full">Privacy</span><span class="workspace-tab-short">Privacy</span></button>
         <button type="button" class="workspace-tab" role="tab" aria-selected="false" aria-controls="vanity-card" aria-label="Vanity Address" title="Vanity Address"><span class="workspace-tab-full">Vanity</span><span class="workspace-tab-short">Vanity</span></button>
@@ -78,9 +83,7 @@
       </div>
       <div class="key-lab" id="key-lab">
       <p class="edge-note is-public" id="key-edit-note" role="status" hidden></p>
-      <!-- preview -->
       <div class="secure-entry-host" id="secure-entry-host" hidden></div>
-      <!-- /preview -->
       <div class="global-sync-host" id="global-sync-host"></div>
       <section class="seed-length-control" id="seed-length" aria-labelledby="seed-length-label">
         <h3 class="label" id="seed-length-label">Seed phrase length</h3>
@@ -126,6 +129,7 @@ words, pick one of the checksum words.</span></span>
         <label for="pass">Passphrase (optional)</label>
         <div class="passphrase-keyboard-tools" id="passphrase-keyboard-toggle-host" hidden></div>
         <div class="dice-input-shell passphrase-input-shell"><pre class="dice-input-highlight" id="passphrase-highlight" translate="no" aria-hidden="true"></pre><input id="pass" autocomplete="off" spellcheck="false" autocapitalize="off" placeholder="Enter a passphrase, or leave blank for none" aria-describedby="passphrase-bip39-status"></div>
+        <p class="field-note edge-note is-private" id="passphrase-length-note" hidden>Some hardware wallets cannot restore a passphrase longer than 50 characters. Check yours before relying on it.</p>
         <p class="field-note passphrase-bip39-status" id="passphrase-bip39-status" aria-live="polite" hidden></p>
       </div>
       <div class="passphrase-keyboard-host" id="passphrase-keyboard-host" hidden></div>
@@ -799,7 +803,7 @@ words, pick one of the checksum words.</span></span>
       </details>
     </div>
       <div class="card no-print tool-card" id="psbted-card" role="tabpanel" hidden>
-      <label class="field">PSBT v0 (base64 or hex)
+      <label class="field">PSBT (base64 or hex)
         <textarea id="psbted-text" placeholder="cHNidP8B..." spellcheck="false" autocomplete="off" autocapitalize="off"></textarea>
       </label>
       <div class="psbt-scan-host" id="psbted-scan-host"></div>
@@ -1019,11 +1023,8 @@ words, pick one of the checksum words.</span></span>
             <span class="field-note" id="ln-format-help">LND prints an aezeed cipher seed; ldk-node uses a BIP-39 phrase. Both use the same English wordlist.</span>
           </label>
           <label class="field" id="ln-network-field">Network
-            <select id="ln-network" aria-describedby="ln-network-help">
-              <option value="mainnet" selected>Mainnet</option>
-              <option value="testnet">Testnet</option>
-            </select>
-            <span class="field-note" id="ln-network-help">Selects the coin type in the LND identity path (0' mainnet, 1' testnet/signet/regtest). Changing it clears any derived result — re-derive after switching.</span>
+            <output id="ln-network-value" aria-describedby="ln-network-note"></output>
+            <span class="field-note" id="ln-network-note"></span>
           </label>
         </div>
         <label class="field">Seed phrase

@@ -8,7 +8,7 @@
 // committed, so a blocked plan changes nothing and never echoes secret text.
 //
 // Expected values: the P1a design (BIP39 word counts 12/15/18/21/24, word
-// indices 0..2047, die faces 1..6, card values 0..51, capacities 1..400) and
+// indices 0..2047, die faces 1..6, card values 0..51, roll capacities 1..4096, card capacities 1..400) and
 // the BIP39 word-count rule. Run with `npm test`.
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -117,7 +117,7 @@ test("seedIndices returns a copy the caller owns", () => {
 });
 
 test("rolls validate their method, capacity and faces", () => {
-  for (const capacity of [1, 6, 400]) {
+  for (const capacity of [1, 6, 400, 4096]) {
     const entry = rollsEntry("base10", capacity);
     assert.equal(entry.kind, "rolls");
     assert.equal(entry.method, "base10");
@@ -125,7 +125,7 @@ test("rolls validate their method, capacity and faces", () => {
     assert.ok(entry.rolls instanceof Uint8Array);
     assert.equal(entry.rolls.length, capacity);
   }
-  for (const capacity of [0, 401, -1, 1.5, "6", null, undefined]) {
+  for (const capacity of [0, 4097, -1, 1.5, "6", null, undefined]) {
     assert.throws(() => rollsEntry("base10", capacity), code("BAD_CAPACITY"));
   }
   for (const method of ["", null, undefined, 3, {}]) {
@@ -183,7 +183,9 @@ test("cards validate values 0..51 and behave like rolls", () => {
   cardsUndo(entry);
   assert.equal(entry.count, 1);
   assert.equal(entry.cards[1], 0);
-  for (const capacity of [0, 401, 2.5]) {
+  // Cards stay at 400: only dice transcripts needed the larger rolls bound.
+  assert.equal(cardsEntry("shuffle", 400).cards.length, 400);
+  for (const capacity of [0, 401, 4096, 2.5]) {
     assert.throws(() => cardsEntry("shuffle", capacity), code("BAD_CAPACITY"));
   }
 });

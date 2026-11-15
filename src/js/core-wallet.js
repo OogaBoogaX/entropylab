@@ -917,7 +917,11 @@ var hodlCoreWallet = (() => {
   const XPRV_VERSION = { mainnet: 0x0488ade4, testnet: 0x04358394 }; // xprv / tprv
   const IMPORT_SCRIPTS = { pkh: "bip44", "sh:wpkh": "bip49", wpkh: "bip84", tr: "bip86" };
 
-  const isEncrypted = (doc) => doc.records.some((record) => record.name === "walletdescriptorcryptedkey");
+  // Core writes the master key record (mkey) when a wallet is encrypted, before
+  // it holds any crypted descriptor key: a wallet created blank and then
+  // encrypted has only the mkey. Either record means the file's secrets are
+  // encrypted (red team, 11-04 verification).
+  const isEncrypted = (doc) => doc.records.some((record) => record.name === "walletdescriptorcryptedkey" || record.name === "mkey");
 
   const IMPORT_PURPOSE = { bip44: 44, bip49: 49, bip84: 84, bip86: 86 };
 

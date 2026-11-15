@@ -1572,9 +1572,10 @@ test("the note under a capped list says the hidden inputs and outputs are still 
 });
 
 test("an appended output block spends the derivation budget as a full render does (GLM 5.3's review of #1031)", () => {
-  // Each output's declared path costs 3 of the render's 4,096 derivation
-  // steps, so a full render runs out at output 1,365 and every later output
-  // reads as over budget. The block for outputs 2,000+ must read the same,
+  // Each output's declared path costs 3 of the render's 3,072 shared
+  // derivation steps (the 1,024-step reserve is the real renderer's; this stub
+  // ignores it, #1457), so a full render runs out at output 1,024 and every
+  // later output reads as over budget. The block for outputs 2,000+ must read the same,
   // not start from a fresh budget.
   const { render } = hodlRenderPsbtForTest({
     hodlRenderOutputHtml: (output, index, network, map, entries, derivationBudget) => {
@@ -1589,7 +1590,7 @@ test("an appended output block spends the derivation budget as a full render doe
   assert.ok(part.chunk.includes("<strong>Output 2000</strong> over budget"), "the block reads over budget, as in the full render");
   assert.ok(!part.chunk.includes("derived"));
   const full = render(doc, new Uint8Array(), "2024-01-01T00:00:00Z", "inspect", { network: "mainnet", limits });
-  assert.ok(full.includes("<strong>Output 1364</strong> derived") && full.includes("<strong>Output 1365</strong> over budget"));
+  assert.ok(full.includes("<strong>Output 1023</strong> derived") && full.includes("<strong>Output 1024</strong> over budget"));
   assert.equal(page, full);
 });
 

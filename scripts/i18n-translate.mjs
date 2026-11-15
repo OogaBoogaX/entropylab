@@ -445,8 +445,14 @@ export async function translateLanguage({ root, lang, outDir, client, limit, log
         // rethrows and fails the language.
         const verdicts = new Map();
         const unaudited = new Set();
+        // Exactly one verdict per key: a second one — contradicting the
+        // first or merely repeating it — means the model lost track of the
+        // pair, so neither answer is trusted and the key is dropped.
         const record = (result) => {
-          for (const verdict of result?.verdicts ?? []) verdicts.set(verdict.key, verdict);
+          for (const verdict of result?.verdicts ?? []) {
+            if (verdicts.has(verdict.key)) verdicts.set(verdict.key, { key: verdict.key, ok: false, problem: "the model returned more than one verdict" });
+            else verdicts.set(verdict.key, verdict);
+          }
         };
         try {
           record(await audit(acceptedKeys));
@@ -468,10 +474,10 @@ export async function translateLanguage({ root, lang, outDir, client, limit, log
         for (const key of acceptedKeys) {
           if (unaudited.has(key)) continue;
           const verdict = verdicts.get(key);
-          if (verdict && verdict.ok === false) {
-            dropped.push({ key, problem: `semantic audit: ${verdict.problem}` });
-          } else {
+          if (verdict?.ok === true) {
             translated[key] = accepted[key];
+          } else {
+            dropped.push({ key, problem: `semantic audit: ${verdict?.ok === false ? verdict.problem : "the model returned no valid verdict"}` });
           }
         }
       }

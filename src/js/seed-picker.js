@@ -1,7 +1,6 @@
 // Secure entry: the seed word picker (P2a). It owns the picker's DOM and
-// writes the caller's seed entry only through seedSet and seedUndo. P2b wires
-// it into the Key Station behind the preview flag and the Secure entry switch;
-// app.js does not import it yet.
+// writes the caller's seed entry only through seedSet and seedUndo. app.js
+// mounts it in the Key Station's seed form while Secure entry is on.
 //
 // Security contract: the picker never keeps a word string beyond the moment it
 // is shown, never speaks a word, zeroes every temporary index and entropy
@@ -11,37 +10,41 @@
 // buttons, the review word) are unselectable. The caller destroys a picker
 // before mounting another on the same entry.
 
+import { t } from "./i18n.js";
+
 const CHIP_DOTS = "••••";
 const WORD_DOTS = "••••••";
 const MAX_MATCHES = 24;
 const WORD_COUNT = 2048;
 
+// Each string is a thunk: it is looked up when it is shown, so a language
+// switch is honoured, and the catalog sweep still sees the literal.
 const TEXT = {
-  position: "Word {n} of {total}",
-  help: "Type the beginning of the word, then choose a match.",
-  chip: "Word {n}, entered. Review or replace.",
-  prefixLabel: "Beginning of word {n}",
-  oneMatch: "1 matching word",
-  manyMatches: "{count} matching words",
-  noMatch: "No matching word. Check the spelling or remove a letter.",
-  narrow: "Type more letters to narrow the list.",
-  undo: "Undo last word",
-  reviewAll: "Review words one by one",
-  note: "Select a word number above to review or replace that word.",
-  progress: "{count} of {total} words entered.",
-  checksumOk: "Seed checksum passed. Review the word order before continuing.",
-  checksumBad: "Seed checksum does not match. Check the words and their order.",
-  caveat: "A passing checksum does not confirm this is the seed you intended.",
-  entered: "Word {n} entered. Word {next} of {total}",
-  reviewHeading: "Editing word {n} of {total}",
-  showWord: "Show this word",
-  reviewNote: "Only this word is shown, and only while \"Show this word\" is on. Replacing it keeps every other word in its place.",
-  replaceLabel: "Beginning of the replacement word",
-  replace: "Replace word",
-  cancel: "Cancel",
-  replaced: "Word {n} replaced. Continue with word {next}.",
-  prev: "Previous word",
-  next: "Next word",
+  position: (vars) => t("Word {n} of {total}", vars),
+  help: () => t("Type the beginning of the word, then choose a match."),
+  chip: (vars) => t("Word {n}, entered. Review or replace.", vars),
+  prefixLabel: (vars) => t("Beginning of word {n}", vars),
+  oneMatch: () => t("1 matching word"),
+  manyMatches: (vars) => t("{count} matching words", vars),
+  noMatch: () => t("No matching word. Check the spelling or remove a letter."),
+  narrow: () => t("Type more letters to narrow the list."),
+  undo: () => t("Undo last word"),
+  reviewAll: () => t("Review words one by one"),
+  note: () => t("Select a word number above to review or replace that word."),
+  progress: (vars) => t("{count} of {total} words entered.", vars),
+  checksumOk: () => t("Seed checksum passed. Review the word order before continuing."),
+  checksumBad: () => t("Seed checksum does not match. Check the words and their order."),
+  caveat: () => t("A passing checksum does not confirm this is the seed you intended."),
+  entered: (vars) => t("Word {n} entered. Word {next} of {total}", vars),
+  reviewHeading: (vars) => t("Editing word {n} of {total}", vars),
+  showWord: () => t("Show this word"),
+  reviewNote: () => t("Only this word is shown, and only while \"Show this word\" is on. Replacing it keeps every other word in its place."),
+  replaceLabel: () => t("Beginning of the replacement word"),
+  replace: () => t("Replace word"),
+  cancel: () => t("Cancel"),
+  replaced: (vars) => t("Word {n} replaced. Continue with word {next}.", vars),
+  prev: () => t("Previous word"),
+  next: () => t("Next word"),
 };
 
 export function mountSeedPicker(host, {
@@ -51,20 +54,12 @@ export function mountSeedPicker(host, {
   seedUndo,
   seedIndices,
   entropyFromWordIndices,
-  translate = (text) => text,
   onChange = () => {},
   doc = document,
 } = {}) {
   if (!entry || typeof entry !== "object" || entry.kind !== "seed") throw new Error("A seed picker needs a seed entry.");
   if (!Array.isArray(wordlist) || wordlist.length !== WORD_COUNT) throw new Error("A seed picker needs the 2048-word BIP39 list.");
   if (typeof seedSet !== "function" || typeof seedUndo !== "function" || typeof seedIndices !== "function" || typeof entropyFromWordIndices !== "function") throw new Error("A seed picker needs the seed entry helpers.");
-
-  // A translation may or may not fill {placeholders}; fill any it leaves.
-  const say = (text, vars) => {
-    const translated = String(translate(text, vars) ?? "");
-    if (!vars) return translated;
-    return translated.replace(/\{(\w+)\}/g, (match, name) => (Object.prototype.hasOwnProperty.call(vars, name) ? String(vars[name]) : match));
-  };
 
   const make = (tag, props) => {
     const node = doc.createElement(tag);
@@ -94,7 +89,7 @@ export function mountSeedPicker(host, {
   // buttons are `.btn` variants, and the secret warnings are red edge notes.
   // Styles live in styles.css (#seed-picker-*), including `[hidden]` for `.btn`.
   const positionLine = make("p", { class: "label", id: "seed-picker-position" });
-  const helpLine = make("p", { class: "field-note", id: "seed-picker-help", text: say(TEXT.help) });
+  const helpLine = make("p", { class: "field-note", id: "seed-picker-help", text: TEXT.help() });
   const chips = make("div", { class: "row", id: "seed-picker-chips" });
 
   const entryArea = make("div", { id: "seed-picker-entry" });
@@ -104,7 +99,7 @@ export function mountSeedPicker(host, {
   prefixLabel.appendChild(prefixText);
   prefixLabel.appendChild(prefixField);
   const countLine = make("p", { class: "field-note", id: "seed-picker-count", role: "status", "aria-live": "polite" });
-  const narrowLine = make("p", { class: "field-note", id: "seed-picker-narrow", hidden: true, text: say(TEXT.narrow) });
+  const narrowLine = make("p", { class: "field-note", id: "seed-picker-narrow", hidden: true, text: TEXT.narrow() });
   // Match buttons show seed words: data-private-value makes them unselectable,
   // as the review word is (K3.1).
   const matches = make("div", { class: "row", id: "seed-picker-matches", "data-private-value": "" });
@@ -118,22 +113,22 @@ export function mountSeedPicker(host, {
   const reviewWord = make("div", { id: "seed-picker-review-word" });
   const showLabel = make("label", { class: "field", id: "seed-picker-review-show-label" });
   const showBox = make("input", { type: "checkbox", id: "seed-picker-review-show" });
-  const showText = make("span", { id: "seed-picker-review-show-text", text: say(TEXT.showWord) });
+  const showText = make("span", { id: "seed-picker-review-show-text", text: TEXT.showWord() });
   showLabel.appendChild(showBox);
   showLabel.appendChild(showText);
-  const reviewNote = make("p", { class: "field-note", id: "seed-picker-review-note", text: say(TEXT.reviewNote) });
+  const reviewNote = make("p", { class: "field-note", id: "seed-picker-review-note", text: TEXT.reviewNote() });
   const replaceLabel = make("label", { class: "field", id: "seed-picker-replace-label" });
-  const replaceText = make("span", { id: "seed-picker-replace-text", text: say(TEXT.replaceLabel) });
+  const replaceText = make("span", { id: "seed-picker-replace-text", text: TEXT.replaceLabel() });
   const replaceField = make("input", { id: "seed-picker-replace-prefix", ...fieldAttributes("seed-picker-replace-count") });
   replaceLabel.appendChild(replaceText);
   replaceLabel.appendChild(replaceField);
   const replaceCount = make("p", { class: "field-note", id: "seed-picker-replace-count", role: "status", "aria-live": "polite" });
-  const replaceNarrow = make("p", { class: "field-note", id: "seed-picker-replace-narrow", hidden: true, text: say(TEXT.narrow) });
+  const replaceNarrow = make("p", { class: "field-note", id: "seed-picker-replace-narrow", hidden: true, text: TEXT.narrow() });
   const replaceMatches = make("div", { class: "row", id: "seed-picker-replace-matches", "data-private-value": "" });
-  const replaceButton = make("button", { type: "button", class: "btn primary", id: "seed-picker-replace", disabled: "", text: say(TEXT.replace) });
-  const reviewCancel = make("button", { type: "button", class: "btn secondary", id: "seed-picker-review-cancel", text: say(TEXT.cancel) });
-  const reviewPrev = make("button", { type: "button", class: "btn secondary", id: "seed-picker-review-prev", text: say(TEXT.prev) });
-  const reviewNext = make("button", { type: "button", class: "btn secondary", id: "seed-picker-review-next", text: say(TEXT.next) });
+  const replaceButton = make("button", { type: "button", class: "btn primary", id: "seed-picker-replace", disabled: "", text: TEXT.replace() });
+  const reviewCancel = make("button", { type: "button", class: "btn secondary", id: "seed-picker-review-cancel", text: TEXT.cancel() });
+  const reviewPrev = make("button", { type: "button", class: "btn secondary", id: "seed-picker-review-prev", text: TEXT.prev() });
+  const reviewNext = make("button", { type: "button", class: "btn secondary", id: "seed-picker-review-next", text: TEXT.next() });
   const reviewActions = make("div", { class: "row tool-actions" });
   reviewActions.appendChild(replaceButton);
   reviewActions.appendChild(reviewCancel);
@@ -150,14 +145,14 @@ export function mountSeedPicker(host, {
   review.appendChild(reviewActions);
 
   const actions = make("div", { class: "row tool-actions" });
-  const undoButton = make("button", { type: "button", class: "btn secondary", id: "seed-picker-undo", text: say(TEXT.undo) });
-  const reviewAll = make("button", { type: "button", class: "btn secondary", id: "seed-picker-review-all", hidden: true, text: say(TEXT.reviewAll) });
+  const undoButton = make("button", { type: "button", class: "btn secondary", id: "seed-picker-undo", text: TEXT.undo() });
+  const reviewAll = make("button", { type: "button", class: "btn secondary", id: "seed-picker-review-all", hidden: true, text: TEXT.reviewAll() });
   actions.appendChild(undoButton);
   actions.appendChild(reviewAll);
 
-  const note = make("p", { class: "field-note", id: "seed-picker-note", text: say(TEXT.note) });
+  const note = make("p", { class: "field-note", id: "seed-picker-note", text: TEXT.note() });
   const progress = make("p", { class: "field-note", id: "seed-picker-progress", role: "status", "aria-live": "polite" });
-  const caveat = make("p", { class: "field-note edge-note", id: "seed-picker-caveat", hidden: true, text: say(TEXT.caveat) });
+  const caveat = make("p", { class: "field-note edge-note", id: "seed-picker-caveat", hidden: true, text: TEXT.caveat() });
 
   host.replaceChildren(positionLine, helpLine, chips, entryArea, review, actions, note, progress, caveat);
 
@@ -199,7 +194,7 @@ export function mountSeedPicker(host, {
         type: "button",
         class: "btn secondary",
         "data-word-position": String(position + 1),
-        "aria-label": say(TEXT.chip, { n: position + 1 }),
+        "aria-label": TEXT.chip({ n: position + 1 }),
       });
       chip.appendChild(make("span", { "aria-hidden": "true", text: String(position + 1) }));
       chip.appendChild(make("span", { "aria-hidden": "true", text: CHIP_DOTS }));
@@ -209,24 +204,24 @@ export function mountSeedPicker(host, {
   };
 
   const renderPosition = () => {
-    if (entry.count === entry.length) positionLine.textContent = say(TEXT.progress, { count: entry.length, total: entry.length });
-    else positionLine.textContent = say(TEXT.position, { n: entry.count + 1, total: entry.length });
+    if (entry.count === entry.length) positionLine.textContent = TEXT.progress({ count: entry.length, total: entry.length });
+    else positionLine.textContent = TEXT.position({ n: entry.count + 1, total: entry.length });
   };
 
   const renderProgress = () => {
     if (entry.count !== entry.length) {
       progress.setAttribute("data-picker-state", "incomplete");
-      progress.textContent = say(TEXT.progress, { count: entry.count, total: entry.length });
+      progress.textContent = TEXT.progress({ count: entry.count, total: entry.length });
       caveat.hidden = true;
       return;
     }
     if (checksum === "ok") {
       progress.setAttribute("data-picker-state", "checksum-ok");
-      progress.textContent = say(TEXT.checksumOk);
+      progress.textContent = TEXT.checksumOk();
       caveat.hidden = false;
     } else {
       progress.setAttribute("data-picker-state", "checksum-bad");
-      progress.textContent = say(TEXT.checksumBad);
+      progress.textContent = TEXT.checksumBad();
       caveat.hidden = true;
     }
   };
@@ -241,7 +236,7 @@ export function mountSeedPicker(host, {
     // leave it showing a word that is no longer stored.
     undoButton.hidden = entry.count === 0 || reviewing;
     reviewAll.hidden = !done || reviewing;
-    prefixText.textContent = say(TEXT.prefixLabel, { n: entry.count + 1 });
+    prefixText.textContent = TEXT.prefixLabel({ n: entry.count + 1 });
   };
 
   const render = () => {
@@ -265,11 +260,11 @@ export function mountSeedPicker(host, {
       if (wordlist[index].startsWith(query)) found.push(index);
     }
     if (found.length === 0) {
-      countNode.textContent = say(TEXT.noMatch);
+      countNode.textContent = TEXT.noMatch();
       if (narrowNode) narrowNode.hidden = true;
       return;
     }
-    countNode.textContent = found.length === 1 ? say(TEXT.oneMatch) : say(TEXT.manyMatches, { count: found.length });
+    countNode.textContent = found.length === 1 ? TEXT.oneMatch() : TEXT.manyMatches({ count: found.length });
     if (found.length > MAX_MATCHES) {
       if (narrowNode) narrowNode.hidden = false;
       return;
@@ -304,7 +299,7 @@ export function mountSeedPicker(host, {
       renderProgress();
     } else {
       progress.setAttribute("data-picker-state", "incomplete");
-      progress.textContent = say(TEXT.entered, { n: position + 1, next: entry.count + 1, total: entry.length });
+      progress.textContent = TEXT.entered({ n: position + 1, next: entry.count + 1, total: entry.length });
     }
     notify();
     focusPrefix();
@@ -371,7 +366,7 @@ export function mountSeedPicker(host, {
   };
 
   const renderReview = () => {
-    reviewHeading.textContent = say(TEXT.reviewHeading, { n: reviewPosition + 1, total: entry.length });
+    reviewHeading.textContent = TEXT.reviewHeading({ n: reviewPosition + 1, total: entry.length });
     renderReviewWord();
     reviewPrev.disabled = reviewPosition <= 0;
     reviewNext.disabled = reviewPosition >= entry.count - 1;
@@ -430,7 +425,7 @@ export function mountSeedPicker(host, {
       renderProgress();
     } else {
       progress.setAttribute("data-picker-state", "incomplete");
-      progress.textContent = say(TEXT.replaced, { n: position + 1, next: entry.count + 1, total: entry.length });
+      progress.textContent = TEXT.replaced({ n: position + 1, next: entry.count + 1, total: entry.length });
     }
     notify();
   };

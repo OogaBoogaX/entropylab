@@ -4,6 +4,10 @@
 // buffer is handed to the decoder, which zeroes it, and every ImageData is
 // zeroed as soon as it has been read.
 //
+// The default is one-shot: a successful decode stops capture before onResult.
+// Opt-in continuous capture keeps one stream and one deadline across results;
+// stop(), timeout, decode failure or a later start() still ends that session.
+//
 // Security contract: a frame is read only while a live session's generation
 // still matches, a stream that resolves after stop() or a later start() has
 // its tracks stopped and is dropped, and a decode reply that arrives after
@@ -13,9 +17,36 @@
 const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
 const MAX_IMAGE_PIXELS = 4_194_304;
 const MAX_IMAGE_SIDE = 4096;
+// qr-wasm pads a frame by this many pixels on every side before scanning
+// (the quiet zone) and counts that pad against its size limits, so a photo
+// is fitted against the padded frame rather than the raw pixel count.
+const QUIET_ZONE = 16;
 const RASTER_TYPES = new Set(["image/png", "image/jpeg", "image/webp", "image/bmp"]);
 
 const failure = (code) => Object.assign(new Error(code), { code });
+
+// The frame a photo is drawn at: the largest scale at or below 1 whose
+// quiet-zone padding still fits the decoder's side and pixel caps. Binary
+// search keeps both caps exact for any aspect ratio, where a single
+// `min()` of the raw caps leaves no room for the pad.
+export const photoFrameSize = (sourceWidth, sourceHeight) => {
+  const fits = (scale) => {
+    const paddedWidth = Math.floor(sourceWidth * scale) + QUIET_ZONE * 2;
+    const paddedHeight = Math.floor(sourceHeight * scale) + QUIET_ZONE * 2;
+    return paddedWidth <= MAX_IMAGE_SIDE && paddedHeight <= MAX_IMAGE_SIDE && paddedWidth * paddedHeight <= MAX_IMAGE_PIXELS;
+  };
+  if (fits(1)) return { width: Math.max(1, sourceWidth), height: Math.max(1, sourceHeight) };
+  let low = 0, high = 1;
+  for (let step = 0; step < 32; step += 1) {
+    const scale = (low + high) / 2;
+    if (fits(scale)) low = scale;
+    else high = scale;
+  }
+  return {
+    width: Math.max(1, Math.floor(sourceWidth * low)),
+    height: Math.max(1, Math.floor(sourceHeight * low)),
+  };
+};
 
 const wipe = (buffer) => {
   try {
@@ -60,6 +91,7 @@ export function createQrScanner({
   requestFrame = globalThis.requestAnimationFrame,
   onResult,
   onStatus,
+  continuous = false,
 } = {}) {
   let generation = 0;
   let active = null;
@@ -146,12 +178,13 @@ export function createQrScanner({
         status("error", "DECODE_FAILED");
         return;
       }
-      teardown();
+      if (!continuous) teardown();
       try {
         onResult?.(payload);
       } catch {
         // The caller owns the payload now.
       }
+      if (continuous) schedule(current);
       return;
     }
     // No other reply carries a scan: any payload that came with one is wiped.
@@ -296,6 +329,8 @@ export function createQrScanner({
           // A detached video cannot show the stream; the tracks still stop.
         }
         status("scanning");
+        // Activation may synchronously stop or replace this session.
+        if (!current.live || current.gen !== generation) return;
         current.timer = setTimeout(() => {
           current.timer = null;
           if (!current.live || current.gen !== generation) return;
@@ -336,15 +371,10 @@ export function createQrScanner({
       const sourceWidth = Number(bitmap?.width) || 0;
       const sourceHeight = Number(bitmap?.height) || 0;
       if (sourceWidth <= 0 || sourceHeight <= 0) throw failure("UNREADABLE");
-      const scale = Math.min(
-        1,
-        MAX_IMAGE_SIDE / sourceWidth,
-        MAX_IMAGE_SIDE / sourceHeight,
-        Math.sqrt(MAX_IMAGE_PIXELS / (sourceWidth * sourceHeight)),
-      );
-      // Round down: rounding up can land a few pixels over the decoder's cap.
-      const width = Math.max(1, Math.floor(sourceWidth * scale));
-      const height = Math.max(1, Math.floor(sourceHeight * scale));
+      // The decoder refuses a frame whose quiet-zone pad overflows its caps,
+      // so fit the padded frame rather than the raw pixels. Rounding is down,
+      // which can only add margin.
+      const { width, height } = photoFrameSize(sourceWidth, sourceHeight);
       let ctx = null;
       try {
         ctx = canvas.getContext("2d", { willReadFrequently: true });

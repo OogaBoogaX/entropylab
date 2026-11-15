@@ -13,12 +13,20 @@ itself.
   [GitHub Releases](https://github.com/OogaBoogaX/entropylab/releases) page.
   Download `entropylab.html`, `SHA256SUMS.txt`, `SHA256SUMS.asc`, `KEYS` and
   `entropylab.html.ots` into one folder.
-- **The live site** (`entropylab.online`) changes with every update. Each
-  build has a checksum, a GitHub attestation and a Bitcoin timestamp (steps
-  1, 3 and 4), but no release signatures. Its `SHA256SUMS.txt` and
+- **The live site** (`entropylab.online`) is the latest signed release, from
+  v1.1.0 on. It changes only when a new release is published, and its footer
+  shows that release's version. Until v1.1.0 is published it still shows the
+  last build from `rock`, whose footer says `-dev`. Check it like a release:
+  steps 1 to 4 below.
+- **The preview site** (`preview.entropylab.online`) is built from `rock` on
+  every merge and carries a `-dev` version (for example `v1.1.0-dev`). It has
+  no release signatures: it is unreviewed development software, not for real
+  funds. If you check it at all, use the `rock` checksum, attestation and
+  timestamp (steps 1, 3 and 4). Its `SHA256SUMS.txt` and
   `entropylab.html.ots` are next to `entropylab.html` in the
-  [`rock` branch](https://github.com/OogaBoogaX/entropylab/tree/rock). Each
-  update replaces all three, so download them at the same time as the page.
+  [`rock` branch](https://github.com/OogaBoogaX/entropylab/tree/rock), and
+  each update replaces all three, so download them at the same time as the
+  page.
 
 ## Step 1: check the checksum
 
@@ -50,6 +58,24 @@ shasum -a 256 -c SHA256SUMS.txt
 ```sh
 sha256sum -c SHA256SUMS.txt
 ```
+
+### Known issue: v1.0.0
+
+The v1.0.0 **release downloads are consistent**: `entropylab.html` and
+`SHA256SUMS.txt` name SHA-256
+`bdf048ebbf9286a3b18998f28e1cccef1f9f9a0284a880c1864875f903adeb8d`, and
+the release `SHA256SUMS.asc` verifies against that manifest.
+
+The anomaly is in the copies committed inside the v1.0.0 git tag (and its
+source archive). That tag-tree page is an earlier build with SHA-256
+`3804d57898224b8cfccfcacc8aa7c32cd93d514896de7e045e14ed35c22cf2f7` and
+footer commit `108becadc6824b08b59a34a721a33d7fcc6540c6`; its manifest
+matches that earlier page and its stale signature file does not verify.
+Verify the files downloaded together from the release page, not the tag-tree
+copies. Rebuilding source commit
+`c1037ba3a20d0c6db1b3265a7385b2944ce827e6` produces the release digest above.
+The tag-tree artifact and the release manifest and signatures are pinned by
+the [release-record regression test](../test/release-record.test.mjs).
 
 **A good result** on Mac and Linux is `entropylab.html: OK`. Anything else
 means the file is not the one that was published. Stop and don't use it.
@@ -103,9 +129,14 @@ matches this list:
 | Signer | Primary key fingerprint |
 | --- | --- |
 | Portland.HODL (russeree) | `3428 CBB5 4C36 9D8A F14E  F600 C801 EE1D 5285 101E` |
-| MrHodlX | `6443 4EE4 8A96 C38E 78B7  875F 4E7E 416E E17D 237C` |
+| MrHodlX | `DB19 EF73 4874 43AA EAC2  6687 17AB DC5F 9867 B54F` |
+| MrHodlX (revoked) | `6443 4EE4 8A96 C38E 78B7  875F 4E7E 416E E17D 237C` |
 | w-s-bitcoin | `542E CCA3 B5CB 74CE C957  29B3 92C2 1496 202E 3774` |
 | timechainb | `63EF 760E E641 A585 16D5  4930 F0B7 D606 C6FD 9D52` |
+
+MrHodlX's old key `6443 4EE4 …` is revoked: treat any signature from it as
+untrusted, including its block on v1.0.0. MrHodlX now signs with the interim
+key above.
 
 Portland.HODL and w-s-bitcoin sign with subkeys (`C0AF3AD083D6B40A` and
 `EFBB6C556124B3DE`). GPG shows the subkey and its primary fingerprint, and the
@@ -129,15 +160,21 @@ maintainer's own published key.
 
 ## Step 3 (optional): check that GitHub's CI built it
 
-With the [GitHub CLI](https://cli.github.com/):
+With the [GitHub CLI](https://cli.github.com/), version 2.68.0 or later:
 
 ```sh
-gh attestation verify entropylab.html -R OogaBoogaX/entropylab
+gh attestation verify entropylab.html -R OogaBoogaX/entropylab --signer-workflow OogaBoogaX/entropylab/.github/workflows/ci-cd.yml --source-ref refs/heads/rock
 ```
 
 A good result says the verification succeeded. It shows that this
-repository's CI built exactly these bytes, but not which source it built them
-from. Rebuilding the file yourself checks that (see below).
+repository's CI workflow, running on the `rock` branch, built exactly these
+bytes, but not which source it built them from. Rebuilding the file yourself
+checks that (see below).
+
+Keep the two extra options. Without `--signer-workflow` and `--source-ref`
+the check would also accept an attestation made by any other workflow or
+branch in this repository. An older GitHub CLI stops with
+`unknown flag: --source-ref`. Update it; do not drop the option.
 
 ## Step 4 (optional): check the Bitcoin timestamp
 

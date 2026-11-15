@@ -297,7 +297,7 @@ test("specialized controls retain their own handler and teardown removes delegat
 }));
 
 test("Lightning reveals each secret beside a copy control and removes the controls when concealed", () => withPage(async ({ document, writes, click, change }) => {
-  document.body.innerHTML = '<select id="ln-format"><option value="aezeed">aezeed</option></select><select id="ln-network"><option value="mainnet">mainnet</option></select><textarea id="ln-seed"></textarea><input id="ln-pass"><button id="ln-go"></button><button id="ln-wipe"></button><p id="ln-error"></p><p id="ln-session"></p><div id="ln-out"></div>';
+  document.body.innerHTML = '<select id="ln-format"><option value="aezeed">aezeed</option></select><div id="ln-network-field"><p id="ln-network-note"></p></div><textarea id="ln-seed"></textarea><input id="ln-pass"><button id="ln-go"></button><button id="ln-wipe"></button><p id="ln-error"></p><p id="ln-session"></p><div id="ln-out"></div>';
   document.getElementById("ln-seed").value = "ability result leisure oven shiver wedding toe broccoli exclude mosquito kind van action waste merit bundle robust source able advice core humor kitchen siren";
   hodlInitLn({ copyIcon });
   document.getElementById("ln-go").click();

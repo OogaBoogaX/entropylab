@@ -1,8 +1,10 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
+import { readFileSync } from "node:fs";
 import { classifyQrPayload } from "../src/js/qr-payload.js";
-import { bip39English } from "../src/js/bip39.js";
+import { bip39English, indicesFromEntropy } from "../src/js/bip39.js";
+import { randomBytes } from "node:crypto";
 
 // The app's SeedQR encoder, re-implemented from its few lines (app.js
 // hodlSeedQrDigits): each word becomes its 4-digit, zero-padded index.
@@ -151,7 +153,9 @@ test("a compressed mainnet WIF is classified", () => {
   assert.equal(result.format, "wif");
   assert.equal(result.network, "mainnet");
   assert.equal(result.compressed, true);
-  assert.equal(result.text, text);
+  assert.equal("text" in result, false, "the classifier must not build a string");
+  assert.deepEqual(Array.from(result.bytes), Array.from(bytesOf(text)));
+  result.bytes.fill(0);
 });
 
 test("an uncompressed mainnet WIF is classified", () => {
@@ -160,6 +164,8 @@ test("an uncompressed mainnet WIF is classified", () => {
   assert.equal(result.format, "wif");
   assert.equal(result.network, "mainnet");
   assert.equal(result.compressed, false);
+  assert.deepEqual(Array.from(result.bytes), Array.from(bytesOf(text)));
+  result.bytes.fill(0);
 });
 
 test("a testnet WIF is classified", () => {
@@ -168,12 +174,48 @@ test("a testnet WIF is classified", () => {
   assert.equal(result.format, "wif");
   assert.equal(result.network, "testnet");
   assert.equal(result.compressed, true);
+  assert.deepEqual(Array.from(result.bytes), Array.from(bytesOf(text)));
+  result.bytes.fill(0);
 });
 
 test("a WIF with a corrupted checksum is unknown", () => {
   const text = wifFor(KEY_ONE);
   const corrupted = text.slice(0, 10) + (text[10] === "a" ? "b" : "a") + text.slice(11);
   assert.equal(classifyQrPayload(bytesOf(corrupted)).format, "unknown");
+});
+
+test("a WIF result carries the payload bytes, never text", () => {
+  const text = wifFor(KEY_ONE);
+  const payload = bytesOf(text);
+  const result = classifyQrPayload(payload);
+  assert.equal(result.format, "wif");
+  assert.equal("text" in result, false, "the classifier must not build a string");
+  assert.ok(result.bytes instanceof Uint8Array);
+  assert.deepEqual(Array.from(result.bytes), Array.from(payload));
+  assert.notEqual(result.bytes, payload, "the caller owns a fresh copy");
+  // The caller zeroes its own payload; the result's copy is independent.
+  payload.fill(0);
+  assert.deepEqual(Array.from(result.bytes), Array.from(bytesOf(text)));
+  result.bytes.fill(0);
+});
+
+test("a mini key or a hex key is not classified as a WIF", () => {
+  const mini = "S6c56bnXQiBjk9mqSYE7ykVQ7NzrRy";
+  assert.notEqual(classifyQrPayload(bytesOf(mini)).format, "wif");
+  const hexKey = "0c28fca386c7a227600b2fe50b7cae11ec86d3bf1fbe471be89827e19d72aa1d";
+  assert.notEqual(classifyQrPayload(bytesOf(hexKey)).format, "wif");
+});
+
+test("classifyWif never builds a string", () => {
+  const source = readFileSync(new URL("../src/js/qr-payload.js", import.meta.url), "utf8");
+  const start = source.indexOf("const classifyWif = (bytes) => {");
+  assert.ok(start >= 0, "classifyWif is defined");
+  const end = source.indexOf("\n};", start);
+  assert.ok(end > start, "classifyWif has an end");
+  const body = source.slice(start, end);
+  for (const forbidden of ["fromCharCode", "TextDecoder", "join(", "`"]) {
+    assert.equal(body.includes(forbidden), false, `classifyWif must not contain ${forbidden}`);
+  }
 });
 
 test("a 12-word phrase is classified as words", () => {
@@ -199,4 +241,59 @@ test("an unknown payload is not echoed", () => {
   const secret = bytesOf("correct horse battery staple");
   const result = classifyQrPayload(secret);
   assert.deepEqual(result, { format: "unknown", length: secret.length });
+});
+
+// A words QR is matched byte for byte: decoding it made the scan path's only
+// string copies of the mnemonic (red-team sweep 0eed735, qr-payload #3).
+test("a words QR classifies without decoding the payload to text", () => {
+  const words = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about";
+  const decode = TextDecoder.prototype.decode, seen = [];
+  TextDecoder.prototype.decode = function (input, options) {
+    const text = decode.call(this, input, options);
+    seen.push(text);
+    return text;
+  };
+  let result;
+  try {
+    result = classifyQrPayload(new TextEncoder().encode(words));
+  } finally {
+    TextDecoder.prototype.decode = decode;
+  }
+  assert.equal(result.format, "words");
+  assert.deepEqual([...result.indices], [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3]);
+  assert.ok(!seen.some((text) => text.includes("abandon")), "no decoded copy of the words");
+  for (const bad of [words.replace("about", "About"), words.replace(" about", "  about"), words + " ", words.replace("about", "abouT"), "\ufeff" + words]) {
+    assert.notEqual(classifyQrPayload(new TextEncoder().encode(bad)).format, "words", JSON.stringify(bad.slice(-8)));
+  }
+});
+
+test("the byte-level word match finds every word at its own index", () => {
+  // Random valid phrases of each length; their indices come from bip39.js,
+  // and the words from the published list.
+  let seen = 0;
+  for (let round = 0; round < 300; round += 1) {
+    const entropy = randomBytes([16, 20, 24, 28, 32][round % 5]);
+    const expected = [...indicesFromEntropy(entropy)];
+    const result = classifyQrPayload(new TextEncoder().encode(expected.map((index) => bip39English[index]).join(" ")));
+    assert.equal(result.format, "words", `round ${round}`);
+    assert.deepEqual([...result.indices], expected, `round ${round}`);
+    seen += expected.length;
+  }
+  assert.ok(seen > 4000, "the rounds cover the list widely");
+  // The first and last words of the list, which a sort slip would lose first,
+  // found through the matcher itself (BIP39 vectors: all-zero and all-ones
+  // entropy; #1478 gate, Kimi, GLM, MiniMax).
+  const ends = (phrase) => [...classifyQrPayload(new TextEncoder().encode(phrase)).indices];
+  assert.deepEqual(ends("abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about"), [...Array(11).fill(0), bip39English.indexOf("about")]);
+  assert.deepEqual(ends("zoo zoo zoo zoo zoo zoo zoo zoo zoo zoo zoo wrong"), [...Array(11).fill(2047), bip39English.indexOf("wrong")]);
+});
+
+// Text with a tab or line break is text, not CompactSeedQR entropy (red-team
+// sweep 0eed735, qr-payload #5).
+test("16 or 32 bytes of text ending in a line break are not read as a CompactSeedQR", () => {
+  for (const text of ["my password!123\n", "my password!12\r\n", "tab\tseparated!!!", "x".repeat(31) + "\n"]) {
+    const bytes = new TextEncoder().encode(text);
+    assert.ok([16, 32].includes(bytes.length), `fixture length ${bytes.length}`);
+    assert.notEqual(classifyQrPayload(bytes).format, "compact-seedqr", JSON.stringify(text));
+  }
 });

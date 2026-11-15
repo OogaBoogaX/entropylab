@@ -1,10 +1,16 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
+import { dirname } from "node:path";
+import { fileURLToPath } from "node:url";
 import { mountKeyScan, retireQrDecoders } from "../src/js/qr-key-scan.js";
 import { classifyQrPayload } from "../src/js/qr-payload.js";
 import { bip39English } from "../src/js/bip39.js";
 import { loadAppFunctions } from "./app-slice-harness.mjs";
+import { collectSources } from "../scripts/i18n-sources.mjs";
+
+const ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
+const SOURCE = readFileSync(new URL("../src/js/qr-key-scan.js", import.meta.url), "utf8");
 
 // The published compressed mainnet WIF for private key 1.
 const WIF = "KwDiBf89QgGbjEhKnhXJuH7LrciVrZi3qYjgd9M7rFU73sVHnoWn";
@@ -194,23 +200,21 @@ const setup = (options = {}) => {
   const doc = makeDocument();
   const host = doc.createElement("div");
   host.id = "key-scan-host";
-  const keyField = doc.createElement("textarea");
-  const events = [];
-  keyField.addEventListener("input", (event) => events.push(event));
+  const keys = [];
   const decoder = makeDecoder();
   const scanner = makeScanner(options.reply);
   const created = { decoders: 0, scanners: 0, decoderArgs: null, scannerArgs: null };
   const panel = mountKeyScan(host, {
-    keyField,
     accept: options.accept,
     idPrefix: options.idPrefix,
     beforeOpen: options.beforeOpen,
     replacesSeed: options.replacesSeed,
     onSeed: options.onSeed,
+    onKey: options.onKey || ((bytes) => { keys.push({ bytes, seen: Array.from(bytes) }); }),
+    replacesKey: options.replacesKey,
+    afterLoad: options.afterLoad,
     wordlist: options.wordlist,
-    translate: options.translate || ((text) => text),
     privateValue: (value, revealed) => (revealed ? value : "•".repeat(value.length)),
-    beforeWrite: options.beforeWrite,
     createDecoder: (args) => {
       created.decoders += 1;
       created.decoderArgs = args;
@@ -226,7 +230,7 @@ const setup = (options = {}) => {
     doc,
     win: { InputEvent: FakeInputEvent },
   });
-  return { doc, host, keyField, events, decoder, scanner, created, panel };
+  return { doc, host, keys, decoder, scanner, created, panel };
 };
 
 const openPanel = (ctx) => {
@@ -266,60 +270,124 @@ test("a WIF scan is concealed until Show key and its bytes are zeroed", () => {
   assert.equal(findById(ctx.host, "key-scan-confirm").hidden, false);
   assert.match(markupOf(findById(ctx.host, "key-scan-confirm-intro")), /cannot tell where a QR came from/);
   assert.equal(markupOf(ctx.host).includes(WIF), false, "the key was in the DOM while concealed");
-  assert.equal(ctx.keyField.value, "");
   findById(ctx.host, "key-scan-reveal").dispatchEvent({ type: "click" });
   assert.ok(markupOf(ctx.host).includes(WIF), "Show key did not reveal the key");
 });
 
-test("Continue fills the key field with one paste-like input event", () => {
+test("Continue hands the scanned WIF to onKey as bytes", () => {
   const ctx = setup();
   openPanel(ctx);
   ctx.created.scannerArgs.onResult(bytesOf(WIF));
   findById(ctx.host, "key-scan-continue").dispatchEvent({ type: "click" });
-  assert.equal(ctx.keyField.value, WIF);
-  assert.equal(ctx.events.length, 1);
-  assert.equal(ctx.events[0].type, "input");
-  assert.equal(ctx.events[0].bubbles, true);
-  assert.equal(ctx.events[0].inputType, "insertFromPaste");
+  assert.equal(ctx.keys.length, 1);
+  assert.deepEqual(ctx.keys[0].seen, Array.from(bytesOf(WIF)));
+  assert.equal(findById(ctx.host, "key-scan-panel").hidden, true);
   assert.equal(markupOf(ctx.host).includes(WIF), false, "the key stayed in the DOM");
 });
 
-test("beforeWrite runs before the field is written", () => {
-  const seen = [];
-  let ctx = null;
-  ctx = setup({ beforeWrite: () => seen.push(ctx.keyField.value) });
-  ctx.keyField.value = "old";
+test("Continue zeroes the held bytes and the copy it hands over", () => {
+  let held = null;
+  const ctx = setup({
+    classify: (bytes) => {
+      const result = classifyQrPayload(bytes);
+      held = result.bytes;
+      return result;
+    },
+  });
   openPanel(ctx);
   ctx.created.scannerArgs.onResult(bytesOf(WIF));
+  assert.ok(held.some((byte) => byte !== 0));
   findById(ctx.host, "key-scan-continue").dispatchEvent({ type: "click" });
-  assert.deepEqual(seen, ["old"]);
-  assert.equal(ctx.keyField.value, WIF);
-  assert.equal(ctx.events.length, 1);
-  assert.equal(ctx.events[0].inputType, "insertFromPaste");
+  assert.ok(held.every((byte) => byte === 0), "the held bytes were not zeroed");
+  assert.ok(ctx.keys[0].bytes.every((byte) => byte === 0), "the copy passed to onKey was not zeroed");
 });
 
-test("a throwing beforeWrite leaves the field and the confirmation alone", () => {
-  const ctx = setup({ beforeWrite: () => { throw new Error("no WIF radio"); } });
-  ctx.keyField.value = "old";
+test("a throwing onKey leaves nothing loaded and shows the refusal", () => {
+  const ctx = setup({ onKey: () => { throw new Error("no key handler"); } });
   openPanel(ctx);
   ctx.created.scannerArgs.onResult(bytesOf(WIF));
   findById(ctx.host, "key-scan-continue").dispatchEvent({ type: "click" });
-  assert.equal(ctx.keyField.value, "old");
-  assert.equal(ctx.events.length, 0);
-  assert.equal(findById(ctx.host, "key-scan-confirm").hidden, false);
   assert.equal(stateOf(ctx), "error");
-  findById(ctx.host, "key-scan-discard").dispatchEvent({ type: "click" });
   assert.equal(findById(ctx.host, "key-scan-confirm").hidden, true);
+  assert.equal(markupOf(ctx.host).includes(WIF), false);
 });
 
-test("Discard scan leaves the key field untouched", () => {
+test("the key confirmation says when Continue replaces the key's key", () => {
+  const noteFor = (replacesKey) => {
+    const ctx = setup({ replacesKey });
+    openPanel(ctx);
+    ctx.created.scannerArgs.onResult(bytesOf(WIF));
+    return findById(ctx.host, "key-scan-confirm-replace");
+  };
+  assert.equal(noteFor(() => true).hidden, false, "a key holding a key gets the note");
+  assert.equal(noteFor(() => false).hidden, true, "an empty key gets none");
+  assert.equal(noteFor(() => { throw new Error("state unavailable"); }).hidden, false, "a failing check shows the note");
+});
+
+test("a key entered after the scan gets the note at Continue, and the next Continue loads", () => {
+  let holds = false;
+  const ctx = setup({ replacesKey: () => holds });
+  openPanel(ctx);
+  ctx.created.scannerArgs.onResult(bytesOf(WIF));
+  const note = findById(ctx.host, "key-scan-confirm-replace");
+  assert.equal(note.hidden, true);
+  holds = true;
+  findById(ctx.host, "key-scan-continue").dispatchEvent({ type: "click" });
+  assert.equal(ctx.keys.length, 0, "the first Continue only shows the note");
+  assert.equal(note.hidden, false);
+  findById(ctx.host, "key-scan-continue").dispatchEvent({ type: "click" });
+  assert.equal(ctx.keys.length, 1, "the next Continue loads the key");
+});
+
+test("Discard scan drops the pending key", () => {
   const ctx = setup();
   openPanel(ctx);
   ctx.created.scannerArgs.onResult(bytesOf(WIF));
   findById(ctx.host, "key-scan-discard").dispatchEvent({ type: "click" });
-  assert.equal(ctx.keyField.value, "");
-  assert.equal(ctx.events.length, 0);
+  assert.equal(ctx.keys.length, 0);
   assert.equal(markupOf(ctx.host).includes(WIF), false);
+});
+
+test("Discard, cancel, close, hide and destroy zero the held bytes", () => {
+  const cases = [
+    ["discard", (ctx) => findById(ctx.host, "key-scan-discard").dispatchEvent({ type: "click" })],
+    ["cancel", (ctx) => findById(ctx.host, "key-scan-cancel").dispatchEvent({ type: "click" })],
+    ["close", (ctx) => findById(ctx.host, "key-scan-open").dispatchEvent({ type: "click" })],
+    ["hide", (ctx) => { ctx.doc.visibilityState = "hidden"; ctx.doc.dispatch("visibilitychange"); }],
+    ["destroy", (ctx) => ctx.panel.destroy()],
+  ];
+  for (const [name, act] of cases) {
+    let held = null;
+    const ctx = setup({
+      classify: (bytes) => {
+        const result = classifyQrPayload(bytes);
+        held = result.bytes;
+        return result;
+      },
+    });
+    openPanel(ctx);
+    ctx.created.scannerArgs.onResult(bytesOf(WIF));
+    assert.ok(held && held.some((byte) => byte !== 0), `${name}: the panel holds the key`);
+    act(ctx);
+    assert.ok(held.every((byte) => byte === 0), `${name} left the held bytes`);
+  }
+});
+
+test("a new result zeroes the key it replaces", () => {
+  const held = [];
+  const ctx = setup({
+    classify: (bytes) => {
+      const result = classifyQrPayload(bytes);
+      held.push(result.bytes);
+      return result;
+    },
+  });
+  openPanel(ctx);
+  ctx.created.scannerArgs.onResult(bytesOf(WIF));
+  ctx.created.scannerArgs.onResult(bytesOf(WIF));
+  assert.equal(held.length, 2);
+  assert.ok(held[0].every((byte) => byte === 0), "the replaced key was not zeroed");
+  assert.ok(held[1].some((byte) => byte !== 0));
 });
 
 test("a seed QR is refused and its indices are zeroed", () => {
@@ -336,7 +404,6 @@ test("a seed QR is refused and its indices are zeroed", () => {
   assert.ok(captured.indices.every((index) => index === 0), "the seed indices were not zeroed");
   assert.equal(stateOf(ctx), "seed");
   assert.match(markupOf(ctx.host), /Nothing was loaded/);
-  assert.equal(ctx.keyField.value, "");
   assert.equal(findById(ctx.host, "key-scan-resume").hidden, false, "Resume is offered to scan again");
 });
 
@@ -347,7 +414,6 @@ test("bytes that are not a key are refused without being echoed", () => {
   assert.equal(stateOf(ctx), "not-a-key");
   assert.match(markupOf(ctx.host), /Nothing was loaded/);
   assert.equal(markupOf(ctx.host).includes("SECRETBYTES"), false);
-  assert.equal(ctx.keyField.value, "");
 });
 
 test("two codes are refused while the scan goes on", () => {
@@ -650,74 +716,104 @@ test("a denied camera explains the browser permission and the photo fallback", (
   assert.equal(findById(ctx.host, "key-scan-photo-open").hidden, false);
 });
 
-test("every visible string goes through translate", () => {
-  const ctx = setup({ translate: (text) => "⟦" + text + "⟧" });
-  const wrapped = (id) => {
-    const text = findById(ctx.host, id).textContent;
-    return text.startsWith("⟦") && text.endsWith("⟧");
+// The panel's text goes through t() from ./i18n.js like every other
+// module's, as literals the catalog sweep sees (copy is content, not
+// contract: the tests hook on the structure, never on the wording).
+const LITERALS = [...SOURCE.matchAll(/\bt\("((?:[^"\\]|\\.)+)"/g)].map((match) => JSON.parse(`"${match[1]}"`));
+const escapeRegExp = (text) => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+const LITERAL_PATTERNS = LITERALS.map((literal) => new RegExp(`^${escapeRegExp(literal).replace(/\\\{\w+\\\}/g, ".+")}$`));
+
+test("every visible string is a t() literal the catalog sweep collects", async () => {
+  assert.match(SOURCE, /import \{ t \} from "\.\/i18n\.js";/, "the panel must translate through the page catalog");
+  assert.doesNotMatch(SOURCE, /\btranslate\b/, "no translator option: the module reads the catalog itself");
+  // Each table entry and each message is a thunk around a t() literal,
+  // looked up when it is shown.
+  for (const table of ["STATUS_TEXT", "SEED_FORMAT_TEXT", "PHOTO_ERROR_TEXT"]) {
+    const block = SOURCE.match(new RegExp(`const ${table} = \\{\\n([\\s\\S]*?)\\n\\};`))?.[1];
+    assert.ok(block, `${table} is missing`);
+    for (const line of block.split("\n")) assert.match(line, /^  (?:"[\w-]+"|\w+): \((?:vars)?\) => t\("[^"]+"(?:, vars)?\),$/, `not a t() literal thunk: ${line.trim()}`);
+  }
+  const messages = [...SOURCE.matchAll(/^const [A-Z_]+ = \(.*$/gm)].map((match) => match[0]);
+  assert.ok(messages.length >= 9);
+  for (const line of messages) assert.match(line, /^const [A-Z_]+ = \((?:vars)?\) => t\("[^"]+"(?:, vars)?\);$/, `not a t() literal thunk: ${line}`);
+  // The only string constant left is the mask, which is not copy, and no
+  // bare literal reaches the page.
+  assert.deepEqual([...SOURCE.matchAll(/^const (\w+) = "/gm)].map((match) => match[1]), ["WORD_DOTS"]);
+  assert.doesNotMatch(SOURCE, /(?:textContent = |text: |"aria-label": |setStatus\([^,]+, )"[^"]/, "a bare literal reaches the page");
+  // The sweep that feeds the translation run sees them.
+  const sources = await collectSources(ROOT);
+  assert.ok(LITERALS.length >= 30);
+  for (const literal of LITERALS) assert.ok(sources.has(literal), `the catalog sweep misses: ${literal}`);
+  // What the panel shows, in either mode and through its states, is one of
+  // them. The seed review word is a mask or a word, never copy.
+  const showsCatalogText = (ctx, state) => {
+    for (const node of flatten(ctx.host)) {
+      if (node.childNodes.length || !node._text || /-review-word$/.test(node.id)) continue;
+      assert.ok(LITERAL_PATTERNS.some((pattern) => pattern.test(node._text)), `${state}: ${node.id || node.tagName} shows text that is not a t() literal: ${node._text}`);
+    }
   };
-  for (const id of ["key-scan-open", "key-scan-stop", "key-scan-resume", "key-scan-photo-open", "key-scan-cancel", "key-scan-photo-note"]) {
-    assert.ok(wrapped(id), `${id} was not translated`);
+  const key = setup();
+  showsCatalogText(key, "mounted");
+  openPanel(key);
+  showsCatalogText(key, "scanning");
+  for (const code of ["two-codes", "timeout", "stopped", "unsupported", "denied", "no-camera", "error"]) {
+    key.created.scannerArgs.onStatus(code);
+    showsCatalogText(key, code);
   }
-  openPanel(ctx);
-  assert.ok(wrapped("key-scan-status"), "the status line was not translated");
-  ctx.created.scannerArgs.onResult(bytesOf(WIF));
-  assert.ok(wrapped("key-scan-status"), "the WIF status was not translated");
-  for (const id of ["key-scan-confirm-intro", "key-scan-reveal", "key-scan-continue", "key-scan-discard"]) {
-    assert.ok(wrapped(id), `${id} was not translated`);
+  key.created.scannerArgs.onResult(bytesOf(SEEDQR));
+  showsCatalogText(key, "seed refused");
+  key.created.scannerArgs.onResult(bytesOf("not a key"));
+  showsCatalogText(key, "not a key");
+  key.created.scannerArgs.onResult(bytesOf(WIF));
+  showsCatalogText(key, "wif");
+  findById(key.host, "key-scan-reveal").dispatchEvent({ type: "click" });
+  showsCatalogText(key, "wif shown");
+  key.panel.destroy();
+  for (const reply of [
+    async () => { throw Object.assign(new Error("x"), { code: "TOO_LARGE" }); },
+    async () => { throw Object.assign(new Error("x"), { code: "UNSUPPORTED_TYPE" }); },
+    async () => { throw Object.assign(new Error("x"), { code: "UNREADABLE" }); },
+    async () => ({ code: -1, payload: null }),
+    async () => ({ code: -3, payload: null }),
+  ]) {
+    const photo = setup({ reply });
+    openPanel(photo);
+    const input = findById(photo.host, "key-scan-photo");
+    input.files = [{ size: 10, type: "image/png" }];
+    input.dispatchEvent({ type: "change" });
+    await tick();
+    showsCatalogText(photo, `photo ${stateOf(photo)}`);
+    photo.panel.destroy();
   }
+  const seed = setup({ accept: "seed", idPrefix: "seed-scan", wordlist: bip39English, replacesSeed: () => true });
+  openSeedPanel(seed);
+  seed.created.scannerArgs.onResult(bytesOf(WIF));
+  showsCatalogText(seed, "key refused");
+  seed.created.scannerArgs.onResult(bytesOf("not a seed"));
+  showsCatalogText(seed, "not a seed");
+  seed.created.scannerArgs.onResult(bytesOf(SEEDQR));
+  showsCatalogText(seed, "seed");
+  findById(seed.host, "seed-scan-review").dispatchEvent({ type: "click" });
+  showsCatalogText(seed, "seed review");
+  seed.panel.destroy();
 });
 
-test("hodlKeyScanSelectWif checks the WIF radio and fires one change", async () => {
-  const { hodlKeyScanSelectWif } = await loadAppFunctions(["hodlKeyScanSelectWif"]);
-  const realDocument = globalThis.document;
-  const makeRadio = (checked) => {
-    const events = [];
-    return {
-      checked,
-      events,
-      dispatchEvent(event) {
-        events.push(event);
-        return true;
-      },
-    };
-  };
-  try {
-    const unchecked = makeRadio(false);
-    globalThis.document = { querySelector: () => unchecked };
-    hodlKeyScanSelectWif();
-    assert.equal(unchecked.checked, true);
-    assert.equal(unchecked.events.length, 1);
-    assert.equal(unchecked.events[0].type, "change");
-    assert.equal(unchecked.events[0].bubbles, true);
 
-    const checked = makeRadio(true);
-    globalThis.document = { querySelector: () => checked };
-    hodlKeyScanSelectWif();
-    assert.equal(checked.checked, true);
-    assert.equal(checked.events.length, 0);
 
-    globalThis.document = { querySelector: () => null };
-    assert.throws(() => hodlKeyScanSelectWif(), /WIF key type is missing/);
-  } finally {
-    globalThis.document = realDocument;
-  }
-});
-
-test("the app wires the scan panel behind the preview flag", () => {
+test("the app wires the scan panel in every build", () => {
   const app = readFileSync(new URL("../src/js/app.js", import.meta.url), "utf8");
-  // The host is rendered only when the preview flag is set.
-  assert.match(app, /function hodlKeyScanHostMarkup\(\) \{\s*return typeof __ENTROPYLAB_PREVIEW__ !== "undefined" && __ENTROPYLAB_PREVIEW__ \? '<div id="key-scan-host"><\/div>' : "";\s*\}/);
+  // The host ships in release builds too (Secure entry unhide, owner 11-04).
+  assert.match(app, /function hodlKeyScanHostMarkup\(\) \{\s*return '<div id="key-scan-host"><\/div>';\s*\}/);
   // It sits after the private-key shell and before the keyboard host.
   assert.match(app, /<\/textarea><\/div>\$\{hodlKeyScanHostMarkup\(\)\}<div class="passphrase-keyboard-host" id="private-keyboard-host" hidden>/);
-  // The import sits inside the same guard, so release builds never load it.
+  // The bind reads no preview flag: with a host on screen it imports the module.
   const start = app.indexOf("function hodlBindKeyScan()");
   assert.ok(start >= 0, "hodlBindKeyScan is missing");
   const body = app.slice(start, app.indexOf("\n}\n", start));
-  assert.match(body, /if \(typeof __ENTROPYLAB_PREVIEW__ !== "undefined" && __ENTROPYLAB_PREVIEW__\) \{/);
-  assert.ok(body.indexOf('import("./qr-key-scan.js")') > body.indexOf("typeof __ENTROPYLAB_PREVIEW__"), "the import is outside the preview guard");
-  // A scan is written as a WIF whatever key type is selected (#1291 gate).
-  assert.match(body, /beforeWrite: hodlKeyScanSelectWif,/);
+  assert.doesNotMatch(body, /__ENTROPYLAB_PREVIEW__|PREVIEW/);
+  assert.ok(body.indexOf('import("./qr-key-scan.js")') > body.indexOf("if (!host)"), "the import comes after the no-host return");
+  // The scan hands the key to the app as bytes, never to a text field.
+  assert.match(body, /onKey: hodlKeyScanLoad,/);
   // The wipes drop the panel and retire its decoder.
   const wipeStart = app.indexOf("let clearSecretFields = () => {");
   assert.ok(wipeStart >= 0, "clearSecretFields is missing");
@@ -951,3 +1047,116 @@ test("a Scan press waiting on beforeOpen does not open once the page is hidden",
   assert.equal(findById(ctx.host, "seed-scan-panel").hidden, true);
   assert.equal(ctx.created.scanners, 0);
 });
+
+test("afterLoad runs once after a successful key Continue, with the panel closed", () => {
+  let calls = 0, hiddenAtCall = null;
+  let ctx;
+  ctx = setup({ afterLoad: () => { calls += 1; hiddenAtCall = findById(ctx.host, "key-scan-panel").hidden; } });
+  openPanel(ctx);
+  ctx.created.scannerArgs.onResult(bytesOf(WIF));
+  findById(ctx.host, "key-scan-continue").dispatchEvent({ type: "click" });
+  assert.equal(calls, 1);
+  assert.equal(hiddenAtCall, true);
+});
+
+test("afterLoad runs once after a successful seed Continue, with the panel closed", () => {
+  let calls = 0, hiddenAtCall = null;
+  let ctx;
+  ctx = setup({
+    accept: "seed",
+    idPrefix: "seed-scan",
+    wordlist: bip39English,
+    onSeed: (indices) => indices.fill(0),
+    afterLoad: () => { calls += 1; hiddenAtCall = findById(ctx.host, "seed-scan-panel").hidden; },
+  });
+  openSeedPanel(ctx);
+  ctx.created.scannerArgs.onResult(bytesOf(SEEDQR));
+  findById(ctx.host, "seed-scan-continue").dispatchEvent({ type: "click" });
+  assert.equal(calls, 1);
+  assert.equal(hiddenAtCall, true);
+});
+
+test("afterLoad never runs after a refused load", () => {
+  let calls = 0;
+  const key = setup({ afterLoad: () => { calls += 1; }, onKey: () => { throw new Error("no key handler"); } });
+  openPanel(key);
+  key.created.scannerArgs.onResult(bytesOf(WIF));
+  findById(key.host, "key-scan-continue").dispatchEvent({ type: "click" });
+  assert.equal(calls, 0);
+  const seed = setup({
+    accept: "seed",
+    idPrefix: "seed-scan",
+    wordlist: bip39English,
+    onSeed: () => { throw new Error("no seed handler"); },
+    afterLoad: () => { calls += 1; },
+  });
+  openSeedPanel(seed);
+  seed.created.scannerArgs.onResult(bytesOf(SEEDQR));
+  findById(seed.host, "seed-scan-continue").dispatchEvent({ type: "click" });
+  assert.equal(calls, 0);
+});
+
+test("a throwing afterLoad does not break the panel", () => {
+  const key = setup({ afterLoad: () => { throw new Error("focus failed"); } });
+  openPanel(key);
+  key.created.scannerArgs.onResult(bytesOf(WIF));
+  assert.doesNotThrow(() => findById(key.host, "key-scan-continue").dispatchEvent({ type: "click" }));
+  assert.equal(findById(key.host, "key-scan-panel").hidden, true);
+  const seed = setup({
+    accept: "seed",
+    idPrefix: "seed-scan",
+    wordlist: bip39English,
+    onSeed: (indices) => indices.fill(0),
+    afterLoad: () => { throw new Error("focus failed"); },
+  });
+  openSeedPanel(seed);
+  seed.created.scannerArgs.onResult(bytesOf(SEEDQR));
+  assert.doesNotThrow(() => findById(seed.host, "seed-scan-continue").dispatchEvent({ type: "click" }));
+  assert.equal(findById(seed.host, "seed-scan-panel").hidden, true);
+});
+
+// Resume starts a new operation: a photo still decoding belongs to the one it
+// replaced, and its reply landed over the camera's scan (red-team sweep
+// 0eed735, qr-key-scan #9).
+test("a photo that decodes after Resume is dropped and zeroed", async () => {
+  let finish = null;
+  const ctx = setup({ reply: () => new Promise((resolve) => { finish = resolve; }) });
+  openPanel(ctx);
+  const photo = findById(ctx.host, "key-scan-photo");
+  photo.files = [{ size: 10, type: "image/png" }];
+  photo.dispatchEvent({ type: "change" });
+  await tick();
+  assert.ok(finish, "the photo is decoding");
+  findById(ctx.host, "key-scan-resume").dispatchEvent({ type: "click" });
+  assert.equal(stateOf(ctx), "scanning");
+  const payload = Uint8Array.from(WIF, (character) => character.charCodeAt(0));
+  finish({ code: 1, payload });
+  await tick();
+  assert.equal(stateOf(ctx), "scanning", "the camera's scan goes on");
+  assert.ok(payload.every((byte) => byte === 0), "the dropped photo's payload is zeroed");
+});
+
+// Each photo is its own operation: a first photo still decoding must not land
+// over a second one picked meanwhile (#1480 r2 gate, Gemini).
+test("a photo that decodes after a second photo is picked is dropped and zeroed", async () => {
+  const finishes = [];
+  const ctx = setup({ reply: () => new Promise((resolve) => { finishes.push(resolve); }) });
+  openPanel(ctx);
+  const photo = findById(ctx.host, "key-scan-photo");
+  photo.files = [{ size: 10, type: "image/png" }];
+  photo.dispatchEvent({ type: "change" });
+  await tick();
+  photo.files = [{ size: 11, type: "image/png" }];
+  photo.dispatchEvent({ type: "change" });
+  await tick();
+  assert.equal(finishes.length, 2, "both photos are decoding");
+  const first = Uint8Array.from(WIF, (character) => character.charCodeAt(0));
+  finishes[0]({ code: 1, payload: first });
+  await tick();
+  assert.ok(first.every((byte) => byte === 0), "the first photo's late payload is zeroed, not shown");
+  const state = stateOf(ctx);
+  finishes[1]({ code: 1, payload: Uint8Array.from(WIF, (character) => character.charCodeAt(0)) });
+  await tick();
+  assert.notEqual(stateOf(ctx), state, "the second photo's result is the one shown");
+});
+

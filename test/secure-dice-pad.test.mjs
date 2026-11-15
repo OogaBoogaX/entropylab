@@ -1,8 +1,15 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { dirname } from "node:path";
+import { fileURLToPath } from "node:url";
 import { MiniDocument } from "./mini-dom.mjs";
 import { mountSecureDicePad } from "../src/js/secure-dice-pad.js";
 import { rollsEntry, rollsPush, rollsUndo, rollAt } from "../src/js/secure-entry.js";
+import { collectSources } from "../scripts/i18n-sources.mjs";
+
+const ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
+const SOURCE = readFileSync(new URL("../src/js/secure-dice-pad.js", import.meta.url), "utf8");
 
 const find = (ctx, id) => ctx.host.querySelector(`#${id}`);
 const click = (element) => element.dispatchEvent({ type: "click", target: element, preventDefault() {} });
@@ -47,7 +54,6 @@ const setup = (options = {}) => {
       return rollAt(target, index);
     },
     labelledBy: options.labelledBy ?? "dice-label",
-    translate: options.translate || ((text) => text),
     onChange: (state) => changes.push(state),
     doc,
   });
@@ -424,4 +430,64 @@ test("a full pad hands focus to a control that can take it", () => {
   for (const id of ["secure-dice-undo", "secure-dice-review-open"]) find(ctx, id).focus = function () { focused = this.id; };
   ctx.pad.focus();
   assert.equal(focused, "secure-dice-undo");
+});
+
+// The pad's text goes through t() from ./i18n.js like every other module's,
+// as literals the catalog sweep sees (copy is content, not contract: the
+// tests hook on the structure, never on the wording).
+const LITERALS = [...SOURCE.matchAll(/\bt\("((?:[^"\\]|\\.)+)"/g)].map((match) => JSON.parse(`"${match[1]}"`));
+const escapeRegExp = (text) => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+const LITERAL_PATTERNS = LITERALS.map((literal) => new RegExp(`^${escapeRegExp(literal).replace(/\\\{\w+\\\}/g, ".+")}$`));
+const assertCatalogText = (text, where) => {
+  assert.ok(LITERAL_PATTERNS.some((pattern) => pattern.test(text)), `${where} shows text that is not a t() literal: ${text}`);
+};
+
+test("every visible string is a t() literal the catalog sweep collects", async () => {
+  assert.match(SOURCE, /import \{ t \} from "\.\/i18n\.js";/, "the pad must translate through the page catalog");
+  // The only "translate" left is the attribute that keeps a shown face as is.
+  assert.doesNotMatch(SOURCE, /\btranslate\b(?!: "no")/, "no translator option: the module reads the catalog itself");
+  // Each string is a thunk around a t() literal, looked up when it is shown;
+  // the entries alternate with their approval comments.
+  const textBlock = SOURCE.match(/const TEXT = \{\n([\s\S]*?)\n\};/)?.[1];
+  assert.ok(textBlock, "TEXT is missing");
+  const textLines = textBlock.split("\n").filter((line) => !line.startsWith("  // "));
+  assert.ok(textLines.length >= 15);
+  for (const line of textLines) assert.match(line, /^  \w+: \((?:vars)?\) => t\("(?:[^"\\]|\\.)+"(?:, vars)?\),$/, `not a t() literal thunk: ${line.trim()}`);
+  for (const use of SOURCE.matchAll(/\bTEXT\.\w+(?: : TEXT\.\w+\))?(.)/g)) assert.equal(use[1], "(", `not looked up when shown: ${use[0]}`);
+  assert.doesNotMatch(SOURCE, /(?:textContent = |text: |"aria-label": )"[^"]/, "a bare literal reaches the page");
+  // The sweep that feeds the translation run sees them.
+  const sources = await collectSources(ROOT);
+  assert.ok(LITERALS.length >= textLines.length);
+  for (const literal of LITERALS) assert.ok(sources.has(literal), `the catalog sweep misses: ${literal}`);
+  // What the pad shows, as it moves through its states, is one of them. The
+  // face digits and the hidden-face dots are not copy.
+  const ctx = setup({ capacity: 3 });
+  const showsCatalogText = (state) => {
+    for (const element of ctx.host.querySelectorAll("*")) {
+      if (element.hasAttribute("data-secure-roll")) {
+        assertCatalogText(element.getAttribute("aria-label"), `${state}: face ${element.textContent}`);
+        continue;
+      }
+      if (element.id === "secure-dice-review-face" || element.hasAttribute("data-secure-dice-face")) continue;
+      if (element.children.length || !element.textContent) continue;
+      assertCatalogText(element.textContent, `${state}: ${element.id || element.tagName}`);
+    }
+  };
+  showsCatalogText("empty");
+  click(ctx.host.querySelector('[data-secure-roll="2"]'));
+  showsCatalogText("one roll");
+  click(ctx.host.querySelector('[data-secure-roll="5"]'));
+  showsCatalogText("two rolls");
+  click(find(ctx, "secure-dice-undo"));
+  showsCatalogText("undone to one");
+  click(ctx.host.querySelector('[data-secure-roll="5"]'));
+  click(find(ctx, "secure-dice-undo"));
+  click(ctx.host.querySelector('[data-secure-roll="5"]'));
+  click(ctx.host.querySelector('[data-secure-roll="1"]'));
+  showsCatalogText("full");
+  click(find(ctx, "secure-dice-undo"));
+  showsCatalogText("undone to two");
+  click(find(ctx, "secure-dice-review-open"));
+  showsCatalogText("review");
+  ctx.pad.destroy();
 });

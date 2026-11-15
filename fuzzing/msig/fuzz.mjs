@@ -66,6 +66,8 @@ const slicePath = join(root, "fuzzing", `.msig-slice-${process.pid}.mjs`);
 writeFileSync(
   slicePath,
   "const hodlMaxPurpose = 2147483647;\nconst hodlCoinTypeFromNetwork = (network) => network === 'mainnet' ? 0 : 1;\n" +
+    // The origin parser throws app errors for the key shapes it refuses.
+    "const hodlError = (key) => new Error(key);\n" +
     sliceBetween("function hodlFilterXpub", "function hodlParseMultisigCosigner") +
     "\n" +
     sliceBetween("var hodlDescriptorInputCharset", "function hodlScriptDescriptor") +
@@ -188,11 +190,13 @@ function makeCosigners(config) {
 // the standard receive/change derivation the app rebuilds itself, so they are
 // stripped and never honored. Runs through the app's field filter exactly
 // like a paste into the textarea does.
-function randomDecoration() {
+function randomDecoration(bip45 = false) {
   let roll = nextByte() % 6;
   if (roll === 0) return "";
   if (roll === 1) return "/";
-  let out = nextByte() % 2 === 0 ? `/${nextInt(4)}` : `/<${nextInt(3)};${nextInt(3) + 1}>`;
+  // A BIP45 key's descriptor tail carries plain cosigner 0 ahead of the
+  // branch; the co-signer field refuses any other BIP45 shape (#1460).
+  let out = (bip45 ? "/0" : "") + (nextByte() % 2 === 0 ? `/${nextInt(4)}` : `/<${nextInt(3)};${nextInt(3) + 1}>`);
   out += "/*";
   if (nextByte() % 3 === 0) out += "/";
   return out;
@@ -204,11 +208,13 @@ function randomDecoration() {
 // step preserved, branches derived below). Hardened steps are rejected by the
 // app's co-signer parse (covered by the unit suites), so they are not fuzzed
 // here.
-function randomDerivationPath() {
+function randomDerivationPath(bip45 = false) {
   if (nextByte() % 4 === 0) return "";
   let out = "";
   for (let i = 0, steps = 1 + nextInt(3); i < steps; i++) out += `/${nextInt(4)}`;
-  if (out.split("/").length > 2 && nextByte() % 3 === 0) out += "/*";
+  // A BIP45 child path is honored only without a wildcard (#1460); the byte
+  // is still drawn so every other case keeps its place in the stream.
+  if (out.split("/").length > 2 && nextByte() % 3 === 0 && !bip45) out += "/*";
   return out;
 }
 
@@ -280,7 +286,7 @@ function checkMultipath(config, run, label) {
 function checkConfig(config) {
   const cosigners = makeCosigners(config);
   const bare = runPipeline(config, cosigners);
-  const decorated = runPipeline(config, cosigners, () => randomDecoration());
+  const decorated = runPipeline(config, cosigners, () => randomDecoration(config.bip45));
 
   // (1) Suffix tolerance: identical canonical tokens, derivation paths,
   // descriptors, multipath, and every address.
@@ -299,7 +305,7 @@ function checkConfig(config) {
   // (4) Honored trailing paths: the token keeps the parsed path, every
   // address derives below it (engine vs scure at the extended path), and the
   // multipath export lands below it too.
-  const honored = runPipeline(config, cosigners, () => randomDerivationPath());
+  const honored = runPipeline(config, cosigners, () => randomDerivationPath(config.bip45));
   honored.paths.forEach((path, i) => {
     checks += 1;
     if (path && !honored.tokens[i].endsWith(`/${path}`)) fail(`honored path ${path} missing from token ${honored.tokens[i]}`);

@@ -89,12 +89,21 @@ material. Its security posture rests on the following model:
    rootfs, one Ubuntu snapshot, clang 18.1.3) and requires a second build in
    that image to match the bytes it publishes; the artifact commit and the
    Pages deploy wait for that check. Their digests are published in
-   `WASM-SHA256SUMS.txt`. A host clang is a different compiler. The 1.0.0
-   hashes, and the page built from them, have been reproduced in that image
-   on three machines outside GitHub, by three people: Windows with WSL2 and
-   bare-metal Linux on x86_64, and macOS on ARM64 (the image under
-   Rosetta). The page alone also rebuilds to the same bytes on each of those
-   hosts without the image. [docs/Reproductions.md](docs/Reproductions.md)
+   `WASM-SHA256SUMS.txt`. A host clang is a different compiler. The
+   v1.0.0 `entropylab-wasm` and `vanity-wasm` modules are the bytes that
+   three people rebuilt in that image at `cb55bd9` on three machines outside
+   GitHub: Windows with WSL2 and bare-metal Linux on x86_64, and macOS on
+   ARM64 (the image under Rosetta). v1.0.0's `psbt-wasm` module, and every
+   module rock has published since (`qr-wasm` included), have no recorded
+   rebuild outside GitHub. A release page's footer names the source commit
+   to rebuild it from. The page committed inside the v1.0.0 git tag is an
+   earlier build with a different footer and is not the release. See the
+   [known issue](docs/Verify_Your_Download.md#known-issue-v100).
+   The v1.0.0 release page has been rebuilt from that commit only by its
+   author so far, on Windows (on the computer later found to be compromised;
+   see [Release signing keys](#release-signing-keys)) and on Linux (in a
+   separate hosted environment). No independent rebuild of it is recorded.
+   [docs/Reproductions.md](docs/Reproductions.md)
    records each rebuild by commit. Build-host paths are remapped out of the
    binary. The image is the boundary: the page and the modules are
    reproducible inside it. Its Dockerfile pins the base image, the package
@@ -212,11 +221,25 @@ material. Its security posture rests on the following model:
 - PSBT analysis is explicitly bounded. EntropyLab does not independently fetch
   or verify previous outputs, its output-ownership search covers only the
   displayed account/address range and supported script types, RFC 6979 replay
-  needs a matching session key plus a supported SegWit v0 digest, a signature
-  on a script containing OP_CODESEPARATOR is reported as unverifiable rather
-  than verified or replayed, and Taproot/Schnorr signatures are checked only
-  for sighash policy and repeated BIP340 nonces (they cannot be replayed
-  like RFC 6979, and their validity is not verified).
+  needs a matching session key plus a supported SegWit v0 digest, and a
+  signature on a script containing OP_CODESEPARATOR is reported as
+  unverifiable rather than verified or replayed. The
+  [signer-audit verifier](src/js/psbt-signer-audit-verify.js) checks supported
+  legacy and SegWit v0 ECDSA signatures with SIGHASH_ALL, plus Taproot key-path
+  and tapscript signature records with SIGHASH_DEFAULT or SIGHASH_ALL. Other
+  script shapes and sighash types, finalized Taproot script paths, and
+  annex-carrying signatures stay unverified. Finalized-field checks also
+  validate sibling scriptSig/witness fields already present in the sent PSBT,
+  require matching sent/returned UTXO claims, and never report valid when the
+  transaction cannot be serialized or the decoder caps verification. Their
+  decoding, script resolution and signatures share bounded work, with sibling
+  results reused rather than charging signatures twice. These checks follow
+  consensus, not relay policy: uncompressed SegWit v0 keys and unused legacy
+  stack items may be valid, while witness CLEANSTACK, NULLDUMMY and scriptSig
+  size limits still apply. See the `final follow-up` regression cases in
+  [the verifier tests](test/psbt-signer-audit-verify.test.mjs).
+  Repeated BIP340 nonces are still
+  checked, although those nonces cannot be replayed like RFC 6979 nonces.
   The report marks these cases
   incomplete; a completed individual check is not a security conclusion for
   the transaction.
@@ -240,6 +263,18 @@ material. Its security posture rests on the following model:
   one wallet can have many child keys. A confirmed alert requires the same
   key/`r` pair with different verified message tags; otherwise the result is
   only a warning. The current implementation covers ECDSA, not Schnorr.
+- In auto mode the PSBT editor's output-script builder reads a
+  whitespace-free token of 25 to 64 characters with at most two symbols, and
+  no `/`, `:` or `@`, as an address and refuses it unless it decodes; a
+  token starting with 1, 2, 3, m or n is read as an address from 21
+  characters. A mistyped address of that shape errors instead of becoming
+  OP_RETURN text. Bare hex counts as a raw script only when it is
+  even-length, contains an a-f digit and does not read as a Base58 address;
+  a `0x` prefix always marks raw script. Text that carries whitespace, a URL
+  or e-mail separator, or three or more symbols is never read as an address,
+  and neither is a token shorter than those floors, so a mistyped address
+  outside the shape still becomes text; inspect the resulting output before
+  use.
 - OP_RETURN detection is a parser of output scripts. It does not create
   data-carrier outputs, assign protocol meaning, or contact an indexer.
 - The published `CID.txt` is CIDv1 (raw, sha2-256) of the release
@@ -509,6 +544,32 @@ material. Its security posture rests on the following model:
   secret data, injected script execution in the generated HTML, unexpected
   network egress) is treated as a security issue.
 
+### Released PSBT QR transport
+
+The existing PSBT reader accepts static base64/hex, UR and PSBT-only BBQr
+(`H`, `2`, `Z`). It reuses the existing QR pixel decoder and UR collector;
+there is no second camera stack or new runtime dependency. The bounded,
+synchronous raw-DEFLATE decoder for BBQr `Z` limits history to the format's
+1024-byte window. Compressed input and decoded PSBTs are each capped at
+1 MiB, with at most 1000 parts and a separate QR-text limit per frame.
+Wrong types, conflicting parts, malformed compression and over-budget input
+are refused. A valid static PSBT cannot replace a partial UR/BBQr transfer;
+that mismatch stays terminal until reset. Pasted transfers refuse every
+token after completion, even an identical duplicate.
+
+QR transfer can avoid mounting shared removable media or connecting a USB
+data device to an offline machine. It still feeds untrusted data through
+the browser and decoders: it is not protection against a compromised host
+or parser vulnerabilities. Payloads are never evaluated as code or rendered
+as HTML, and transport completion is not transaction approval.
+
+BBQr has neither an end-to-end checksum nor a transfer ID. Same-header,
+same-length fragments from different transfers cannot always be detected.
+PSBT magic and a successful parse do not authenticate the source. The
+receiving tool's PSBT-version and transaction checks still apply. Independent,
+hash-pinned SeedSigner and Coinkite corpora and their development-only
+regeneration commands are documented in `test/fixtures/psbt-qr/README.md`.
+
 ### Preview-only QR observation
 
 The local QR prototype accepts bounded, checksum-validated AEXT UR messages for
@@ -571,6 +632,25 @@ captured messages remain in memory until Clear Capture, End Session or page exit
 Clearing remains best-effort.
 Coverage counts/indexes retained in the result are transaction metadata, not
 cryptographic secrets; Clear Capture retires that result too.
+
+### Released PSBT camera lifecycle
+
+PSBT scanning opts into continuous acquisition on the existing camera
+controller. Other consumers retain its one-shot default. A capture owns one
+stream and one deadline across parts, with at most one decode in flight and
+one queued frame. Opening another PSBT scanner releases its predecessor.
+Stop, Close, conceal, tool/workspace teardown and completion invalidate the
+capture before external callbacks; late grants and decoded payloads cannot
+write a field. An existing field still requires explicit replacement.
+
+A visible window blur while camera permission is pending preserves only
+that pending request. At activation the document must be visible and report
+`hasFocus() === true`; an unavailable or throwing focus API fails closed.
+Active blur, tab hide, print, idle and explicit cancellation still stop
+capture. The ordinary private-value conceal sweep is not bypassed by the
+permission-prompt exception. Supersession and destruction leave the capture
+stopped, and activation callbacks that stop it cannot allocate a stale timer.
+Browser/OS copies and camera buffers remain outside reliable erasure.
 
 ## What the page can and cannot erase
 
@@ -744,7 +824,9 @@ extension that ignores them, or one written to steal.
 ## Release signing keys
 
 Releases are verified with the detached signatures in `SHA256SUMS.asc`
-(instructions in that file's header). The v1.0.0 signers and their keys:
+(instructions in that file's header). Each signer's public key is committed
+under [`keys/`](keys/); the production deploy imports keys only from there,
+never from a release's `KEYS` file. The v1.0.0 signers and their keys:
 
 | Signer | Key fingerprint | Status |
 | --- | --- | --- |

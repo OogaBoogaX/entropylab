@@ -366,6 +366,15 @@ test("an encrypted wallet refuses a private descriptor that would land in plaint
   const doc = parseRecords([...REF_PRIVATE_RECORDS, crypted]);
   const unit = core.unitFromDescriptor(EXTRA_ACCOUNT.private, { internal: false }, coreDeps);
   assert.throws(() => core.appendDescriptorRows(doc, unit, coreDeps, REF_CREATION_TIME), /encrypted/);
+  // A wallet created blank and then encrypted holds only its master key record
+  // (mkey, nID 1), no crypted descriptor key yet: it is encrypted all the same.
+  const mkey = ["046d6b6579" + "01000000", "30" + "aa".repeat(48) + "08" + "bb".repeat(8) + "00000000" + "a0860100" + "00"];
+  const blankEncrypted = parseRecords([...REF_PRIVATE_RECORDS, mkey]);
+  assert.throws(() => core.appendDescriptorRows(blankEncrypted, unit, coreDeps, REF_CREATION_TIME), /encrypted/);
+  // Its watch-only form still goes in, as the refusal tells the user to do.
+  const watch = core.unitFromDescriptor(EXTRA_ACCOUNT.public, { internal: false }, coreDeps);
+  assert.ok(!watch.privateDescriptor);
+  assert.doesNotThrow(() => core.appendDescriptorRows(parseRecords([...REF_PRIVATE_RECORDS, mkey]), watch, coreDeps, REF_CREATION_TIME));
 });
 
 test("an out-of-range key secret reports a check instead of aborting verification", () => {
@@ -557,6 +566,32 @@ const parseHex = (records) => loadModule().core.parseWalletDat(
   dbFromRecords(records.map(([key, value]) => [bytesToHex(hexToBytes(key)), bytesToHex(hexToBytes(value))])),
 );
 
+// Red team 2026-11-09: a wallet Bitcoin Core creates keeps its hardened path
+// steps after the key, and its DescriptorID hashes the compat form in which
+// those steps are written with '. The verifier rewrote only [origin] steps,
+// so every such wallet failed "Descriptor id", and one failed check locks
+// both the import and the download in the page. The fixture's ids follow
+// Core's rule (pinned by real records in test/core-created-descriptors.mjs).
+test("a Core-generated wallet passes every Descriptor id check", () => {
+  const { core } = loadModule();
+  const checks = core.verifyWalletDoc(parseHex(GENERATED_ROWS), coreDeps);
+  const ids = checks.filter((check) => check.label === "Descriptor id");
+  assert.equal(ids.length, 6, "one id check per generated descriptor");
+  assert.deepEqual(ids.filter((check) => check.tone !== "ok"), [], "every id is the one Core computes");
+  assert.deepEqual(badChecks(checks).filter((check) => check.label === "Descriptor id"), []);
+});
+
+// The browser suite carries its own copy of the generated rows. A fixture
+// change that is not copied there leaves the browser test on stale records.
+test("the browser suite embeds the same generated wallet rows", () => {
+  const html = read("test/browser-suite.html");
+  const marker = "const generatedRows = ";
+  const start = html.indexOf(marker);
+  assert.ok(start > 0, "the browser suite defines generatedRows");
+  const literal = html.slice(start + marker.length, html.indexOf(";\n", start));
+  assert.deepEqual(JSON.parse(literal), GENERATED_ROWS, "regenerate the literal as the header of test/core-generated-fixture.mjs describes");
+});
+
 test("a Core-generated wallet imports as exactly one root key", () => {
   const { core } = loadModule();
   const doc = parseHex(GENERATED_ROWS);
@@ -673,6 +708,12 @@ test("an encrypted Core wallet is refused, not guessed at", () => {
   const result = core.stationImports(doc, importDeps);
   assert.equal(result.reason, "encrypted");
   assert.deepEqual(result.imports, []);
+  // So does a master key record (mkey) alone, as in a wallet encrypted while
+  // it held no descriptor key yet.
+  const mkey = ["046d6b6579" + "01000000", "30" + "aa".repeat(48) + "08" + "bb".repeat(8) + "00000000" + "a0860100" + "00"];
+  const blank = core.stationImports(parseHex([...GENERATED_ROWS, mkey]), importDeps);
+  assert.equal(blank.reason, "encrypted");
+  assert.deepEqual(blank.imports, []);
 });
 
 test("a master key with a short path (not the standard account path) is refused", () => {

@@ -243,6 +243,30 @@ test("the BIP-85 root loader refuses multisig extended keys, like Key Station", 
   assert.ok(bip85.hodlBip85Root.privateKey, "the singlesig root still loads");
 });
 
+// The BIP-85 loader keeps the node the parse built and wipes it before every
+// refusal: it used to build a second node from the same key, and both were
+// dropped with their private keys (red-team sweep 0eed735, part08 #4).
+test("the BIP-85 root loader wipes the parsed node when it refuses a key, and keeps it when it loads", async () => {
+  const { hodlParseExtendedKey: parse } = await load(["hodlParseExtendedKey"]);
+  const parsedNodes = [];
+  const bip85 = await load(["hodlBip85LoadXprv", "hodlBip85Root"], {
+    hodlBip85WipeParent() {},
+    hodlParseExtendedKey: (value) => {
+      const parsed = parse(value);
+      parsedNodes.push(parsed.node);
+      return parsed;
+    },
+  });
+  const root = rootOf(VECTORS[0].words, "");
+  for (const [what, key] of [["a depth-1 key", root.deriveChild(0).privateExtendedKey], ["a Zprv", withVersion(root.privateExtendedKey, 0x02aa7a99)]]) {
+    assert.throws(() => bip85.hodlBip85LoadXprv(key), what);
+    assert.equal(parsedNodes.at(-1).privateKey, null, `${what}: the parsed node is wiped`);
+  }
+  bip85.hodlBip85LoadXprv(root.privateExtendedKey);
+  assert.equal(bip85.hodlBip85Root, parsedNodes.at(-1), "the parsed node is the parent kept");
+  assert.ok(bip85.hodlBip85Root.privateKey, "and it still holds its key");
+});
+
 // Station passphrase fields (SP, PSBT, Nonce) keep the passphrase in a vault.
 // The field shows bullets. Readers take UTF-8 bytes. The root must be the
 // published BIP39 vector (VECTORS[0], passphrase TREZOR) as @scure/bip32
@@ -365,4 +389,59 @@ test("a seed wallet's bytes are recorded by the derivation that makes them", asy
   for (const name of ["entropy", "seed"]) assert.ok(control.rowKeys.includes(wallet[name]), `the derivation did not record the ${name}`);
   api.hodlSettleDerivationKeys(control);
   for (const name of ["entropy", "seed"]) assert.ok(wallet[name].every((byte) => byte === 0), `an uncommitted wallet kept its ${name}`);
+});
+
+// Every refusal of an imported extended key wipes the node the parse built:
+// they came before the derivation's own finally, so the private node waited
+// for the collector (red-team sweep 0eed735, part01 #5).
+test("a refused imported extended key has its parsed node wiped", async () => {
+  const { hodlParseExtendedKey: parse } = await load(["hodlParseExtendedKey"]);
+  const nodes = [];
+  const importer = await load(["hodlImportedWalletWithProgress"], {
+    hodlParseExtendedKey: (value) => {
+      const parsed = parse(value);
+      nodes.push(parsed.node);
+      return parsed;
+    },
+  });
+  const root = rootOf(VECTORS[0].words, "");
+  for (const [what, key, network] of [
+    ["a Zprv", withVersion(root.derive("m/48'/0'/0'/2'").privateExtendedKey, 0x02aa7a99), "mainnet"],
+    ["a mainnet key on testnet", root.derive("m/84'/0'/0'").privateExtendedKey, "testnet"],
+    ["a depth-1 key", root.deriveChild(0).privateExtendedKey, "mainnet"],
+  ]) {
+    await assert.rejects(() => importer.hodlImportedWalletWithProgress(key, network, 2, 0, 0, tracker, 84, 0), what);
+    assert.equal(nodes.at(-1).privateKey, null, `${what}: the parsed node is wiped`);
+  }
+  // A stopped import throws from the tracker before the derivation starts,
+  // and is wiped too (#1480 r5 gate, MiniMax).
+  const stopped = { setTotal() { throw new Error("stopped"); }, step() { throw new Error("stopped"); } };
+  await assert.rejects(() => importer.hodlImportedWalletWithProgress(root.derive("m/84'/0'/0'").privateExtendedKey, "mainnet", 2, 0, 0, stopped, 84, 0), /stopped/);
+  assert.equal(nodes.at(-1).privateKey, null, "a stopped import: the parsed node is wiped");
+  // And an import that completes leaves no private key in the parsed node.
+  const done = await importer.hodlImportedWalletWithProgress(root.derive("m/84'/0'/0'").privateExtendedKey, "mainnet", 2, 0, 0, tracker, 84, 0);
+  assert.equal(done.accounts.length, 1);
+  assert.equal(nodes.at(-1).privateKey, null, "a completed import: the parsed node is wiped");
+});
+
+// The wallet.dat bytes are zeroed once the download's Blob holds its own copy:
+// with secrets shown they carry the spend descriptors (red-team sweep
+// 0eed735, part02 #9).
+test("the wallet.dat download zeroes its bytes once the Blob holds them", async () => {
+  const bytes = new Uint8Array(64).fill(7);
+  let clicked = false;
+  const download = await loadAppFunctions(["hodlDownloadWalletDat"], {
+    stubs: {
+      hodlWalletExport: { hasDescriptors: () => true, hasPrivateDescriptors: () => true, buildWalletDat: () => bytes, walletDatFilename: () => "wallet.dat" },
+      hodlWalletExportView: (result) => result,
+      hodlWalletDatDeps: () => ({}),
+      document: { createElement: () => ({ click() { clicked = true; } }) },
+    },
+    settable: ["hodlWalletResult", "hodlRevealPrivate"],
+  });
+  download.__set.hodlWalletResult({ kind: "hd" });
+  download.__set.hodlRevealPrivate(true);
+  download.hodlDownloadWalletDat();
+  assert.equal(clicked, true, "the download still starts");
+  assert.ok(bytes.every((byte) => byte === 0), "the wallet.dat bytes are zeroed");
 });

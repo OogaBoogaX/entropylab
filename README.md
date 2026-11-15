@@ -6,9 +6,27 @@ private keys into wallet recovery information without intentionally sending
 sensitive data to a server. The whole application is one HTML file, and its
 markup passes the W3C HTML validator with zero errors.
 
-Current version: **v1.0.0**
+Current version: **v1.1.0-dev**
+
+That is the development line on `rock`, which the website follows. The latest
+signed release is [v1.0.0](https://github.com/OogaBoogaX/entropylab/releases/tag/v1.0.0).
 
 Official website: [entropylab.online](https://entropylab.online)
+
+## Security
+
+EntropyLab is built to run on a computer that never goes online, with entropy
+you supply: it never generates key entropy, and its Content Security Policy
+lets the page make no network requests of its own (the hosted copy's service
+worker checks for updates). Under the maintainers' process, every pull request
+other than automated translation updates is reviewed by five models and an
+adversarial red team before it merges, and model-written code runs only in an
+isolated sandbox. Releases are signed by four maintainers and reproducible
+byte for byte inside the pinned build image. The
+[security posture](docs/SECURITY_POSTURE.md) maps each claim to the code and
+tests behind it and lists the known limits. Report vulnerabilities privately
+through
+[GitHub Security Advisories](https://github.com/OogaBoogaX/entropylab/security/advisories/new).
 
 ## Features
 
@@ -180,13 +198,23 @@ an explicit error before those pairs are allocated.
   Session and pagehide clear field/cache. Clearing is best-effort; browser/OS
   copies are outside reliable erasure. A successful transcript check does not
   establish that host randomness stayed secret.
+  PSBT camera scans keep one stream across animated parts. A visible blur
+  while a permission prompt is pending does not cancel the request, but a
+  grant starts capture only when the page is visible and focused. Active
+  blur, tab hide, print, idle, cancellation, another PSBT scanner and teardown
+  stop capture and discard pending scan data.
   A **Scan PSBT QR** control under the PSBT Inspector, Nonce Inspector and
   PSBT Editor fields (and the fee-bump original, the PSBT sent to the signer
   and the Editor's comparison PSBT) reads a PSBT shown as a QR code with the device camera:
-  one static code (base64 or hex) or an animated `ur:crypto-psbt` sequence.
+  one static code (base64 or hex), an animated `ur:crypto-psbt` sequence, or
+  PSBT BBQr (`H`, `2` and `Z` encodings).
   Nothing is written to the field until the whole PSBT has arrived and it
   starts with the PSBT magic; a QR that holds anything else is refused, and
   a field that already has a PSBT asks before it is replaced.
+  The Editor and PSBT Inspector also accept pasted UR/BBQr frames separated
+  by whitespace. A paste must contain exactly one complete transfer: any
+  frame after completion is refused, including a duplicate. An in-progress
+  UR or BBQr transfer cannot be replaced by another transport without reset.
 - Accepts a fully signed raw Bitcoin transaction (hex or base64) in the same
   inspector: outputs, extracted ECDSA nonces, and inscription-envelope hints.
   Fee and RFC 6979 cannot be checked without previous outputs.
@@ -234,8 +262,21 @@ an explicit error before those pairs are allocated.
   shown as an animated `ur:crypto-psbt` fragment sequence for air-gapped
   scanning, and an **Insane editing** switch lifts the consensus-layer checks
   for deliberately broken files while still listing their problems. The
-  editor never signs anything.
-- Verifies and extends Bitcoin Core descriptor wallets (Core Wallet tab):
+  editor never signs anything. Its output-script builder can interpret input
+  as an address, raw script, or OP_RETURN text; check the resulting script
+  carefully. In auto mode a whitespace-free token of 25 to 64 characters
+  with at most two symbols, and no `/`, `:` or `@`, is read as an address
+  and refused unless it decodes; a token starting with 1, 2, 3, m or n is
+  read as an address from 21 characters. A mistyped address of that shape
+  errors instead of becoming OP_RETURN text; one that is shorter, carries
+  three or more symbols, a `/`, `:` or `@`, or an inserted space still
+  reads as text. Bare hex is a raw script only when it is even-length,
+  contains an a-f digit and does not read as a Base58 address; a `0x`
+  prefix always marks raw script.
+  The Editor's input label is version-neutral; the decoded report identifies
+  the submitted PSBT version. The separate PSBT Inspector and Nonce Inspector
+  retain their v0-only input labels and parsing limits.
+- Verifies and extends Bitcoin Core descriptor wallets (Bitcoin Core tab):
   upload a SQLite `wallet.dat` (Bitcoin Core 23+; legacy Berkeley DB wallets
   are refused) and every record is decoded — client versions, wallet flags,
   sync locators, descriptors with their cached branch parents and private-key
@@ -605,6 +646,24 @@ an explicit error before those pairs are allocated.
   its next complete character. Hashed inputs update the non-hashed methods in
   one direction; edits to non-hashed methods never overwrite hashed inputs.
   With sync off, every dice-roll method retains its own independent transcript.
+- An optional **Secure entry** switch in Key Station (off on every load, never
+  saved) limits copies of secrets during entry:
+  - Seed words go in one at a time through a word picker.
+  - A private key goes into a masked field.
+  - Hashed dice rolls go on a six-button pad.
+
+  None of them is kept as page text, and words and rolls can be reviewed one
+  at a time. Secrets still exist in memory while the page is open, so End
+  Session and closing the browser still matter. Turning it on with text
+  already typed asks whether to keep that text or clear it. Keep moves the
+  format on screen into Secure entry and clears the key's other saved
+  formats. Global sync is unavailable while Secure entry is on.
+- **Scan QR** in Key Station reads a seed (Standard SeedQR, CompactSeedQR or
+  BIP39 words) or a WIF private key from the camera or a photo, straight into
+  Secure entry. With Secure entry off, Scan first offers to turn it on. The
+  scanned secret never passes through a text field. A confirmation names the
+  format before anything loads, and warns that a QR from someone else's backup
+  derives someone else's wallet.
 - SLIP-132 extended-key display is a prefix swap only (same payload, new
   version bytes and checksum). Import/derive shows the key as pasted, the
   account xpub/tpub, any account private-key export, and the descriptor
@@ -719,6 +778,15 @@ For sensitive or long-term use, the recommended path remains the downloaded,
 verified `entropylab.html` on a dedicated air-gapped computer. The downloaded
 file is still self-contained and never registers the hosted service worker.
 
+Keep iOS fully updated. On an out-of-date iPhone, one malicious web page can
+take over the phone, and after that, turning networks off does not keep
+secrets on it safe. Even an updated phone is less safe than the air-gapped
+computer above. Never keep seed words, or a photo or screenshot of a seed or
+SeedQR, anywhere on the phone or in the cloud, including Notes, Photos or
+iCloud. Scan a SeedQR live with the camera, not from a saved photo. If a photo
+was saved, delete it, including from Recently Deleted and iCloud Photos;
+deleting it cannot undo exposure that already happened.
+
 ### Verifying the download
 
 New to checksums and signatures? The step-by-step guide, with Windows, Mac and
@@ -736,8 +804,14 @@ for the exact bytes built by CI, and an OpenTimestamps proof
 
 ```sh
 sha256sum -c SHA256SUMS.txt
-gh attestation verify entropylab.html -R OogaBoogaX/entropylab
+gh attestation verify entropylab.html -R OogaBoogaX/entropylab --signer-workflow OogaBoogaX/entropylab/.github/workflows/ci-cd.yml --source-ref refs/heads/rock
 ```
+
+The two extra options matter. `--signer-workflow` and `--source-ref` accept
+only an attestation made by this repository's CI workflow for the `rock`
+branch. Without them the check would also accept an attestation made by any
+other workflow or branch in this repository. They need GitHub CLI
+2.68.0 or later; an older one stops with `unknown flag: --source-ref`.
 
 The four WASM modules embedded in the HTML (secp256k1, PSBT, vanity and the
 QR decoder) are committed as

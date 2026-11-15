@@ -320,18 +320,18 @@ const nodeFactory = () => {
 
 // The full Lightning card over a mini DOM (the fixture test/lightning.test.mjs
 // uses), with the shipped worker string injected as the worker factory.
-function lnPage() {
+function lnPage(network = "mainnet") {
   const page = new MiniDocument();
   globalThis.document = page;
   page.body.innerHTML = '<select id="ln-format"><option value="aezeed" selected>aezeed · LND cipher seed</option><option value="bip39">BIP-39 · LDK (ldk-node)</option><option value="cln-hsm">Core Lightning hsm_secret</option></select>'
-    + '<div id="ln-network-field"><select id="ln-network"><option value="mainnet" selected>Mainnet</option><option value="testnet">Testnet</option></select></div>'
+    + '<label id="ln-network-field">Network<output id="ln-network-value"></output><span id="ln-network-note"></span></label>'
     + '<button class="btn secondary" id="ln-hsm-upload" type="button">Choose hsm_secret</button><input type="file" id="ln-hsm-file" hidden>'
     + '<textarea id="ln-seed"></textarea><input id="ln-pass" type="password">'
     + '<button id="ln-go" type="button"></button><button id="ln-wipe" type="button"></button>'
     + '<p id="ln-session"></p><p id="ln-error"></p><div id="ln-out"></div>'
     + '<span id="ln-seed-help"></span>';
   if (ln.hodlLnSetWorkerFactory) ln.hodlLnSetWorkerFactory(nodeFactory);
-  ln.hodlInitLn({ journalLog() {}, copyIcon: () => "" });
+  ln.hodlInitLn({ journalLog() {}, copyIcon: () => "", pageNetwork: typeof network === "function" ? network : () => network });
   return page;
 }
 
@@ -382,16 +382,16 @@ test("the page derives in the worker and holds the secret text only while reveal
 });
 
 test("Clear and a network change terminate the worker, and its late answers are ignored", async () => {
-  const page = lnPage();
+  let network = "mainnet";
+  const page = lnPage(() => network);
   try {
     page.getElementById("ln-seed").value = AEZEED_WORDS;
     page.getElementById("ln-go").onclick();
     await until(() => page.getElementById("ln-out").innerHTML.includes(lndMainnet.nodePubKey), "the node key");
     const first = spawned.at(-1);
     assert.ok(first, "the derivation ran in a key worker");
-    const network = page.getElementById("ln-network");
-    network.value = "testnet";
-    network.dispatchEvent({ type: "change" });
+    network = "testnet";
+    page.dispatchEvent(new Event("hodl:network-default"));
     await until(() => first.terminated, "the network change terminating the worker");
     assert.equal(page.getElementById("ln-node-pubkey"), null, "the result survived the network change");
     // A late answer from the stopped worker must not bring the old result back.
@@ -604,6 +604,32 @@ test("a file that cannot be read does not leave the earlier file's read status",
 test("scripts/build.mjs injects the bundled worker source as __LN_WORKER_SOURCE__", () => {
   const build = readFileSync(new URL("../scripts/build.mjs", import.meta.url), "utf8");
   assert.match(build, /__LN_WORKER_SOURCE__: JSON\.stringify\(/, "the page bundle must carry the key worker source");
+});
+
+// An hsm_secret file over 1 KiB is refused before it is read whole, as every
+// other file input checks its size first (red-team sweep 0eed735, lightning #1).
+test("an oversized hsm_secret file is refused without being read", async () => {
+  const page = lnPage();
+  try {
+    page.getElementById("ln-format").value = "cln-hsm";
+    const fileInput = page.getElementById("ln-hsm-file");
+    let read = false;
+    fileInput.files = [{ size: 5_000_000, arrayBuffer: async () => { read = true; return new ArrayBuffer(8); } }];
+    await fileInput.onchange();
+    assert.equal(read, false, "the oversized file was read whole");
+    assert.equal(page.getElementById("ln-error").dataset.code, "hsm-secret-too-large");
+    assert.equal(fileInput.value, "", "the file input was not reset");
+    // A real type-2 file, with its size, still loads. This test runs before
+    // the End Session one, which retires the module for the rest of the run.
+    const bytes = clnType2File(CLN_WORDS);
+    fileInput.files = [{ size: bytes.length, arrayBuffer: async () => bytes.buffer }];
+    const idle = page.getElementById("ln-session").textContent;
+    await fileInput.onchange();
+    await until(() => page.getElementById("ln-session").textContent !== idle, "the hsm-loaded status");
+    assert.equal(page.getElementById("ln-error").dataset.code, "", "the earlier refusal is cleared");
+  } finally {
+    await cleanup();
+  }
 });
 
 // End Session retires the WebAssembly module for the rest of this process,

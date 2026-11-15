@@ -17,6 +17,7 @@ import { appendFileSync, cpSync, mkdtempSync, readFileSync, rmSync, symlinkSync,
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { BUILD_INPUTS } from "../scripts/build-commit.mjs";
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
 const COPIED = [
@@ -100,6 +101,13 @@ test("a commit to any build input moves the stamp to that commit", { timeout: 30
       "package.json": "\n",
       "package-lock.json": "\n",
       "scripts/build.mjs": "\n// touched\n",
+      // inputs the build imports but does not itself name as paths: a stamp
+      // that ignores them names a commit the artifact was not built from
+      "scripts/preview-blocks.mjs": "\n// touched\n",
+      "scripts/ln-worker-source.mjs": "\n// touched\n",
+      "scripts/qr-worker-source.mjs": "\n// touched\n",
+      "scripts/ots-worker-source.mjs": "\n// touched\n",
+      "scripts/build-wasm.mjs": "\n// touched\n",
       "psbt-wasm/src/lib.rs": "\n// touched\n",
     };
     for (const [path, suffix] of Object.entries(touches)) {
@@ -149,4 +157,17 @@ test("a build refuses a shallow clone, release and test-hook staging alike", { t
       assert.match(result.stderr, /shallow/);
     }
   });
+});
+
+// The hand-kept list drifts: an import added to the build and not to
+// BUILD_INPUTS leaves the stamp naming a commit the artifact was not built
+// from, while every gate only checks ancestry. Derive the build's own
+// relative imports and require each to be covered, so forgetting the list
+// fails here rather than at a release.
+test("every relative input the build imports is a declared build input", () => {
+  const covered = (file) => BUILD_INPUTS.some((input) => file === input || file.startsWith(`${input}/`));
+  const source = readFileSync(join(root, "scripts/build.mjs"), "utf8");
+  const imports = [...source.matchAll(/(?:from |import\()\s*"\.\/([^"]+)"/g)].map((match) => `scripts/${match[1]}`);
+  assert.ok(imports.length >= 5, "fixture: the build imports its helper modules");
+  for (const file of imports) assert.ok(covered(file), `${file} is imported by scripts/build.mjs but missing from BUILD_INPUTS`);
 });
