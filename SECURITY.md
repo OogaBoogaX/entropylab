@@ -99,9 +99,10 @@ material. Its security posture rests on the following model:
    to rebuild it from. The page committed inside the v1.0.0 git tag is an
    earlier build with a different footer and is not the release. See the
    [known issue](docs/Verify_Your_Download.md#known-issue-v100).
-   The v1.0.0 release page has been rebuilt from that
-   commit only by its author so far, on Windows and on Linux. No independent
-   rebuild of it is recorded.
+   The v1.0.0 release page has been rebuilt from that commit only by its
+   author so far, on Windows (on the computer later found to be compromised;
+   see [Release signing keys](#release-signing-keys)) and on Linux (in a
+   separate hosted environment). No independent rebuild of it is recorded.
    [docs/Reproductions.md](docs/Reproductions.md)
    records each rebuild by commit. Build-host paths are remapped out of the
    binary. The image is the boundary: the page and the modules are
