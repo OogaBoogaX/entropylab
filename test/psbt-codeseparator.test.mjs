@@ -130,7 +130,6 @@ const hodlNetworkChoice = "mainnet";
 var hodlPsbtPriv = null, hodlPsbtHd = null;
 const hodlPsbtRecordNonceInspection = () => {};
 const hodlPrivateCopyButtonHtml = () => "";
-const hodlSignerReportSection = () => "";
 ${DECLARED_VARS.map((name) => `var ${name};`).join("\n")}
 export function hodlTestSetPriv(key) { hodlPsbtPriv = key; }
 ${closure(["hodlParsePsbt", "hodlRenderPsbt"])}
