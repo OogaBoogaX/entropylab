@@ -358,6 +358,47 @@ test("every node the report derives is wiped, and the source roots are not", () 
   assert.equal(rootA.hasPrivateKey, true, "the caller's root is not the report's to wipe");
 });
 
+test("a budget that runs out part-way through wipes every derived node", () => {
+  const unrelatedKey = new Uint8Array(32).fill(42);
+  const unrelated = secp256k1.getPublicKey(unrelatedKey, true);
+  unrelatedKey.fill(0);
+  const input = { entries: [], prevout: { script: p2wpkh(unrelated), amount: 1000n }, prevoutConflict: false };
+  const created = [];
+  const deriveChild = HDKey.prototype.deriveChild;
+  HDKey.prototype.deriveChild = function (index) {
+    const node = deriveChild.call(this, index);
+    created.push(node);
+    return node;
+  };
+  try {
+    for (let budget = 1; budget <= 60; budget++) {
+      created.length = 0;
+      psbtSignerReport({ inputs: [input], sources: [source("a", rootA)], network: "mainnet", budget });
+      for (const [i, node] of created.entries()) assert.equal(node.hasPrivateKey, false, `budget ${budget}: derived node ${i} still holds its private key`);
+      assert.equal(rootA.hasPrivateKey, true, `budget ${budget}: the caller's root is not the report's to wipe`);
+    }
+  } finally {
+    HDKey.prototype.deriveChild = deriveChild;
+  }
+});
+
+test("the searched paths are listed only when a private root was scanned", () => {
+  const unrelatedKey = new Uint8Array(32).fill(42);
+  const unrelated = secp256k1.getPublicKey(unrelatedKey, true);
+  unrelatedKey.fill(0);
+  const input = { entries: [], prevout: { script: p2wpkh(unrelated), amount: 1000n }, prevoutConflict: false };
+  const watch = rootA.neutered();
+  const watchReport = psbtSignerReport({ inputs: [input], sources: [{ id: "w", label: "watch", private: false, node: watch }], network: "mainnet" });
+  assert.deepEqual(watchReport.searched.paths, []);
+  const privateReport = psbtSignerReport({ inputs: [input], sources: [source("a", rootA)], network: "mainnet" });
+  assert.deepEqual(privateReport.searched.paths, signerReportFallbackPaths("mainnet").map((entry) => entry.label));
+  assert.equal(privateReport.searched.paths.length, 7);
+  const account = rootA.derive("m/84'/0'/0'");
+  const accountReport = psbtSignerReport({ inputs: [input], sources: [{ id: "acc", label: "account", private: true, account: true, node: account }], network: "mainnet" });
+  assert.deepEqual(accountReport.searched.paths, []);
+  account.wipePrivateData();
+});
+
 test("the report never reads the privateKey getter", () => {
   const copies = [];
   const original = Object.getOwnPropertyDescriptor(HDKey.prototype, "privateKey");

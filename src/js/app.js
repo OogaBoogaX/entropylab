@@ -12632,7 +12632,9 @@ function hodlSignerReportHtml(report) {
   if (report.inputs.length > SIGNER_REPORT_ROW_LIMIT) {
     html.push("<p class='edge-note is-muted' data-signer-report-more>" + hodlT("{count} more inputs are counted above but not listed.", { count: report.inputs.length - SIGNER_REPORT_ROW_LIMIT }) + "</p>");
   }
-  html.push("<p class='edge-note is-muted' data-signer-report-searched>" + hodlT("When the file's key paths do not match, these were also searched: {paths}, receive and change addresses, indexes 0 to {last}.", { paths: report.searched.paths.join(", "), last: report.searched.gap - 1 }) + "</p>");
+  if (report.searched.paths.length > 0) {
+    html.push("<p class='edge-note is-muted' data-signer-report-searched>" + hodlT("When the file's key paths do not match, these were also searched: {paths}, receive and change addresses, indexes 0 to {last}.", { paths: report.searched.paths.join(", "), last: report.searched.gap - 1 }) + "</p>");
+  }
   html.push("</div>");
   return html.join("");
 }

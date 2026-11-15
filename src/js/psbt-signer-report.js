@@ -159,6 +159,8 @@ function deriveSteps(state, start, steps) {
     for (const step of steps) {
       if (state.budget <= 0) {
         state.exhausted = true;
+        if (node !== start && !owned.includes(node)) owned.push(node);
+        for (const child of owned) try { child.wipePrivateData(); } catch {}
         return null;
       }
       state.budget -= 1;
@@ -271,6 +273,14 @@ export function psbtSignerReport({ inputs, sources, network, verify = () => null
 
   const usablePrivate = (source) => source.private === true && source.account !== true && (Array.isArray(source.pubkeys) || source.node?.hasPrivateKey === true);
   const hdSources = uniqueSources.filter((source) => source.node && typeof source.node.deriveChild === "function");
+  const searchedRoots = hdSources.some((source) => {
+    if (source.account === true) return false;
+    try {
+      return source.node.depth === 0 && source.node.hasPrivateKey === true;
+    } catch {
+      return false;
+    }
+  });
   const singleKeySources = uniqueSources.filter((source) => Array.isArray(source.pubkeys));
 
   const fallbackCache = new Map();
@@ -464,7 +474,7 @@ export function psbtSignerReport({ inputs, sources, network, verify = () => null
   return {
     inputs: rows,
     summary,
-    searched: { paths: signerReportFallbackPaths(network).map((entry) => entry.label), gap: SIGNER_REPORT_GAP },
+    searched: { paths: searchedRoots ? signerReportFallbackPaths(network).map((entry) => entry.label) : [], gap: SIGNER_REPORT_GAP },
     exhausted: state.exhausted,
   };
 }
