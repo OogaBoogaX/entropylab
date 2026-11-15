@@ -128,6 +128,11 @@ export function signerReportPolicy(input) {
       if (parsed.error) return { kind: "unsupported", reason: parsed.error };
       return { kind: "multi", script: "p2sh-p2wsh", m: parsed.m, n: parsed.n, keys: parsed.keys };
     }
+    if (redeem.length > 520) {
+      return input.prevoutVerified === true
+        ? { kind: "unspendable", reason: "redeem-too-large" }
+        : { kind: "unknown", reason: "redeem-too-large" };
+    }
     const parsed = parseMultisig(redeem, true);
     if (!parsed) return { kind: "unsupported", reason: "script-type" };
     if (parsed.error) return { kind: "unsupported", reason: parsed.error };
@@ -264,7 +269,7 @@ export function psbtSignerReport({ inputs, sources, network, verify = () => null
     uniqueSources.push({ ...source, id });
   }
 
-  const usablePrivate = (source) => source.private === true && (Array.isArray(source.pubkeys) || source.node?.hasPrivateKey === true);
+  const usablePrivate = (source) => source.private === true && source.account !== true && (Array.isArray(source.pubkeys) || source.node?.hasPrivateKey === true);
   const hdSources = uniqueSources.filter((source) => source.node && typeof source.node.deriveChild === "function");
   const singleKeySources = uniqueSources.filter((source) => Array.isArray(source.pubkeys));
 
@@ -280,18 +285,19 @@ export function psbtSignerReport({ inputs, sources, network, verify = () => null
 
   const rows = inputList.map((input, index) => {
     const policy = signerReportPolicy(input);
-    if (policy.kind === "finalized" || policy.kind === "unknown" || policy.kind === "unsupported") {
+    if (policy.kind === "finalized" || policy.kind === "unknown" || policy.kind === "unsupported" || policy.kind === "unspendable") {
       return {
         index, state: policy.kind, reason: policy.reason ?? null, script: null, m: 0, n: 0, all: false,
-        signed: 0, invalid: 0, unchecked: 0, canAdd: 0, watchOnly: 0, signers: [], watchers: [],
+        signed: 0, invalid: 0, unchecked: 0, canAdd: 0, watchOnly: 0, signers: [], watchers: [], accounts: [], accountMatch: 0,
       };
     }
     const slots = policy.kind === "multi"
-      ? policy.keys.map((key) => ({ key, sig: null, private: new Map(), public: new Map() }))
-      : [{ key: null, sig: null, private: new Map(), public: new Map() }];
+      ? policy.keys.map((key) => ({ key, sig: null, private: new Map(), public: new Map(), account: new Map() }))
+      : [{ key: null, sig: null, private: new Map(), public: new Map(), account: new Map() }];
     const entries = Array.isArray(input?.entries) ? input.entries : [];
     const record = (slot, source, path) => {
       if (usablePrivate(source)) slot.private.set(source.id, { label: source.label, path });
+      else if (source.private === true && source.account === true) slot.account.set(source.id, { label: source.label, path });
       else slot.public.set(source.id, { label: source.label, path });
     };
 
@@ -365,7 +371,7 @@ export function psbtSignerReport({ inputs, sources, network, verify = () => null
     for (const slot of slots) {
       if (slot.private.size > 0) continue;
       for (const source of hdSources) {
-        if (slot.private.has(source.id) || slot.public.has(source.id)) continue;
+        if (slot.private.has(source.id) || slot.public.has(source.id) || slot.account.has(source.id)) continue;
         const indexMap = getFallbackIndex(source);
         if (!indexMap) continue;
         const hit = policy.kind === "multi" ? indexMap.get(toHex(slot.key)) : indexMap.get(toHex(policy.hash));
@@ -385,7 +391,7 @@ export function psbtSignerReport({ inputs, sources, network, verify = () => null
         if (slot.private.size === 0) uncheckedOpen++;
       }
       if (slot.private.size > 0) canAdd++;
-      else if (slot.public.size > 0) watchOnly++;
+      else if (slot.account.size === 0 && slot.public.size > 0) watchOnly++;
     }
 
     let stateName, reason = null, all = false;
@@ -419,24 +425,39 @@ export function psbtSignerReport({ inputs, sources, network, verify = () => null
     for (const slot of slots) {
       if (slot.sig === "valid") continue;
       if (slot.private.size > 0) continue;
+      if (slot.account.size > 0) continue;
       for (const [id, info] of slot.public) {
         if (watcherIds.has(id)) continue;
         watcherIds.add(id);
         watchers.push({ id, label: info.label, path: info.path });
       }
     }
+    const accounts = [];
+    const accountIds = new Set();
+    let accountMatch = 0;
+    for (const slot of slots) {
+      if (slot.sig === "valid") continue;
+      if (slot.private.size > 0) continue;
+      if (slot.account.size > 0) accountMatch++;
+      for (const [id, info] of slot.account) {
+        if (accountIds.has(id)) continue;
+        accountIds.add(id);
+        accounts.push({ id, label: info.label, path: info.path });
+      }
+    }
 
     return {
       index, state: stateName, reason, script: policy.script, m: policy.m, n: policy.n, all,
-      signed, invalid, unchecked, canAdd, watchOnly, signers, watchers,
+      signed, invalid, unchecked, canAdd, watchOnly, signers, watchers, accounts, accountMatch,
     };
   });
 
-  const summary = { total: rows.length, ready: 0, done: 0, short: 0, unknown: 0 };
+  const summary = { total: rows.length, ready: 0, done: 0, short: 0, unknown: 0, never: 0 };
   for (const row of rows) {
     if (row.state === "ready") summary.ready++;
     else if (row.state === "signed" || row.state === "finalized") summary.done++;
     else if (row.state === "short") summary.short++;
+    else if (row.state === "unspendable") summary.never++;
     else if (row.state === "unknown" || row.state === "unsupported") summary.unknown++;
   }
 

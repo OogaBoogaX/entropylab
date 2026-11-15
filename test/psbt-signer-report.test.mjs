@@ -8,6 +8,7 @@ import { readFileSync } from "node:fs";
 import { HDKey } from "../src/js/hdkey.js";
 import { hash160, sha256 } from "../src/js/hashes.js";
 import { mnemonicToSeedSync } from "../src/js/bip39.js";
+import { secp256k1 } from "../src/js/secp256k1.js";
 import { psbtSignerReport, signerReportPolicy, signerReportFallbackPaths, SIGNER_REPORT_GAP } from "../src/js/psbt-signer-report.js";
 
 const bytes = (...values) => Uint8Array.from(values);
@@ -147,6 +148,113 @@ test("policy errors are refused, never guessed", () => {
   assert.deepEqual(signerReportPolicy({ entries: [entry(8)], prevout: p2wshPrevout, prevoutConflict: false }), { kind: "finalized" });
 });
 
+test("a bare P2SH redeem script over 520 bytes can never be spent", () => {
+  const keys = Array.from({ length: 16 }, (_, i) => {
+    const key = new Uint8Array(32);
+    key[31] = i + 1;
+    return secp256k1.getPublicKey(key, true);
+  });
+  const redeem = multisig(1, keys);
+  assert.equal(redeem.length, 547);
+  const prevout = { script: p2sh(redeem), amount: 1000n };
+  assert.deepEqual(signerReportPolicy({ entries: [entry(4, new Uint8Array(), redeem)], prevout, prevoutConflict: false, prevoutVerified: true }), { kind: "unspendable", reason: "redeem-too-large" });
+  assert.deepEqual(signerReportPolicy({ entries: [entry(4, new Uint8Array(), redeem)], prevout, prevoutConflict: false }), { kind: "unknown", reason: "redeem-too-large" });
+  // The size check runs only after the redeem script hashes to the coin's script.
+  const other = multisig(2, keys);
+  assert.ok(other.length > 520);
+  assert.deepEqual(signerReportPolicy({ entries: [entry(4, new Uint8Array(), other)], prevout, prevoutConflict: false, prevoutVerified: true }), { kind: "unknown", reason: "script-mismatch" });
+  // A P2SH multisig at or under 520 bytes still classifies.
+  const small = multisig(2, [pkA, pkB, pkC]);
+  assert.deepEqual(signerReportPolicy({ entries: [entry(4, new Uint8Array(), small)], prevout: { script: p2sh(small), amount: 1n }, prevoutConflict: false, prevoutVerified: true }), { kind: "multi", script: "p2sh", m: 2, n: 3, keys: [pkA, pkB, pkC] });
+  const report = psbtSignerReport({ inputs: [{ entries: [entry(4, new Uint8Array(), redeem)], prevout, prevoutConflict: false, prevoutVerified: true }], sources: [], network: "mainnet" });
+  assert.equal(report.inputs[0].state, "unspendable");
+  assert.equal(report.summary.never, 1);
+  assert.equal(report.summary.unknown, 0);
+  const unknown = psbtSignerReport({ inputs: [{ entries: [entry(4, new Uint8Array(), redeem)], prevout, prevoutConflict: false }], sources: [], network: "mainnet" });
+  assert.equal(unknown.inputs[0].state, "unknown");
+  assert.equal(unknown.inputs[0].reason, "redeem-too-large");
+});
+
+test("#1407: a real fingerprint is not proof of signing ability", () => {
+  const script = multisig(1, [pkB]);
+  const input = { entries: [entry(5, new Uint8Array(), script), declared(pkB, rootA.fingerprint, COSIGNER_PATH)], prevout: { script: p2wsh(script), amount: 1000n }, prevoutConflict: false };
+  const report = psbtSignerReport({ inputs: [input], sources: [source("a", rootA)], network: "mainnet" });
+  assert.equal(report.inputs[0].state, "short");
+  assert.deepEqual(report.inputs[0].signers, []);
+});
+
+test("#1407: a depth > 0 node matches only the last two non-hardened declared steps", () => {
+  const account = rootA.derive("m/84'/0'/0'");
+  const watch = account.neutered();
+  const branch = account.deriveChild(5);
+  const leaf = branch.deriveChild(7);
+  const pubkey = leaf.publicKey;
+  leaf.wipePrivateData();
+  branch.wipePrivateData();
+  account.wipePrivateData();
+  const path = [84 + HARD, HARD, HARD, 5, 7];
+  const input = { entries: [declared(pubkey, rootA.fingerprint, path)], prevout: { script: p2wpkh(pubkey), amount: 1000n }, prevoutConflict: false };
+  const publicSource = { id: "w", label: "watch", private: false, node: watch };
+  const watchReport = psbtSignerReport({ inputs: [input], sources: [publicSource], network: "mainnet" });
+  assert.equal(watchReport.inputs[0].state, "short");
+  assert.equal(watchReport.inputs[0].watchOnly, 1);
+  assert.deepEqual(watchReport.inputs[0].watchers.map((watcher) => watcher.label), ["watch"]);
+  const accountSource = { id: "acc", label: "account", private: true, account: true, node: rootA.derive("m/84'/0'/0'") };
+  const accountReport = psbtSignerReport({ inputs: [input], sources: [accountSource], network: "mainnet" });
+  assert.equal(accountReport.inputs[0].state, "short");
+  assert.deepEqual(accountReport.inputs[0].signers, []);
+  assert.deepEqual(accountReport.inputs[0].accounts.map((entry) => entry.id), ["acc"]);
+  assert.equal(accountReport.inputs[0].accountMatch, 1);
+  accountSource.node.wipePrivateData();
+  // A hardened step among the last two gives no match from a depth > 0 node.
+  const hardened = { entries: [declared(pubkey, rootA.fingerprint, [84 + HARD, HARD, HARD, 5 + HARD, 7])], prevout: input.prevout, prevoutConflict: false };
+  const hardenedReport = psbtSignerReport({ inputs: [hardened], sources: [publicSource], network: "mainnet" });
+  assert.equal(hardenedReport.inputs[0].state, "short");
+  assert.equal(hardenedReport.inputs[0].watchOnly, 0);
+});
+
+test("an account-level key never counts toward ready, all or the signers", () => {
+  const script = multisig(1, [pkA, pkB]);
+  const input = { entries: [entry(5, new Uint8Array(), script), declared(pkA, rootA.fingerprint, COSIGNER_PATH), declared(pkB, rootB.fingerprint, COSIGNER_PATH)], prevout: { script: p2wsh(script), amount: 1000n }, prevoutConflict: false };
+  const account = { id: "acc", label: "account", private: true, account: true, node: rootB.derive("m/48'/0'/0'/2'") };
+  const report = psbtSignerReport({ inputs: [input], sources: [source("a", rootA), account], network: "mainnet" });
+  assert.equal(report.inputs[0].state, "ready");
+  assert.equal(report.inputs[0].all, false);
+  assert.deepEqual(report.inputs[0].signers.map((signer) => signer.id), ["a"]);
+  assert.deepEqual(report.inputs[0].accounts.map((entry) => entry.id), ["acc"]);
+  account.node.wipePrivateData();
+});
+
+test("a slot with an account-level match is never also watch-only", () => {
+  const account = rootA.derive("m/84'/0'/0'");
+  const watch = account.neutered();
+  const node = rootA.derive("m/84'/0'/0'/0/1");
+  const pubkey = node.publicKey;
+  node.wipePrivateData();
+  const input = { entries: [declared(pubkey, rootA.fingerprint, [84 + HARD, HARD, HARD, 0, 1])], prevout: { script: p2wpkh(pubkey), amount: 1000n }, prevoutConflict: false };
+  const accountSource = { id: "acc", label: "account", private: true, account: true, node: account };
+  const publicSource = { id: "w", label: "watch", private: false, node: watch };
+  const report = psbtSignerReport({ inputs: [input], sources: [accountSource, publicSource], network: "mainnet" });
+  const row = report.inputs[0];
+  assert.deepEqual(row.accounts.map((entry) => entry.id), ["acc"]);
+  assert.equal(row.accountMatch, 1);
+  assert.equal(row.watchOnly, 0);
+  assert.deepEqual(row.watchers, []);
+  assert.deepEqual(row.signers, []);
+  assert.equal(row.state, "short");
+  account.wipePrivateData();
+});
+
+test("a slot already signed by a loaded key counts once", () => {
+  const signature = bytes(0x30, 0x06, 0x02, 0x01, 0x01, 0x02, 0x01, 0x01, 0x01);
+  const input = multiInput([declared(pkA, rootA.fingerprint, COSIGNER_PATH), declared(pkB, rootB.fingerprint, COSIGNER_PATH), entry(2, pkA, signature)]);
+  const report = psbtSignerReport({ inputs: [input], sources: [source("a", rootA), source("b", rootB)], network: "mainnet", verify: () => true });
+  assert.equal(report.inputs[0].signed, 1);
+  assert.equal(report.inputs[0].canAdd, 1);
+  assert.equal(report.inputs[0].signed + report.inputs[0].canAdd, 2);
+  assert.equal(report.inputs[0].state, "ready");
+});
+
 test("partial signatures are counted once, from the verifier's own answer", () => {
   const input = multiInput([entry(2, pkA, bytes(0x30, 0x06, 0x02, 0x01, 0x01, 0x02, 0x01, 0x01, 0x01))]);
   const calls = [];
@@ -198,12 +306,22 @@ test("the derivation budget bounds the report and says so", () => {
 test("the summary counts every input and adds up to the total", () => {
   const finalized = { entries: [entry(8)], prevout: null, prevoutConflict: false };
   const taproot = { entries: [], prevout: { script: concat(bytes(0x51, 0x20), new Uint8Array(32)), amount: 1n }, prevoutConflict: false };
-  const report = psbtSignerReport({ inputs: [multiInput(), finalized, taproot], sources: [source("a", rootA), source("b", rootB), source("c", rootC)], network: "mainnet" });
-  assert.equal(report.summary.total, 3);
+  const keys = Array.from({ length: 16 }, (_, i) => {
+    const key = new Uint8Array(32);
+    key[31] = i + 1;
+    return secp256k1.getPublicKey(key, true);
+  });
+  const redeem = multisig(1, keys);
+  const unspendable = { entries: [entry(4, new Uint8Array(), redeem)], prevout: { script: p2sh(redeem), amount: 1000n }, prevoutConflict: false, prevoutVerified: true };
+  const shortInput = { entries: [], prevout: { script: p2wpkh(secp256k1.getPublicKey(new Uint8Array(32).fill(42), true)), amount: 1000n }, prevoutConflict: false };
+  const report = psbtSignerReport({ inputs: [multiInput(), finalized, taproot, unspendable, shortInput], sources: [source("a", rootA), source("b", rootB), source("c", rootC)], network: "mainnet" });
+  assert.equal(report.summary.total, 5);
   assert.equal(report.summary.ready, 1);
   assert.equal(report.summary.done, 1);
+  assert.equal(report.summary.short, 1);
   assert.equal(report.summary.unknown, 1);
-  assert.equal(report.summary.ready + report.summary.done + report.summary.short + report.summary.unknown, report.summary.total);
+  assert.equal(report.summary.never, 1);
+  assert.equal(report.summary.ready + report.summary.done + report.summary.short + report.summary.unknown + report.summary.never, report.summary.total);
 });
 
 test("signerReportFallbackPaths names the accounts in order, with the coin type", () => {

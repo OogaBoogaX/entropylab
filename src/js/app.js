@@ -12502,14 +12502,15 @@ function hodlSignerReportInputs(psbt) {
     let witnessUtxo = null, nonWitnessUtxo = null, failed = false;
     try { witnessUtxo = hodlWitUtxo(entries); } catch { failed = true; }
     try { nonWitnessUtxo = hodlNonWitUtxo(entries, psbt.tx.inputs[index]); } catch { failed = true; }
-    if (failed) return { entries, prevout: null, prevoutConflict: true };
+    if (failed) return { entries, prevout: null, prevoutConflict: true, prevoutVerified: false };
     if (witnessUtxo && nonWitnessUtxo) {
       if (witnessUtxo.amount === nonWitnessUtxo.amount && hodlEq(witnessUtxo.script, nonWitnessUtxo.script)) {
-        return { entries, prevout: nonWitnessUtxo, prevoutConflict: false };
+        return { entries, prevout: nonWitnessUtxo, prevoutConflict: false, prevoutVerified: true };
       }
-      return { entries, prevout: null, prevoutConflict: true };
+      return { entries, prevout: null, prevoutConflict: true, prevoutVerified: false };
     }
-    return { entries, prevout: witnessUtxo || nonWitnessUtxo, prevoutConflict: false };
+    if (nonWitnessUtxo) return { entries, prevout: nonWitnessUtxo, prevoutConflict: false, prevoutVerified: true };
+    return { entries, prevout: witnessUtxo, prevoutConflict: false, prevoutVerified: false };
   });
 }
 
@@ -12558,7 +12559,7 @@ function hodlSignerReportSources(sources) {
         sources.push({ id, label, private: true, node: hodlResultRootNode(result) });
       } else if (result.kind === "hd" && hodlResultHasImportedPrivate(result)) {
         const node = hodlCopyPrivateNode(result.accounts?.[0]?.privateNode);
-        if (node) sources.push({ id, label, private: true, node });
+        if (node) sources.push({ id, label, private: true, account: true, node });
       } else if (result.importedPublicKey && result.accounts?.[0]?.genericPublic) {
         sources.push({ id, label, private: false, node: hodlParseExtendedKey(result.accounts[0].genericPublic).node });
       } else if (result.rootXpub && !result.rootNode) {
@@ -12577,54 +12578,61 @@ function hodlSignerReportSources(sources) {
 }
 
 function hodlSignerReportReasonText(reason) {
-  if (reason === "no-prevout" || reason === "prevout-conflict") return hodlTText("the previous output is missing or its claims disagree");
+  if (reason === "no-prevout" || reason === "prevout-conflict") return hodlTText("the details of the coin being spent are missing or do not match");
   if (reason === "no-script" || reason === "script-mismatch") return hodlTText("the redeem or witness script is missing or does not match");
   if (reason === "unchecked-signatures") return hodlTText("signatures in the file could not be checked");
-  if (reason === "budget") return hodlTText("the derivation limit was reached");
+  if (reason === "budget") return hodlTText("the path search reached its limit");
+  if (reason === "redeem-too-large") return hodlTText("the redeem script is larger than Bitcoin allows (520 bytes)");
   return "";
 }
 
 function hodlSignerReportHtml(report) {
   if (!report) return "";
   const keysText = (list) => list.map((entry) => (entry.path ? entry.label + " (" + entry.path + ")" : entry.label)).join(", ");
-  let html = ["<div data-signer-report><p class='label psbt-section-label'>" + hodlT("Signer availability") + "</p>"]; // DRAFT (owner OK pending)
-  html.push("<p class='edge-note is-info' data-signer-report-intro>" + hodlT("Read only. Nothing is signed. Loaded Key Station keys are matched to each input by public key.") + "</p>"); // DRAFT (owner OK pending)
-  html.push("<p class='edge-note is-muted' data-signer-report-summary>" + hodlT("Inputs: {total}. Ready with loaded keys: {ready}. Already signed or finalized: {done}. Not found within the searched paths: {short}. Cannot determine: {unknown}.", { total: report.summary.total, ready: report.summary.ready, done: report.summary.done, short: report.summary.short, unknown: report.summary.unknown }) + "</p>"); // DRAFT (owner OK pending)
+  let html = ["<div data-signer-report><p class='label psbt-section-label'>" + hodlT("Signer availability") + "</p>"];
+  html.push("<p class='edge-note is-info' data-signer-report-intro>" + hodlT("Read only. Nothing is signed. Loaded Key Station keys are matched to each input by public key. This does not check amounts, recipients or fees.") + "</p>");
+  let summary = hodlT("Inputs: {total}. Loaded keys can sign: {ready}. Already signed or finalized: {done}. Not enough usable keys: {short}. Cannot determine: {unknown}.", { total: report.summary.total, ready: report.summary.ready, done: report.summary.done, short: report.summary.short, unknown: report.summary.unknown });
+  if (report.summary.never > 0) summary += " " + hodlT("Can never be spent: {never}.", { never: report.summary.never });
+  html.push("<p class='edge-note is-muted' data-signer-report-summary>" + summary + "</p>");
   for (const row of report.inputs.slice(0, SIGNER_REPORT_ROW_LIMIT)) {
     let attrs = " data-signer-report-input='" + row.index + "' data-signer-report-state='" + row.state + "'";
     if (row.state === "ready" && row.all) attrs += " data-signer-report-all";
     const single = row.script === "p2pkh" || row.script === "p2wpkh" || row.script === "p2sh-p2wpkh";
+    const showsN2 = row.state === "short" && single && row.canAdd === 0 && row.accounts.length > 0;
     let status;
     if (row.state === "ready") {
-      if (single) status = hodlT("Signer available: {keys}.", { keys: keysText(row.signers) }); // DRAFT (owner OK pending)
-      else if (row.all) status = hodlT("{m} of {count} needed. All signers available: {keys}.", { m: row.m, count: row.n, keys: keysText(row.signers) }); // DRAFT (owner OK pending)
-      else status = hodlT("{m} of {count} needed. Quorum available: {keys}.", { m: row.m, count: row.n, keys: keysText(row.signers) }); // DRAFT (owner OK pending)
+      if (single) status = hodlT("Signer available: {keys}.", { keys: keysText(row.signers) });
+      else if (row.all) status = hodlT("{m} of {count} needed. All signers available: {keys}.", { m: row.m, count: row.n, keys: keysText(row.signers) });
+      else status = hodlT("{m} of {count} needed. Enough signers available: {keys}.", { m: row.m, count: row.n, keys: keysText(row.signers) });
     } else if (row.state === "signed") {
-      status = hodlT("Already has the signatures it needs."); // DRAFT (owner OK pending)
+      status = hodlT("Already has enough valid signatures.");
     } else if (row.state === "finalized") {
       status = hodlT("Finalized input data present");
     } else if (row.state === "short") {
-      if (single) status = hodlT("No loaded private key found within the searched paths."); // DRAFT (owner OK pending)
-      else status = hodlT("{m} of {count} needed. Found {have} within the searched paths.", { m: row.m, count: row.n, have: row.signed + row.canAdd }); // DRAFT (owner OK pending)
+      if (single) status = showsN2 ? hodlT("Only an account-level key matched. This version cannot sign with it: {keys}.", { keys: keysText(row.accounts) }) : hodlT("No loaded private key found within the searched paths.");
+      else status = hodlT("{m} of {count} needed. Only {have} covered by valid signatures or usable loaded keys within the searched paths.", { m: row.m, count: row.n, have: row.signed + row.canAdd });
     } else if (row.state === "unknown") {
-      status = hodlT("Cannot determine: {reason}.", { reason: hodlSignerReportReasonText(row.reason) }); // DRAFT (owner OK pending)
+      status = hodlT("Cannot determine: {reason}.", { reason: hodlSignerReportReasonText(row.reason) });
+    } else if (row.state === "unspendable") {
+      status = hodlT("Can never be spent: its redeem script is larger than Bitcoin allows (520 bytes).");
     } else {
-      status = hodlT("Not covered by this report yet."); // DRAFT (owner OK pending)
+      status = hodlT("Not covered by this report yet.");
     }
     const lines = [];
     if (row.state === "ready" || row.state === "signed" || row.state === "short") {
-      if (row.state === "short" && row.canAdd > 0) lines.push(hodlT("Can sign: {keys}.", { keys: keysText(row.signers) })); // DRAFT (owner OK pending)
-      if (row.watchOnly > 0) lines.push(hodlT("Watch-only match, no private key loaded: {keys}.", { keys: keysText(row.watchers) })); // DRAFT (owner OK pending)
-      if (row.signed > 0 || row.unchecked > 0 || row.invalid > 0) lines.push(hodlT("Signatures in the file: {valid} valid, {unchecked} not checked, {invalid} not valid.", { valid: row.signed, unchecked: row.unchecked, invalid: row.invalid })); // DRAFT (owner OK pending)
+      if (row.state === "short" && row.canAdd > 0) lines.push(hodlT("Usable loaded keys: {keys}.", { keys: keysText(row.signers) }));
+      if (row.accounts.length > 0 && !showsN2) lines.push(hodlT("Account-level key match. This version cannot sign with it: {keys}.", { keys: keysText(row.accounts) }));
+      if (row.watchOnly > 0) lines.push(hodlT("Watch-only match, no private key loaded: {keys}.", { keys: keysText(row.watchers) }));
+      if (row.signed > 0 || row.unchecked > 0 || row.invalid > 0) lines.push(hodlT("Signatures in the file: {invalid} not valid, {unchecked} not checked, {valid} valid.", { invalid: row.invalid, unchecked: row.unchecked, valid: row.signed }));
     }
     let line = "<p class='edge-note is-muted'" + attrs + "><strong>" + hodlT("input {n}", { n: row.index }) + "</strong> · " + status;
     for (const extra of lines) line += "<br>" + extra;
     html.push(line + "</p>");
   }
   if (report.inputs.length > SIGNER_REPORT_ROW_LIMIT) {
-    html.push("<p class='edge-note is-muted' data-signer-report-more>" + hodlT("{count} more inputs are counted above but not listed.", { count: report.inputs.length - SIGNER_REPORT_ROW_LIMIT }) + "</p>"); // DRAFT (owner OK pending)
+    html.push("<p class='edge-note is-muted' data-signer-report-more>" + hodlT("{count} more inputs are counted above but not listed.", { count: report.inputs.length - SIGNER_REPORT_ROW_LIMIT }) + "</p>");
   }
-  html.push("<p class='edge-note is-muted' data-signer-report-searched>" + hodlT("When the file's key paths do not match, these were also searched: {paths}, receive and change, indexes 0 to {last}.", { paths: report.searched.paths.join(", "), last: report.searched.gap - 1 }) + "</p>"); // DRAFT (owner OK pending)
+  html.push("<p class='edge-note is-muted' data-signer-report-searched>" + hodlT("When the file's key paths do not match, these were also searched: {paths}, receive and change addresses, indexes 0 to {last}.", { paths: report.searched.paths.join(", "), last: report.searched.gap - 1 }) + "</p>");
   html.push("</div>");
   return html.join("");
 }

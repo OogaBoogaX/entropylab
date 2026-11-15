@@ -111,3 +111,61 @@ test("hodlSignerReportSources skips lab keys and never hands out private bytes",
   for (const entry of sources) try { entry.node?.wipePrivateData(); } catch {}
   root.wipePrivateData();
 });
+
+test("the signer report carries no DRAFT markers", () => {
+  for (const name of ["hodlSignerReportReasonText", "hodlSignerReportHtml"]) {
+    assert.doesNotMatch(bodyOf(name), /DRAFT \(owner OK pending\)/);
+  }
+});
+
+test("the signer report uses the agreed strings verbatim", () => {
+  const strings = [
+    "Signer availability",
+    "Read only. Nothing is signed. Loaded Key Station keys are matched to each input by public key. This does not check amounts, recipients or fees.",
+    "Inputs: {total}. Loaded keys can sign: {ready}. Already signed or finalized: {done}. Not enough usable keys: {short}. Cannot determine: {unknown}.",
+    "Can never be spent: {never}.",
+    "Signer available: {keys}.",
+    "{m} of {count} needed. All signers available: {keys}.",
+    "{m} of {count} needed. Enough signers available: {keys}.",
+    "Already has enough valid signatures.",
+    "No loaded private key found within the searched paths.",
+    "{m} of {count} needed. Only {have} covered by valid signatures or usable loaded keys within the searched paths.",
+    "Cannot determine: {reason}.",
+    "Not covered by this report yet.",
+    "Usable loaded keys: {keys}.",
+    "Watch-only match, no private key loaded: {keys}.",
+    "Signatures in the file: {invalid} not valid, {unchecked} not checked, {valid} valid.",
+    "{count} more inputs are counted above but not listed.",
+    "When the file's key paths do not match, these were also searched: {paths}, receive and change addresses, indexes 0 to {last}.",
+    "Finalized input data present",
+    "Account-level key match. This version cannot sign with it: {keys}.",
+    "Only an account-level key matched. This version cannot sign with it: {keys}.",
+    "Can never be spent: its redeem script is larger than Bitcoin allows (520 bytes).",
+  ];
+  for (const text of strings) assert.ok(source.includes(text), text);
+  const reasons = bodyOf("hodlSignerReportReasonText");
+  for (const text of [
+    "the details of the coin being spent are missing or do not match",
+    "the redeem or witness script is missing or does not match",
+    "signatures in the file could not be checked",
+    "the path search reached its limit",
+    "the redeem script is larger than Bitcoin allows (520 bytes)",
+  ]) assert.ok(reasons.includes(text), text);
+});
+
+test("only the imported-private branch marks a source as account-level", () => {
+  const body = bodyOf("hodlSignerReportSources");
+  const branches = body.split("} else if (");
+  const imported = branches.filter((part) => part.includes("hodlResultHasImportedPrivate"));
+  assert.equal(imported.length, 1);
+  assert.match(imported[0], /account: true/);
+  for (const part of branches) if (!part.includes("hodlResultHasImportedPrivate")) assert.doesNotMatch(part, /account: true/);
+});
+
+test("prevoutVerified follows the non-witness UTXO", () => {
+  const body = bodyOf("hodlSignerReportInputs");
+  const trueLines = body.split("\n").filter((line) => line.includes("prevoutVerified: true"));
+  assert.ok(trueLines.length > 0);
+  for (const line of trueLines) assert.match(line, /nonWitnessUtxo/);
+  assert.match(body, /prevoutVerified: false/);
+});
