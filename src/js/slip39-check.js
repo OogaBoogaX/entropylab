@@ -78,7 +78,7 @@ function defaultDerive(masterSecret) {
 
 const SHARE_FAILURE = {
   "unknown-word": "Word {position} is not a SLIP-39 word.",
-  length: "This has {words} words. A SLIP-39 share has 20 words (128-bit) or 33 words (256-bit).",
+  length: "This has {words} words, which is not a SLIP-39 share length. Most shares have 20 words (128-bit) or 33 (256-bit); other secret sizes give lengths from 22 to 59.",
   checksum: "The checksum does not match: at least one word is wrong. It catches any three wrong words but cannot say which.",
   "group-threshold": "Its group threshold is larger than its group count: this is not a valid share.",
   padding: "Its padding bits are not zero: this is not a valid share.",
@@ -183,7 +183,7 @@ export function mountSlip39Check(host, {
 
   const backupPanel = make("div", { id: "slip39-check-backup-panel" });
   const backupShares = shareList("backup");
-  const backupNote = make("p", { class: "field-note", text: T("One share per field, as written. Blank fields are skipped. Enter exactly the shares a recovery needs.") });
+  const backupNote = make("p", { class: "field-note", text: T("One share per field, as written: most shares have 20 or 33 words. Blank fields are skipped. Enter exactly the shares a recovery needs.") });
   const backupAddRow = make("div", { class: "row tool-actions" });
   const passLabel = make("label", { class: "field", for: "slip39-check-pass" });
   const passText = make("span", { text: T("Passphrase (optional)") });
@@ -310,7 +310,9 @@ export function mountSlip39Check(host, {
     entry.note.removeAttribute("data-slip39-share-state");
     entry.cue.className = "";
     entry.field.classList.remove("bad");
-    relabel(entry.cue, "text", T("{entered} of {words} SLIP-39 words entered", { entered: words, words: words > 20 ? 33 : 20 }));
+    // No target: valid shares run from 20 to 59 words, so "of 33" would
+    // mislead for the rarer lengths (a 160-bit share has 23).
+    relabel(entry.cue, "text", T("{entered} SLIP-39 words entered", { entered: words }));
     entry.note.hidden = words === 0;
   }
   const clearNotes = () => {
