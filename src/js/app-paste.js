@@ -7,7 +7,8 @@ import { appClipboardHas } from "./app-clipboard.js";
 export const APP_PASTE_TARGETS = [
   "seed", "key", "hex", "pass", "bip85-key", "bip47-key", "bip47-pass",
   "sp-key", "sp-pass", "psbt-key", "psbt-pass", "nonce-key", "nonce-pass",
-  "ln-seed", "ln-pass", "core-add-text", "journal-input", "journal-phrase",
+  "ln-seed", "ln-pass", "seedxor-original", "seedxor-part-a", "seedxor-part-b",
+  "seedxor-part-c", "seedxor-part-d", "core-add-text", "journal-input", "journal-phrase",
 ];
 
 const byId = (root, id) => (typeof root?.getElementById === "function" ? root : document).getElementById(id);

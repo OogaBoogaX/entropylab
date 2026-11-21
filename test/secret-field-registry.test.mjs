@@ -21,6 +21,7 @@ const expandable = read("src/js/expandable.js");
 const psbtEditor = read("src/js/psbt-editor.js");
 const coreWallet = read("src/js/core-wallet-ui.js");
 const lightning = read("src/js/lightning.js");
+const seedXor = read("src/js/seed-xor.js");
 
 // A named top-level function body in app.js, for "this id is cleared in
 // this function" probes.
@@ -110,6 +111,16 @@ const CLEARING_PATHS = [
         return;
       }
       assert.ok(lifecycle.includes(`"${id}"`), `#${id} missing from the lifecycle sweep`);
+    },
+  },
+  {
+    ids: ["seedxor-original", "seedxor-part-a", "seedxor-part-b", "seedxor-part-c", "seedxor-part-d"],
+    why: "Seed XOR original and parts are seed backups (preview only)",
+    probe: (id) => {
+      assert.match(seedXor, /querySelectorAll\("#seedxor-card textarea"\)/, "the Seed XOR wipe covers every phrase field");
+      assert.match(seedXor, /field\.value = ""/, "the Seed XOR wipe clears fields by assignment");
+      assert.match(lifecycle, /seedXorWipeMem\(\)/, "End Session and pagehide must reach the Seed XOR wipe");
+      assert.ok(seedXor.includes("seedxor-original") && seedXor.includes("seedxor-part-${letter}"), "the original and dynamic part fields are wired into Seed XOR");
     },
   },
   {
@@ -278,6 +289,7 @@ const PUBLIC_FIELDS = {
   "ots-proof-file": "a public OpenTimestamps proof file",
   "ots-proof-hex": "a public OpenTimestamps proof",
   "psbted-insane": "editor policy checkbox",
+  "seedxor-reveal": "privacy reveal toggle — session state, not key material",
   "purpose": "purpose setting",
   "purpose-harden": "hardening toggle",
   "sp-account": "derivation setting",
