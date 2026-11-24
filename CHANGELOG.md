@@ -3,7 +3,7 @@
 Release notes for EntropyLab. Each release is a single self-contained
 `entropylab.html`; verify it against the signed `SHA256SUMS.txt` before use.
 
-## v1.1.0 — 2026-11-22
+## v1.1.0 — 2026-11-24
 
 ### Security fixes
 
