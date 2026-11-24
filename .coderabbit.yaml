@@ -1,0 +1,100 @@
+# yaml-language-server: $schema=https://coderabbit.ai/integrations/schema.v2.json
+# CodeRabbit review settings for EntropyLab.
+# It reviews human and model pull requests to rock. It skips bot pull requests
+# and generated files, posts no summaries, labels, poems or commit statuses,
+# and never pushes commits.
+language: en-US
+tone_instructions: >-
+  Be brief and plain. Report real defects only: correctness, security, key
+  handling, privacy. No praise, no emojis, no restating the diff.
+early_access: false
+
+reviews:
+  profile: chill
+  request_changes_workflow: false
+  high_level_summary: false
+  high_level_summary_in_walkthrough: false
+  collapse_walkthrough: true
+  changed_files_summary: false
+  sequence_diagrams: false
+  estimate_code_review_effort: false
+  related_issues: false
+  related_prs: false
+  suggested_labels: false
+  auto_apply_labels: false
+  suggested_reviewers: false
+  auto_assign_reviewers: false
+  in_progress_fortune: false
+  poem: false
+  review_status: false
+  # No commit status: merges are gated by CI and the review bar, not by this bot.
+  commit_status: false
+  # EntropyLab code is model-written by design, so AI-authorship flags are noise.
+  slop_detection:
+    enabled: false
+  pre_merge_checks:
+    docstrings:
+      mode: "off"
+    title:
+      mode: "off"
+    description:
+      mode: "off"
+    issue_assessment:
+      mode: "off"
+  # CodeRabbit never writes to the repo.
+  finishing_touches:
+    docstrings:
+      enabled: false
+    unit_tests:
+      enabled: false
+    autofix:
+      enabled: false
+    fix_ci:
+      enabled: false
+    resolve_merge_conflict:
+      enabled: false
+  auto_review:
+    enabled: true
+    drafts: false
+    ignore_usernames:
+      - "dependabot[bot]"
+      - "entropylab-translate[bot]"
+      - "github-actions[bot]"
+  # Generated or vendored files: built page and its sums and proofs, WASM
+  # embeds, translations from the translation bot, lock files, large vectors.
+  path_filters:
+    - "!entropylab.html"
+    - "!entropylab-*.html"
+    - "!**/*.ots"
+    - "!SHA256SUMS.txt"
+    - "!SHA256SUMS.asc"
+    - "!WASM-SHA256SUMS.txt"
+    - "!CID.txt"
+    - "!src/js/*-wasm-b64.js"
+    - "!src/locales/**"
+    - "!package-lock.json"
+    - "!**/Cargo.lock"
+    - "!entropylab-wasm/src/aez/testvectors.rs"
+    - "!test/fixtures/**"
+  path_instructions:
+    - path: "src/**"
+      instructions: >-
+        EntropyLab is an offline, single-file Bitcoin key tool. Flag any change
+        that could let a secret (entropy, seed words, passphrase, private key,
+        WIF, xprv) reach the network, logs, the system clipboard, persistent
+        storage, the URL or an error message; any new network access, runtime
+        dependency or generated entropy; and any secret that is no longer wiped
+        or concealed on End Session.
+    - path: "test/**"
+      instructions: >-
+        A fix needs a regression test that fails without the fix. Flag tests
+        that cannot fail, assert only that code ran, or copy the code under test.
+    - path: ".github/**"
+      instructions: >-
+        Flag workflow changes that widen token permissions, use unpinned
+        actions, run pull_request_target on untrusted code, or touch the
+        release, signing or deploy path.
+
+chat:
+  art: false
+  auto_reply: true
