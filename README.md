@@ -6,7 +6,7 @@ private keys into wallet recovery information without intentionally sending
 sensitive data to a server. The whole application is one HTML file, and its
 markup passes the W3C HTML validator with zero errors.
 
-Current version: **v1.1.0**
+Current version: **v1.1.1-dev**
 
 That is the development line on `rock`, which the website follows. The latest
 signed release is [v1.1.0](https://github.com/OogaBoogaX/entropylab/releases/tag/v1.1.0).
