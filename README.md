@@ -9,7 +9,7 @@ markup passes the W3C HTML validator with zero errors.
 Current version: **v1.1.0**
 
 That is the development line on `rock`, which the website follows. The latest
-signed release is [v1.0.0](https://github.com/OogaBoogaX/entropylab/releases/tag/v1.0.0).
+signed release is [v1.1.0](https://github.com/OogaBoogaX/entropylab/releases/tag/v1.1.0).
 
 Official website: [entropylab.online](https://entropylab.online)
 
@@ -21,8 +21,9 @@ lets the page make no network requests of its own (the hosted copy's service
 worker checks for updates). Under the maintainers' process, every pull request
 other than automated translation updates is reviewed by five models and an
 adversarial red team before it merges, and model-written code runs only in an
-isolated sandbox. Releases are signed by four maintainers and reproducible
-byte for byte inside the pinned build image. The
+isolated sandbox. Four maintainers hold release signing keys, and at least
+three of them sign each release. Releases are reproducible byte for byte
+inside the pinned build image. The
 [security posture](docs/SECURITY_POSTURE.md) maps each claim to the code and
 tests behind it and lists the known limits. Report vulnerabilities privately
 through
@@ -356,8 +357,7 @@ an explicit error before those pairs are allocated.
   so the Keys tab, its exports, and the Journal show the vanity wallet. BIP-85
   children stay unchanged. Found passphrases stay in
   page memory, are masked until revealed, and are wiped with the session.
-- Derives Lightning node identity public keys (a Lightning tab held back from
-  release navigation while its UI is polished) from a seed
+- Derives Lightning node identity public keys (the Lightning tab) from a seed
   phrase: an LND 24-word **aezeed** cipher seed is deciphered in WebAssembly
   (scrypt key derivation, AEZ v5, CRC-32C checksum; a wrong passphrase is
   detected, unlike BIP39) and its entropy derives the node key at LND's
