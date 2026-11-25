@@ -60,20 +60,15 @@ reviews:
       - "dependabot[bot]"
       - "entropylab-translate[bot]"
       - "github-actions[bot]"
-  # Generated or vendored files: built page and its sums and proofs, WASM
-  # embeds, translations from the translation bot, lock files, large vectors.
+  # Skipped: only files no text review can read. The built page, the WASM
+  # embeds (CI rebuilds both from source and the artifact job commits its own
+  # copies), timestamp proofs and bulk test data. Lock files, release sums
+  # and translation catalogs stay in review: see their instructions below.
   path_filters:
     - "!entropylab.html"
     - "!entropylab-*.html"
     - "!**/*.ots"
-    - "!SHA256SUMS.txt"
-    - "!SHA256SUMS.asc"
-    - "!WASM-SHA256SUMS.txt"
-    - "!CID.txt"
     - "!src/js/*-wasm-b64.js"
-    - "!src/locales/**"
-    - "!package-lock.json"
-    - "!**/Cargo.lock"
     - "!entropylab-wasm/src/aez/testvectors.rs"
     - "!test/fixtures/**"
   path_instructions:
@@ -85,6 +80,37 @@ reviews:
         storage, the URL or an error message; any new network access, runtime
         dependency or generated entropy; and any secret that is no longer wiped
         or concealed on End Session.
+    - path: "*-wasm/**"
+      instructions: >-
+        These Rust crates derive seeds and keys and handle PSBTs. Flag any
+        secret (entropy, seed, private key, nonce) that could reach a log, a
+        panic or error message, or a returned string; any buffer holding one
+        that is no longer overwritten after use; any new dependency, unsafe
+        block or source of randomness; and any change to derivation, signing
+        or parsing that has no test vector.
+    - path: "package-lock.json"
+      instructions: >-
+        Flag every dependency that is added, removed or changes version and
+        is not explained by the pull request, and any resolved URL outside
+        the npm registry or integrity hash that changes without a version
+        change.
+    - path: "**/Cargo.lock"
+      instructions: >-
+        Flag every crate that is added, removed or changes version or
+        checksum and is not explained by the pull request, and any source
+        other than crates.io.
+    - path: "src/locales/**"
+      instructions: >-
+        Only the translation bot writes these catalogs. Flag any change here
+        in another pull request, and any string that adds or changes markup.
+    - path: "*SHA256SUMS*"
+      instructions: >-
+        Release sums and signatures. Only the release process and the
+        artifact job change them. Flag any change in an ordinary pull request.
+    - path: "CID.txt"
+      instructions: >-
+        Written only by the artifact job. Flag any change in an ordinary pull
+        request.
     - path: "test/**"
       instructions: >-
         A fix needs a regression test that fails without the fix. Flag tests
