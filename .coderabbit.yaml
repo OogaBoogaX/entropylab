@@ -67,10 +67,19 @@ reviews:
   # catalogs and test vectors stay in review: see their instructions below.
   path_filters:
     - "!entropylab.html"
-    - "!entropylab-*.html"
     - "!**/*.ots"
     - "!src/js/*-wasm-b64.js"
   path_instructions:
+    - path: ".coderabbit.yaml"
+      instructions: >-
+        This file decides what CodeRabbit reviews. Flag any change that narrows
+        review (a new path filter, a skipped author, auto review or a path
+        instruction turned off or weakened), or that lets CodeRabbit write to
+        the repo, approve, request changes, or post statuses or check runs.
+    - path: "entropylab-*.html"
+      instructions: >-
+        Snapshot pages are build output that the build deletes and the repo
+        never tracks. Flag any pull request that adds or changes one.
     - path: "test/fixtures/**"
       instructions: >-
         Test vectors come from published references (BIPs, Bitcoin Core, other
@@ -132,8 +141,8 @@ reviews:
         actions, run pull_request_target on untrusted code, or touch the
         release, signing or deploy path.
 
-# Answers a comment only when mentioned, so a pull request's own thread cannot
-# talk it out of a finding without a maintainer asking.
+# Answers a comment only when it is mentioned. Anyone can mention it, so a
+# reply in a pull request's thread is advice, never a review decision.
 chat:
   art: false
   auto_reply: false
