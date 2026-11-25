@@ -815,9 +815,13 @@ extension that ignores them, or one written to steal.
   close it yourself. Chrome and Edge keep running after the last window
   closes unless "Continue running background apps" is off in their System
   settings.
-- Then close the browser and restart the computer. That is a precaution, not
-  a guarantee: a restart does not erase memory, and its contents can survive
-  a short power-off.
+- Then close the browser and shut the computer down completely: not sleep,
+  not hibernate, and not a restart, which can keep memory powered. Leave it
+  off for five to ten minutes before you turn it on again; memory fades once
+  the power is off. Reconnecting this computer to the internet after a session
+  is not advised, and if you do, do this first. It is a precaution, not a
+  guarantee: it does not erase what the system already wrote to disk, such as
+  swap or a hibernation file.
 - None of this protects a computer that is already compromised: malware or a
   malicious browser extension can read a secret as you type it.
 
