@@ -1,8 +1,8 @@
 # yaml-language-server: $schema=https://coderabbit.ai/integrations/schema.v2.json
 # CodeRabbit review settings for EntropyLab.
-# It reviews human and model pull requests to rock. It skips bot pull requests
-# and generated files, posts no summaries, labels, poems or commit statuses,
-# and never pushes commits.
+# It reviews every pull request to rock, bots' included. It skips only files
+# no text review can read, posts no summaries, labels, poems, statuses or
+# check runs, answers comments only when mentioned, and never pushes commits.
 language: en-US
 tone_instructions: >-
   Be brief and plain. Report real defects only: correctness, security, key
@@ -27,8 +27,10 @@ reviews:
   in_progress_fortune: false
   poem: false
   review_status: false
-  # No commit status: merges are gated by CI and the review bar, not by this bot.
+  # No commit status or check run: merges are gated by CI and the review bar,
+  # not by this bot.
   commit_status: false
+  review_progress: false
   # EntropyLab code is model-written by design, so AI-authorship flags are noise.
   slop_detection:
     enabled: false
@@ -56,10 +58,9 @@ reviews:
   auto_review:
     enabled: true
     drafts: false
-    # Dependabot stays in review: its pull requests are the lock-file changes.
-    ignore_usernames:
-      - "entropylab-translate[bot]"
-      - "github-actions[bot]"
+    # No author is skipped: Dependabot opens the lock-file changes and the
+    # translation bot the catalog changes, the two places a bot's change most
+    # needs a second look.
   # Skipped: only files no text review can read. The built page, the WASM
   # embeds (CI rebuilds both from source and the artifact job commits its own
   # copies) and timestamp proofs. Lock files, release sums, translation
@@ -110,7 +111,9 @@ reviews:
     - path: "src/locales/**"
       instructions: >-
         Only the translation bot writes these catalogs. Flag any change here
-        in another pull request, and any string that adds or changes markup.
+        in another author's pull request, and in any pull request a string
+        that adds or changes markup, or a translation whose meaning differs
+        from its English source.
     - path: "*SHA256SUMS*"
       instructions: >-
         Release sums and signatures. Only the release process and the
@@ -129,6 +132,8 @@ reviews:
         actions, run pull_request_target on untrusted code, or touch the
         release, signing or deploy path.
 
+# Answers a comment only when mentioned, so a pull request's own thread cannot
+# talk it out of a finding without a maintainer asking.
 chat:
   art: false
-  auto_reply: true
+  auto_reply: false
