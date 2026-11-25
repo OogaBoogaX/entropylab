@@ -21,9 +21,9 @@ lets the page make no network requests of its own (the hosted copy's service
 worker checks for updates). Under the maintainers' process, every pull request
 other than automated translation updates is reviewed by five models and an
 adversarial red team before it merges, and model-written code runs only in an
-isolated sandbox. Four maintainers hold release signing keys and at least
-three sign each release, which is reproducible byte for byte inside the
-pinned build image. The
+isolated sandbox. Four maintainers hold release signing keys, and at least
+three of them sign each release. Releases are reproducible byte for byte
+inside the pinned build image. The
 [security posture](docs/SECURITY_POSTURE.md) maps each claim to the code and
 tests behind it and lists the known limits. Report vulnerabilities privately
 through

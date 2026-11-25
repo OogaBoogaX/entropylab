@@ -9,8 +9,8 @@ always use the latest version, available from the
 
 | Version | Supported          |
 | ------- | ------------------ |
-| 1.0.0   | :white_check_mark: |
-| < 1.0.0 | :x:                |
+| 1.1.0   | :white_check_mark: |
+| < 1.1.0 | :x:                |
 
 ## Security Considerations
 
@@ -832,7 +832,9 @@ extension that ignores them, or one written to steal.
 Releases are verified with the detached signatures in `SHA256SUMS.asc`
 (instructions in that file's header). Each signer's public key is committed
 under [`keys/`](keys/); the production deploy imports keys only from there,
-never from a release's `KEYS` file. The v1.0.0 signers and their keys:
+never from a release's `KEYS` file. The release signers and their keys (v1.0.0
+was signed with the first four rows; v1.1.0 by Portland.HODL, w-s-bitcoin and
+MrHodlX's interim key):
 
 | Signer | Key fingerprint | Status |
 | --- | --- | --- |
@@ -840,6 +842,7 @@ never from a release's `KEYS` file. The v1.0.0 signers and their keys:
 | w-s-bitcoin | `542E CCA3 B5CB 74CE C957 29B3 92C2 1496 202E 3774` | |
 | timechainb | `63EF 760E E641 A585 16D5 4930 F0B7 D606 C6FD 9D52` | |
 | MrHodlX | `6443 4EE4 8A96 C38E 78B7 875F 4E7E 416E E17D 237C` | **revoked** (announced 2026-10-30) |
+| MrHodlX (interim) | `DB19 EF73 4874 43AA EAC2 6687 17AB DC5F 9867 B54F` | expires 2027-01-31 |
 
 **MrHodlX's key 64434EE4… is revoked.** It was kept on a computer later found
 to be compromised. Treat any signature from it as untrusted, including its
