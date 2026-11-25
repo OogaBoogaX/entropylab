@@ -56,22 +56,30 @@ reviews:
   auto_review:
     enabled: true
     drafts: false
+    # Dependabot stays in review: its pull requests are the lock-file changes.
     ignore_usernames:
-      - "dependabot[bot]"
       - "entropylab-translate[bot]"
       - "github-actions[bot]"
   # Skipped: only files no text review can read. The built page, the WASM
   # embeds (CI rebuilds both from source and the artifact job commits its own
-  # copies), timestamp proofs and bulk test data. Lock files, release sums
-  # and translation catalogs stay in review: see their instructions below.
+  # copies) and timestamp proofs. Lock files, release sums, translation
+  # catalogs and test vectors stay in review: see their instructions below.
   path_filters:
     - "!entropylab.html"
     - "!entropylab-*.html"
     - "!**/*.ots"
     - "!src/js/*-wasm-b64.js"
-    - "!entropylab-wasm/src/aez/testvectors.rs"
-    - "!test/fixtures/**"
   path_instructions:
+    - path: "test/fixtures/**"
+      instructions: >-
+        Test vectors come from published references (BIPs, Bitcoin Core, other
+        implementations). Flag any changed or removed expected value that the
+        pull request does not trace to its source, especially one changed in
+        the same pull request as the code it tests.
+    - path: "entropylab-wasm/src/aez/testvectors.rs"
+      instructions: >-
+        Published AEZ test vectors. Flag any changed or removed vector that the
+        pull request does not trace to its source.
     - path: "src/**"
       instructions: >-
         EntropyLab is an offline, single-file Bitcoin key tool. Flag any change
