@@ -1,6 +1,8 @@
 // Behaviour of the Android wrapper's build-side scripts, run as programs
 // against stand-in tools: android/gradlew picks the JVM the README tells
-// builders to select. No JDK or Android SDK is needed.
+// builders to select, and android/verify-apk.py judges an APK through a
+// stand-in aapt that prints aapt's dump formats. No JDK or Android SDK is
+// needed.
 // Run with `npm test` (part of the default suite).
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -42,4 +44,103 @@ test("android/gradlew runs JAVA_HOME's java when set, PATH's otherwise", { skip:
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
+});
+
+const PYTHON = spawnSync("python3", ["--version"], { stdio: "pipe" }).status === 0;
+const skipApk = process.platform === "win32" ? "POSIX stand-in aapt" : !PYTHON && "python3 is not installed";
+
+// aapt dump xmltree of the merged manifest, as the CI workflow's build-tools
+// 35.0.0 aapt prints it. configChanges 0xdb0 is the six changes MainActivity
+// handles.
+const manifestDump = (rulesRef) => `N: android=http://schemas.android.com/apk/res/android
+  E: manifest (line=2)
+    A: android:compileSdkVersion(0x01010572)=(type 0x10)0x24
+    A: package="online.entropylab.android" (Raw: "online.entropylab.android")
+    E: application (line=3)
+      A: android:label(0x01010001)="EntropyLab" (Raw: "EntropyLab")
+      A: android:allowBackup(0x01010280)=(type 0x12)0x0
+      A: android:fullBackupContent(0x010104eb)=(type 0x12)0x0
+      A: android:dataExtractionRules(0x0101064b)=${rulesRef}
+      E: activity (line=10)
+        A: android:name(0x01010003)="online.entropylab.android.MainActivity" (Raw: "online.entropylab.android.MainActivity")
+        A: android:configChanges(0x0101001f)=(type 0x11)0xdb0
+`;
+
+// aapt dump resources: two xml resources, so a manifest can name the one
+// verify-apk.py does not inspect.
+const resourcesDump = `Package Groups (1)
+Package Group 0 id=0x7f packageCount=1 name=online.entropylab.android
+  Package 0 id=0x7f name=online.entropylab.android
+    type 3 configCount=1 entryCount=2
+      spec resource 0x7f040000 online.entropylab.android:xml/data_extraction_rules: flags=0x00000000
+      spec resource 0x7f040001 online.entropylab.android:xml/backup_rules: flags=0x00000000
+      config (default):
+        resource 0x7f040000 online.entropylab.android:xml/data_extraction_rules: t=0x03 d=0x00000003 (s=0x0008 r=0x00)
+        resource 0x7f040001 online.entropylab.android:xml/backup_rules: t=0x03 d=0x00000004 (s=0x0008 r=0x00)
+`;
+
+const DOMAINS = ["root", "file", "database", "sharedpref", "external"];
+// aapt dump xmltree of res/xml/data_extraction_rules.xml; pathOf(section,
+// domain) gives an exclusion's path attribute, or undefined for none.
+const rulesDump = (pathOf = () => undefined) => {
+  let line = 2;
+  let out = `E: data-extraction-rules (line=${line++})\n`;
+  for (const section of ["cloud-backup", "device-transfer"]) {
+    out += `  E: ${section} (line=${line++})\n`;
+    for (const domain of DOMAINS) {
+      out += `    E: exclude (line=${line++})\n      A: domain="${domain}" (Raw: "${domain}")\n`;
+      const path = pathOf(section, domain);
+      if (path !== undefined) out += `      A: path="${path}" (Raw: "${path}")\n`;
+    }
+  }
+  return out;
+};
+
+const STAND_IN_AAPT = `#!/bin/sh
+dir=$(dirname "$0")
+case "$1 $2 $4" in
+  "dump permissions ") cat "$dir/permissions.txt" ;;
+  "dump resources ") cat "$dir/resources.txt" ;;
+  "dump xmltree AndroidManifest.xml") cat "$dir/manifest.txt" ;;
+  "dump xmltree res/xml/data_extraction_rules.xml") cat "$dir/rules.txt" ;;
+  *) echo "ERROR: no such file or command: $*" >&2; exit 1 ;;
+esac
+`;
+
+// Runs android/verify-apk.py on an APK holding the pinned HTML, with the
+// stand-in aapt answering from these dumps.
+const verifyApk = ({ rulesRef = "@0x7f040000", rules = rulesDump() } = {}) => {
+  const dir = mkdtempSync(join(tmpdir(), "entropylab-verify-apk-"));
+  try {
+    const apk = join(dir, "app-debug.apk");
+    const zip = spawnSync("python3", ["-c", "import sys, zipfile\nwith zipfile.ZipFile(sys.argv[1], 'w') as z: z.write(sys.argv[2], 'assets/entropylab.html')", apk, join(root, "android/app/src/main/assets/entropylab.html")], { encoding: "utf8" });
+    assert.equal(zip.status, 0, zip.stderr);
+    writeFileSync(join(dir, "permissions.txt"), "package: online.entropylab.android\n");
+    writeFileSync(join(dir, "resources.txt"), resourcesDump);
+    writeFileSync(join(dir, "manifest.txt"), manifestDump(rulesRef));
+    writeFileSync(join(dir, "rules.txt"), rules);
+    writeFileSync(join(dir, "aapt"), STAND_IN_AAPT);
+    chmodSync(join(dir, "aapt"), 0o755);
+    return spawnSync("python3", [join(root, "android/verify-apk.py"), apk, join(dir, "aapt")], { encoding: "utf8" });
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+};
+
+const accepted = (result) => {
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stdout, /backup and device transfer off/);
+};
+const refused = (result, reason) => {
+  assert.notEqual(result.status, 0, `verify-apk.py accepted it: ${result.stdout}`);
+  assert.match(result.stderr, reason);
+};
+
+// verify-apk.py reads one rules file, so it must be the one the merged
+// manifest's android:dataExtractionRules names; a manifest naming any other
+// resource (or none) is refused rather than judged by a file Android ignores.
+test("verify-apk.py inspects only the rules resource the merged manifest names", { skip: skipApk }, () => {
+  accepted(verifyApk());
+  refused(verifyApk({ rulesRef: "@0x7f040001" }), /xml\/backup_rules/);
+  refused(verifyApk({ rulesRef: "@0x7f0400ff" }), /dataExtractionRules/);
 });

@@ -69,7 +69,7 @@ The Android wrapper workflow explicitly runs the standalone `HtmlPinTest` main,
 builds `assembleDebug`, then hashes the HTML extracted from the APK and checks
 `aapt dump permissions` on the merged APK for zero requested permissions.
 It also reads the merged manifest with `aapt dump xmltree`: backup must be off,
-the data-extraction rules must exclude every domain from cloud backup and device
+the data-extraction rules the manifest names must exclude every domain from cloud backup and device
 transfer, and `MainActivity` must handle all six `configChanges`.
 The workflow also runs `python3 android/lifecycle-check.py`: the actual wrapper callbacks execute against deterministic Android test doubles, covering all six declared `configChanges`, system-bar and cutout insets applied as padding, a packaged page that does not match the pin (or cannot be read) keeping Open disabled and never loading, form-data saving off, the bundled-page navigation check (including `file://<host>/android_asset/…`), launch and repeated rotation, empty saved-state output, background shutdown, cold creation/return and WebView cleanup. The pre-fix test failed because rotation recreated the WebView and discarded disposable input. Dispatch follows [Android’s documented configuration-change contract](https://developer.android.com/develop/adaptive-apps/cookbook/webview-state).
 
