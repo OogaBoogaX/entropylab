@@ -181,8 +181,9 @@ test("the app never fetches, so the CSP forbids connections", () => {
 // its ${...} substitutions. Any stripper short of a real tokenizer can be
 // fooled, so these scans read the raw text; a comment that names a forbidden
 // API must be reworded. Only the four generated WASM embeds (wasmModulePaths,
-// by exact path) are skipped; any other file, whatever its name, is scanned.
-const isScannedSource = (rel) => rel.endsWith(".js") && !wasmModulePaths.includes(rel);
+// by exact path) are skipped; any other script (.js, .mjs or .cjs), whatever
+// its name, is scanned.
+const isScannedSource = (rel) => /\.[cm]?js$/.test(rel) && !wasmModulePaths.includes(rel);
 const jsSourceFiles = () => {
   const files = [];
   const walk = (dir) => {
@@ -216,6 +217,9 @@ test("the source scan covers every JavaScript file", () => {
   assert.equal(isScannedSource("src/js/psbt-wasm-b64.js"), false, "a generated WASM embed is skipped");
   assert.equal(isScannedSource("src/js/net-wasm-b64.js"), true, "a new file named like an embed is scanned");
   assert.equal(isScannedSource("src/js/anti-exfil-adapters/adapter-wasm-b64.js"), true, "a nested file named like an embed is scanned");
+  assert.equal(isScannedSource("src/js/helper.mjs"), true, "an .mjs module is scanned");
+  assert.equal(isScannedSource("src/js/helper.cjs"), true, "a .cjs module is scanned");
+  assert.equal(isScannedSource("src/js/notes.md"), false, "a non-script file is not");
 });
 
 test("the source-invariant patterns catch qualified and optional-chaining forms", () => {
