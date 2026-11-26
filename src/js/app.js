@@ -19764,7 +19764,8 @@ function hodlUniqueMsigName(base, index) {
 }
 function hodlMsigIdentity(state) {
   let fields = state?.fields || {};
-  return [fields.m, fields.n, fields.script, ...(Array.isArray(fields.xpubs) ? fields.xpubs : [])].join("|");
+  let keyOrder = fields.keyOrder === "listed" ? "listed" : "sorted";
+  return [fields.m, fields.n, fields.script, keyOrder, ...(Array.isArray(fields.xpubs) ? fields.xpubs : [])].join("|");
 }
 function hodlCommitDerivedMsig(action = "derive") {
   let lab = hodlMsigs[hodlActiveMsig];
