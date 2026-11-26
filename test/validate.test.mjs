@@ -180,16 +180,16 @@ test("the app never fetches, so the CSP forbids connections", () => {
 // and a line of a multi-line template literal that begins with `//` still runs
 // its ${...} substitutions. Any stripper short of a real tokenizer can be
 // fooled, so these scans read the raw text; a comment that names a forbidden
-// API must be reworded.
+// API must be reworded. Only the four generated WASM embeds (wasmModulePaths,
+// by exact path) are skipped; any other file, whatever its name, is scanned.
 const jsSourceFiles = () => {
   const files = [];
   const walk = (dir) => {
     for (const entry of readdirSync(dir, { withFileTypes: true })) {
       const path = join(dir, entry.name);
+      const rel = relative(root, path).split("\\").join("/");
       if (entry.isDirectory()) walk(path);
-      else if (entry.name.endsWith(".js") && !entry.name.endsWith("-wasm-b64.js")) {
-        files.push(relative(root, path).split("\\").join("/"));
-      }
+      else if (entry.name.endsWith(".js") && !wasmModulePaths.includes(rel)) files.push(rel);
     }
   };
   walk(join(root, "src/js"));
@@ -209,6 +209,8 @@ const mathRandomPattern = /\bMath\s*(?:\??\.\s*random\b|(?:\?\.)?\s*\[\s*["'`]ra
 test("the source scan covers every JavaScript file", () => {
   const files = jsSourceFiles();
   assert.ok(files.length > 50, `expected more than 50 JavaScript files under src/js, found ${files.length}`);
+  for (const skipped of wasmModulePaths) assert.ok(existsSync(join(root, skipped)), `${skipped} is skipped by the scan but missing`);
+  assert.ok(files.includes("src/js/clipboard.js") && files.includes("src/js/app-paste.js"), "the scan must read clipboard.js and app-paste.js");
 });
 
 test("the source-invariant patterns catch qualified and optional-chaining forms", () => {
