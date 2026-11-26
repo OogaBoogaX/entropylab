@@ -35,16 +35,24 @@ named = set(re.findall(rf"resource {re.escape(rules_ref[1:])} [^\s:]+:([^\s:]+/[
 if named != {"xml/data_extraction_rules"}:
     raise SystemExit(f"Merged manifest android:dataExtractionRules {rules_ref} names {sorted(named)}, not xml/data_extraction_rules")
 rules = subprocess.check_output([sys.argv[2], "dump", "xmltree", sys.argv[1], "res/xml/data_extraction_rules.xml"], text=True)
-excluded, section = {"cloud-backup": set(), "device-transfer": set()}, None
+elements = []
 for line in rules.splitlines():
     element = re.match(r"\s*E: (\S+)", line)
-    if element and element.group(1) == "include":
+    if element:
+        elements.append((element.group(1), {}))
+    attr = re.match(r'\s*A: (\w+)="([^"]*)"', line)
+    if attr and elements:
+        elements[-1][1][attr.group(1)] = attr.group(2)
+excluded, section = {"cloud-backup": set(), "device-transfer": set()}, None
+for name, attrs in elements:
+    if name == "include":
         raise SystemExit("Data extraction rules include a domain")
-    if element and element.group(1) in excluded:
-        section = element.group(1)
-    domain = re.search(r'domain="([^"]+)"', line)
-    if domain and section:
-        excluded[section].add(domain.group(1))
+    if name in excluded:
+        section = name
+    # Android reads a missing path as the whole domain (FullBackup.extractCanonicalFile);
+    # any other path excludes only that file or folder.
+    elif name == "exclude" and section and attrs.get("path", ".") in ("", "."):
+        excluded[section].add(attrs.get("domain"))
 for section, domains in excluded.items():
     missing = {"root", "file", "database", "sharedpref", "external"} - domains
     if missing:

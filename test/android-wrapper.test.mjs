@@ -144,3 +144,14 @@ test("verify-apk.py inspects only the rules resource the merged manifest names",
   refused(verifyApk({ rulesRef: "@0x7f040001" }), /xml\/backup_rules/);
   refused(verifyApk({ rulesRef: "@0x7f0400ff" }), /dataExtractionRules/);
 });
+
+// An exclusion covers the whole domain only with no path (Android reads a
+// missing path as the domain itself: FullBackup.extractCanonicalFile in
+// AOSP) or path "."; any other path excludes only that file or folder, so
+// the rest of the domain would still be backed up or transferred.
+test("verify-apk.py counts only whole-domain exclusions as backup off", { skip: skipApk }, () => {
+  accepted(verifyApk({ rules: rulesDump(() => undefined) }));
+  accepted(verifyApk({ rules: rulesDump(() => ".") }));
+  refused(verifyApk({ rules: rulesDump(() => "one-file") }), /do not exclude/);
+  refused(verifyApk({ rules: rulesDump((section, domain) => (section === "device-transfer" && domain === "file" ? "one-file" : undefined)) }), /\['file'\] from device-transfer/);
+});
