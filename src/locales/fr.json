@@ -1896,7 +1896,6 @@
   "Entropy Journal: AES-256-GCM from an optional typed password (Web Crypto) — PBKDF2-SHA-256, 600,000 rounds, with the salt derived from the password itself; the IV is HMAC-SHA-256 of the plaintext, so the same password and entries always reproduce the same file. An empty password preserves the file format but provides no access protection. No relays, no accounts, no localStorage for secrets.": "Journal d'entropie : AES-256-GCM à partir d'un mot de passe tapé optionnel (Web Crypto) — PBKDF2-SHA-256, 600 000 tours, avec le sel dérivé du mot de passe lui-même ; l'IV est HMAC-SHA-256 du texte brut, de sorte que le même mot de passe et les mêmes entrées reproduisent toujours le même fichier. Un mot de passe vide préserve le format du fichier mais n'offre aucune protection d'accès. Pas de relais, pas de comptes, pas de localStorage pour les secrets.",
   "Imported {n} page from {name}.": "Importé {n} page de {name}.",
   "Imported {n} pages from {name}.": "Importé {n} pages de {name}.",
-  "Core Wallet": "Core Wallet",
   "Core": "Core",
   "Wallets only look about 20 unused addresses ahead. If coins arrive at index {n}, raise your wallet's gap limit above that, or the balance will show as zero (Sparrow: Settings → Advanced → Gap limit). EntropyLab's Bitcoin Core export already covers this window.": "Les portefeuilles ne regardent qu'environ 20 adresses inutilisées à l'avance. Si des pièces arrivent à l'index {n}, augmentez la limite d'écart de votre portefeuille au-delà de cela, sinon le solde s'affichera comme zéro (Sparrow : Paramètres → Avancé → Limite d'écart). L'exportation Bitcoin Core d'EntropyLab couvre déjà cette fenêtre.",
   "Read errors": "Erreurs de lecture",
@@ -2594,5 +2593,6 @@
   "A trailing path can have at most 16 steps.": "Un chemin de fin peut comporter au plus 16 étapes.",
   "A derivation path index after the extended key is out of range (0 to 2,147,483,647).": "Un index de chemin de dérivation après la clé étendue est hors de portée (0 à 2 147 483 647).",
   "A BIP45 key must have plain cosigner step 0 before its branch, like /0/0/* or /0/<0;1>/*. This tool derives only cosigner 0; another cosigner step would derive a different wallet.": "Une clé BIP45 doit avoir une étape de cosignataire simple 0 avant sa branche, comme /0/0/* ou /0/<0;1>/*. Cet outil dérive uniquement le cosignataire 0 ; une autre étape de cosignataire dériverait un portefeuille différent.",
-  "A multipath step like <0;1> must be followed by the wildcard *, as in /<0;1>/*.": "Une étape multipath comme <0;1> doit être suivie du joker *, comme dans /<0;1>/*."
+  "A multipath step like <0;1> must be followed by the wildcard *, as in /<0;1>/*.": "Une étape multipath comme <0;1> doit être suivie du joker *, comme dans /<0;1>/*.",
+  "Bitcoin Core": "Bitcoin Core"
 }

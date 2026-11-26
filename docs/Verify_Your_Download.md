@@ -13,11 +13,9 @@ itself.
   [GitHub Releases](https://github.com/OogaBoogaX/entropylab/releases) page.
   Download `entropylab.html`, `SHA256SUMS.txt`, `SHA256SUMS.asc`, `KEYS` and
   `entropylab.html.ots` into one folder.
-- **The live site** (`entropylab.online`) is the latest signed release, from
-  v1.1.0 on. It changes only when a new release is published, and its footer
-  shows that release's version. Until v1.1.0 is published it still shows the
-  last build from `rock`, whose footer says `-dev`. Check it like a release:
-  steps 1 to 4 below.
+- **The live site** (`entropylab.online`) is the latest signed release. It
+  changes only when a new release is published, and its footer shows that
+  release's version. Check it like a release: steps 1 to 4 below.
 - **The preview site** (`preview.entropylab.online`) is built from `rock` on
   every merge and carries a `-dev` version (for example `v1.1.0-dev`). It has
   no release signatures: it is unreviewed development software, not for real
@@ -160,15 +158,21 @@ maintainer's own published key.
 
 ## Step 3 (optional): check that GitHub's CI built it
 
-With the [GitHub CLI](https://cli.github.com/):
+With the [GitHub CLI](https://cli.github.com/), version 2.68.0 or later:
 
 ```sh
-gh attestation verify entropylab.html -R OogaBoogaX/entropylab
+gh attestation verify entropylab.html -R OogaBoogaX/entropylab --signer-workflow OogaBoogaX/entropylab/.github/workflows/ci-cd.yml --source-ref refs/heads/rock
 ```
 
 A good result says the verification succeeded. It shows that this
-repository's CI built exactly these bytes, but not which source it built them
-from. Rebuilding the file yourself checks that (see below).
+repository's CI workflow, running on the `rock` branch, built exactly these
+bytes, but not which source it built them from. Rebuilding the file yourself
+checks that (see below).
+
+Keep the two extra options. Without `--signer-workflow` and `--source-ref`
+the check would also accept an attestation made by any other workflow or
+branch in this repository. An older GitHub CLI stops with
+`unknown flag: --source-ref`. Update it; do not drop the option.
 
 ## Step 4 (optional): check the Bitcoin timestamp
 

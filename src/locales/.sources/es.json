@@ -1896,7 +1896,6 @@
   "The saved network does not match these derivation inputs. Review the network and path in Key Station.": "0b64aed5d411f442c4fb9ea53ebb9217d174d6216cc9a2eb2bc9d2095501a59d",
   "Descriptor origin claims master {fingerprint}, account {account}' — not provable from the account key": "8284b904586e0bc4a01e7621275599003b96465bc66fad60f9bea3d438bee963",
   "This file has no password protection — anyone with it can read or alter its contents. Press Open journal again to accept it.": "a63b9bd00982a5d0e6b747c4d8560ded8f7a5648e7fe1e542d16535176fc4484",
-  "Core Wallet": "f323633c1f67055a45aac84e321af6ffe46322da677ffdd32f9bc1e33bafe29c",
   "Core": "70ea1983c983deacc1b61805aea3d43648afd932f346fb2e5d9b15facd4035c2",
   "Wallets only look about 20 unused addresses ahead. If coins arrive at index {n}, raise your wallet's gap limit above that, or the balance will show as zero (Sparrow: Settings → Advanced → Gap limit). EntropyLab's Bitcoin Core export already covers this window.": "eb6cab4410b78e92cf0ab8d2b3c3e4b8502ce5052b897002c2a06bacd45be03c",
   "Read errors": "80599d09ee13ee99c7ffdf560737bb9c143d9c2079b88350092e7a04ce684962",
@@ -2594,5 +2593,6 @@
   "A trailing path can have at most 16 steps.": "3f66b8055f892c561e2ce45deefed69c55e1ceae96e1dc9e30a6dddb3567a898",
   "A derivation path index after the extended key is out of range (0 to 2,147,483,647).": "aec325a341e1625420a088f28f3404f50dbd28e15a0e785ac2237c1cfe7a28f8",
   "A BIP45 key must have plain cosigner step 0 before its branch, like /0/0/* or /0/<0;1>/*. This tool derives only cosigner 0; another cosigner step would derive a different wallet.": "ec6d67da9025f013ad1f6c6203a32d8df30f6e8e19ff51b9bec389d6f79f9b00",
-  "A multipath step like <0;1> must be followed by the wildcard *, as in /<0;1>/*.": "87055e7fd48686df838c8c435e366d15b4d5474a06ea531b14d3cc84cb16e4ed"
+  "A multipath step like <0;1> must be followed by the wildcard *, as in /<0;1>/*.": "87055e7fd48686df838c8c435e366d15b4d5474a06ea531b14d3cc84cb16e4ed",
+  "Bitcoin Core": "f7cf2bcf911db9ade743128b7f2df251fe9227f1daa59f95976e7dc42c728f64"
 }
