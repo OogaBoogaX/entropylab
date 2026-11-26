@@ -182,6 +182,7 @@ test("the app never fetches, so the CSP forbids connections", () => {
 // fooled, so these scans read the raw text; a comment that names a forbidden
 // API must be reworded. Only the four generated WASM embeds (wasmModulePaths,
 // by exact path) are skipped; any other file, whatever its name, is scanned.
+const isScannedSource = (rel) => rel.endsWith(".js") && !wasmModulePaths.includes(rel);
 const jsSourceFiles = () => {
   const files = [];
   const walk = (dir) => {
@@ -189,7 +190,7 @@ const jsSourceFiles = () => {
       const path = join(dir, entry.name);
       const rel = relative(root, path).split("\\").join("/");
       if (entry.isDirectory()) walk(path);
-      else if (entry.name.endsWith(".js") && !wasmModulePaths.includes(rel)) files.push(rel);
+      else if (isScannedSource(rel)) files.push(rel);
     }
   };
   walk(join(root, "src/js"));
@@ -211,6 +212,10 @@ test("the source scan covers every JavaScript file", () => {
   assert.ok(files.length > 50, `expected more than 50 JavaScript files under src/js, found ${files.length}`);
   for (const skipped of wasmModulePaths) assert.ok(existsSync(join(root, skipped)), `${skipped} is skipped by the scan but missing`);
   assert.ok(files.includes("src/js/clipboard.js") && files.includes("src/js/app-paste.js"), "the scan must read clipboard.js and app-paste.js");
+  // Only the exact generated paths are exempt, never a name that merely ends like one.
+  assert.equal(isScannedSource("src/js/psbt-wasm-b64.js"), false, "a generated WASM embed is skipped");
+  assert.equal(isScannedSource("src/js/net-wasm-b64.js"), true, "a new file named like an embed is scanned");
+  assert.equal(isScannedSource("src/js/anti-exfil-adapters/adapter-wasm-b64.js"), true, "a nested file named like an embed is scanned");
 });
 
 test("the source-invariant patterns catch qualified and optional-chaining forms", () => {
