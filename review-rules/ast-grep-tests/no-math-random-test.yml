@@ -1,0 +1,20 @@
+id: no-math-random
+valid:
+  - |
+    // Math.random() is forbidden
+    const s = "Math.random";
+  - |
+    crypto.getRandomValues(new Uint8Array(32));
+    const x = Math.floor(1.5);
+  - |
+    const random = "Math.random";
+    const y = Math.max(1, 2);
+invalid:
+  - |
+    Math.random();
+  - |
+    window.Math.random();
+  - |
+    globalThis.Math.random();
+  - |
+    self.Math.random();

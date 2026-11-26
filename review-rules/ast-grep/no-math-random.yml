@@ -1,0 +1,12 @@
+id: no-math-random
+language: JavaScript
+severity: error
+files: ["src/js/**/*.js"]
+ignores: ["src/js/{entropylab,psbt,vanity,qr}-wasm-b64.js"]
+message: "EntropyLab never uses Math.random: randomness comes from crypto.getRandomValues."
+rule:
+  any:
+    - pattern: Math.random($$$ARGS)
+    - pattern: $GLOBAL.Math.random($$$ARGS)
+constraints:
+  GLOBAL: { regex: '^(window|globalThis|self)$' }

@@ -1,0 +1,10 @@
+id: storage-allowlist
+language: JavaScript
+severity: warning
+files: ["src/js/**/*.js"]
+ignores: ["src/js/{entropylab,psbt,vanity,qr}-wasm-b64.js", "src/js/app.js", "src/js/browser-check.js", "src/js/i18n.js"]
+message: storage outside the UI-preference files; never store a secret.
+rule:
+  any:
+    - pattern: localStorage.$METHOD($$$ARGS)
+    - pattern: sessionStorage.$METHOD($$$ARGS)

@@ -1,0 +1,9 @@
+id: no-console
+language: JavaScript
+severity: error
+files: ["src/js/**/*.js"]
+ignores: ["src/js/{entropylab,psbt,vanity,qr}-wasm-b64.js"]
+message: src/js has no console calls; secrets must never reach logs.
+rule:
+  any:
+    - pattern: console.$METHOD($$$ARGS)

@@ -1,0 +1,23 @@
+id: wallet-network
+valid:
+  - |
+    // never call fetch()
+    const s = "fetch";
+    const url = "https://example.com";
+  - |
+    const x = new Date();
+    const y = navigator.clipboard.writeText("public");
+  - |
+    const request = "fetch";
+    function send() { return request; }
+invalid:
+  - |
+    fetch("/api");
+  - |
+    window.fetch("/api");
+  - |
+    navigator.sendBeacon("/api", "x");
+  - |
+    new XMLHttpRequest();
+  - |
+    new WebSocket("wss://example.com");

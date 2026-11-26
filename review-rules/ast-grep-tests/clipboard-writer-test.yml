@@ -1,0 +1,21 @@
+id: clipboard-writer
+valid:
+  - |
+    // navigator.clipboard.writeText is centralized
+    const s = "navigator.clipboard.writeText";
+    const address = "bc1qexamplepublicaddress";
+  - |
+    navigator.clipboard.readText();
+    document.execCommand("paste");
+  - |
+    const length = 12;
+    const theme = "dark";
+invalid:
+  - |
+    navigator.clipboard.writeText("public");
+  - |
+    navigator.clipboard?.write("x");
+  - |
+    document.execCommand("copy");
+  - |
+    document.execCommand("copy", false, null);

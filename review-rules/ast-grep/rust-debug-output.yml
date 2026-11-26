@@ -1,0 +1,10 @@
+id: rust-debug-output
+language: Rust
+severity: warning
+files: ["{entropylab,psbt,vanity,qr}-wasm/src/**/*.rs"]
+message: dbg! emits its argument and value. Remove it from wallet runtime paths and keep secret bytes out of diagnostics.
+rule:
+  kind: macro_invocation
+  has:
+    field: macro
+    regex: '^(std::)?dbg$'

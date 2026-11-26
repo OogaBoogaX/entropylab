@@ -1,0 +1,17 @@
+id: wallet-network
+language: JavaScript
+severity: warning
+files: ["src/**/*.js"]
+ignores: ["src/service-worker.js", "src/js/{entropylab,psbt,vanity,qr}-wasm-b64.js"]
+message: Check the destination. The offline wallet must not start a network request.
+rule:
+  any:
+    - pattern: fetch($$$ARGS)
+    - pattern: $GLOBAL.fetch($$$ARGS)
+    - pattern: $NAV.sendBeacon($$$ARGS)
+    - pattern: new $GLOBAL.$CTOR($$$ARGS)
+    - pattern: new $CTOR($$$ARGS)
+constraints:
+  GLOBAL: { regex: '^(window|globalThis|self)$' }
+  NAV: { regex: '^(navigator|(window|globalThis|self)\.navigator)$' }
+  CTOR: { regex: '^(XMLHttpRequest|WebSocket|EventSource|WebTransport|RTCPeerConnection)$' }

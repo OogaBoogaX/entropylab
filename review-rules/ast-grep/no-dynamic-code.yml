@@ -1,0 +1,14 @@
+id: no-dynamic-code
+language: JavaScript
+severity: error
+files: ["src/js/**/*.js"]
+ignores: ["src/js/{entropylab,psbt,vanity,qr}-wasm-b64.js"]
+message: "Dynamic code and string timers are forbidden: they can turn data into executable code."
+rule:
+  any:
+    - pattern: eval($$$ARGS)
+    - pattern: new Function($$$ARGS)
+    - pattern: setTimeout($S, $$$REST)
+    - pattern: setInterval($S, $$$REST)
+constraints:
+  S: { kind: string }

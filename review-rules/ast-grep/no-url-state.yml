@@ -1,0 +1,16 @@
+id: no-url-state
+language: JavaScript
+severity: error
+files: ["src/js/**/*.js"]
+ignores: ["src/js/{entropylab,psbt,vanity,qr}-wasm-b64.js"]
+message: secrets must never reach the URL or history.
+rule:
+  any:
+    - pattern: location.hash = $X
+    - pattern: location.search = $X
+    - pattern: location.href = $X
+    - pattern: window.location.hash = $X
+    - pattern: window.location.search = $X
+    - pattern: window.location.href = $X
+    - pattern: history.pushState($$$ARGS)
+    - pattern: history.replaceState($$$ARGS)

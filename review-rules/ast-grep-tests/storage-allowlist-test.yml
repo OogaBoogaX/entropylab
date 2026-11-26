@@ -1,0 +1,18 @@
+id: storage-allowlist
+valid:
+  - |
+    // localStorage.setItem("seed", seed) is forbidden
+    const s = "localStorage";
+  - |
+    const theme = "dark";
+    const storage = localStorage;
+  - |
+    sessionStorage.length;
+    const locale = "en";
+invalid:
+  - |
+    localStorage.setItem("theme", "dark");
+  - |
+    sessionStorage.getItem("x");
+  - |
+    localStorage.removeItem("x");

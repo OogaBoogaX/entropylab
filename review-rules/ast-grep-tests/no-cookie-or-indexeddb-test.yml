@@ -1,0 +1,20 @@
+id: no-cookie-or-indexeddb
+valid:
+  - |
+    // document.cookie = secret is forbidden
+    const s = "document.cookie";
+  - |
+    const cookie = document.cookie;
+    const db = indexedDB;
+  - |
+    indexedDB.deleteDatabase("x");
+    const name = "indexedDB.open";
+invalid:
+  - |
+    document.cookie = secret;
+  - |
+    document.cookie = "a=b";
+  - |
+    indexedDB.open("db");
+  - |
+    indexedDB.open("db", 1);
