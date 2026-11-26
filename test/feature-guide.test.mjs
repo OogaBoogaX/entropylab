@@ -2,7 +2,10 @@
 // secrets, storing data, doing I/O, or navigating except on an explicit tool action.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { MiniDocument } from "./mini-dom.mjs";
 import { createFeatureGuideSession, initFeatureGuide } from "../src/js/feature-guide.js";
@@ -244,15 +247,28 @@ test("Open tool from a workspace lesson selects that lesson's station before foc
   assert.deepEqual(run("calc", "keys").calls, [["workspace", "calc"], ["focus", '#workspace-tabs [data-workspace="calc"]']]);
 });
 
+// Built fresh from these sources, never read from the committed entropylab.html:
+// CI commits that artifact only after a merge, so on a pull request it predates
+// the change, and `npm run ci` runs this suite before its own build.
 test("the compiled candidate carries the guide entries and lesson controller", () => {
-  const html = readFileSync(new URL("../entropylab.html", import.meta.url), "utf8");
-  const bundle = html.match(/<script id="btc-calc-script">([\s\S]*?)<\/script>/)?.[1];
-  const doc = new MiniDocument();
-  doc.body.innerHTML = html.replace(/<script\b[^>]*>[\s\S]*?<\/script>|<style\b[^>]*>[\s\S]*?<\/style>/gi, "");
-  assert.equal(doc.getElementById("guide-basics")?.dataset.guideOpen, "basics", "candidate is missing the beginner entry; use this PR's CI artifact, not rock's committed HTML");
-  assert.ok(doc.getElementById("guide-open")?.hasAttribute("data-guide-open"));
-  for (const id of ["feature-guide-dialog", "guide-contents", "guide-download-verification"]) {
-    assert.ok(bundle?.includes(JSON.stringify(id)), `candidate is missing the guide controller handle ${id}`);
+  const root = fileURLToPath(new URL("..", import.meta.url));
+  const out = mkdtempSync(join(tmpdir(), "entropylab-guide-"));
+  try {
+    // The footer's commit stamp is not under test; a missing GIT_DIR makes the
+    // build stamp "unknown" instead of refusing a shallow or dirty checkout.
+    const env = { ...process.env, GIT_DIR: join(out, "no-git") };
+    execFileSync(process.execPath, [join(root, "scripts/build.mjs"), "--out", out], { cwd: root, env, stdio: "pipe" });
+    const html = readFileSync(join(out, "entropylab.html"), "utf8");
+    const bundle = html.match(/<script id="btc-calc-script">([\s\S]*?)<\/script>/)?.[1];
+    const doc = new MiniDocument();
+    doc.body.innerHTML = html.replace(/<script\b[^>]*>[\s\S]*?<\/script>|<style\b[^>]*>[\s\S]*?<\/style>/gi, "");
+    assert.equal(doc.getElementById("guide-basics")?.dataset.guideOpen, "basics", "candidate is missing the beginner entry");
+    assert.ok(doc.getElementById("guide-open")?.hasAttribute("data-guide-open"));
+    for (const id of ["feature-guide-dialog", "guide-contents", "guide-download-verification"]) {
+      assert.ok(bundle?.includes(JSON.stringify(id)), `candidate is missing the guide controller handle ${id}`);
+    }
+  } finally {
+    rmSync(out, { recursive: true, force: true });
   }
 });
 
