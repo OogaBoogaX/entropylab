@@ -10,6 +10,8 @@ valid:
   - |
     const length = 12;
     const theme = "dark";
+  - |
+    document.execCommand?.("insertText", false, null);
 invalid:
   - |
     navigator.clipboard.writeText("public");
@@ -19,3 +21,7 @@ invalid:
     document.execCommand("copy");
   - |
     document.execCommand("copy", false, null);
+  - |
+    document.execCommand("Copy");
+  - |
+    document.execCommand("CUT");

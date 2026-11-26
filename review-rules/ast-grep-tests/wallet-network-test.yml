@@ -10,6 +10,9 @@ valid:
   - |
     const request = "fetch";
     function send() { return request; }
+  - |
+    import("./qr-key-scan.js");
+    import("./qr-psbt-scan.js");
 invalid:
   - |
     fetch("/api");
@@ -21,3 +24,9 @@ invalid:
     new XMLHttpRequest();
   - |
     new WebSocket("wss://example.com");
+  - |
+    import("https://example.com/x.js");
+  - |
+    import(spec);
+  - |
+    globalThis.navigator.sendBeacon("/api", "x");

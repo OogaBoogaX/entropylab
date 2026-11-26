@@ -3,7 +3,8 @@ language: JavaScript
 severity: error
 files: ["src/js/**/*.js"]
 ignores: ["src/js/{entropylab,psbt,vanity,qr}-wasm-b64.js"]
-message: secrets must never reach the URL or history.
+message: "secrets must never reach the URL or history."
+note: "Advisory: CodeRabbit comments only; nothing blocks a merge. Names outside this regex are left to the path instructions."
 rule:
   any:
     - pattern: location.hash = $X
@@ -12,5 +13,16 @@ rule:
     - pattern: window.location.hash = $X
     - pattern: window.location.search = $X
     - pattern: window.location.href = $X
+    - pattern: $G.location.hash = $X
+    - pattern: $G.location.search = $X
+    - pattern: $G.location.href = $X
+    - pattern: location.assign($$$ARGS)
+    - pattern: location.replace($$$ARGS)
+    - pattern: $G.location.assign($$$ARGS)
+    - pattern: $G.location.replace($$$ARGS)
     - pattern: history.pushState($$$ARGS)
     - pattern: history.replaceState($$$ARGS)
+    - pattern: $G.history.pushState($$$ARGS)
+    - pattern: $G.history.replaceState($$$ARGS)
+constraints:
+  G: { regex: '^(window|globalThis|self)$' }

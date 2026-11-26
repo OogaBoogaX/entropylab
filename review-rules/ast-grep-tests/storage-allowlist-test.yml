@@ -9,6 +9,9 @@ valid:
   - |
     sessionStorage.length;
     const locale = "en";
+  - |
+    const store = globalThis.localStorage;
+    store?.getItem("entropylab-low-entropy-acknowledged");
 invalid:
   - |
     localStorage.setItem("theme", "dark");
@@ -16,3 +19,11 @@ invalid:
     sessionStorage.getItem("x");
   - |
     localStorage.removeItem("x");
+  - |
+    globalThis.localStorage.setItem("theme", "dark");
+  - |
+    self.sessionStorage.getItem("x");
+  - |
+    localStorage["theme"];
+  - |
+    window.localStorage["x"];

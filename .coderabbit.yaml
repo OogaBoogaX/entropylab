@@ -72,6 +72,22 @@ reviews:
         public/private clipboard routing, and harmless UI preferences. In Secure Entry,
         trace each newly introduced conversion to immutable text. Check if a late promise,
         timer or worker reply can restore a value after Clear, key switch or End Session. Flag any path where a check that was skipped, threw, timed out or could not parse its input still ends in a passing verdict (green, "verified", "OK", a check mark) instead of a failure or a plain "could not check": an unknown or partly read input must never look verified.
+    - path: "src/**"
+      instructions: >-
+        EntropyLab is an offline, single-file Bitcoin key tool. Flag any change
+        that could let a secret (entropy, seed words, passphrase, private key,
+        WIF, xprv) reach the network, logs, the system clipboard, persistent
+        storage, the URL or an error message; any new network access, runtime
+        dependency or generated entropy; and any secret that is no longer wiped
+        or concealed on End Session.
+    - path: "*-wasm/**"
+      instructions: >-
+        These Rust crates derive seeds and keys and handle PSBTs. Flag any
+        secret (entropy, seed, private key, nonce) that could reach a log, a
+        panic or error message, or a returned string; any buffer holding one
+        that is no longer overwritten after use; any new dependency, unsafe
+        block or source of randomness; and any change to derivation, signing
+        or parsing that has no test vector.
     - path: "src/js/app.js"
       instructions: >-
         Trace changed handlers through imports to the final file, QR, clipboard, signer
@@ -134,6 +150,10 @@ reviews:
       instructions: >-
         Require a published AEZ source revision and case for each added, changed or removed
         vector. Trace any transformed bytes to the documented upstream encoding.
+    - path: "test/**"
+      instructions: >-
+        A fix needs a regression test that fails without the fix. Flag tests
+        that cannot fail, assert only that code ran, or copy the code under test.
     - path: "test/**/*.test.mjs"
       instructions: >-
         For a behavior fix identify the concrete bad result the old code would produce and
@@ -145,18 +165,35 @@ reviews:
         Use the English content key and its call site, including placeholder names, markup
         context, amount units, negation and safety verdict. Flag changed meaning, an escaped
         value becoming markup, or disagreement with the provenance sidecar. Use authenticated
-        translation-workflow evidence for author claims.
+        translation-workflow evidence for author claims. Only the translation bot
+        writes these catalogs. Flag any change here in another author's pull request.
     - path: "src/js/i18n*.js"
       instructions: >-
         Check the HTML allowlist and its fixed attributes. Follow placeholder text through
         the encoder for its final context, including quoted template attributes. Flag a
         warning that can disappear or change severity through the translation fallback.
+    - path: "package-lock.json"
+      instructions: >-
+        Flag every dependency that is added, removed or changes version and
+        is not explained by the pull request, and any resolved URL outside
+        the npm registry or integrity hash that changes without a version
+        change.
+    - path: "**/Cargo.lock"
+      instructions: >-
+        Flag every crate that is added, removed or changes version or
+        checksum and is not explained by the pull request, and any source
+        other than crates.io.
     - path: "{package.json,package-lock.json,**/Cargo.toml,**/Cargo.lock}"
       instructions: >-
         Identify a new package, source, checksum, install/build script, Cargo feature, or
         resolver change and its consumer. Trace JS imports through the actual bundle even
         for devDependencies. Compare registry or checksum drift against the pinned version.
         Include a concrete change to shipped bytes, code execution or reproducibility.
+    - path: ".github/**"
+      instructions: >-
+        Flag workflow changes that widen token permissions, use unpinned
+        actions, run pull_request_target on untrusted code, or touch the
+        release, signing or deploy path.
     - path: ".github/workflows/**"
       instructions: >-
         Identify the event, checkout revision or artifact source, actor, granted permissions
@@ -168,16 +205,34 @@ reviews:
         Trace the input commit and pinned build tools to the published bytes, CID and checksums.
         Flag an unverified substitution or a comparison that accepts two copies from the same
         untrusted source. Identify the producer and the independent consumer.
+    - path: "*SHA256SUMS*"
+      instructions: >-
+        Release sums and signatures. Only the release process and the
+        artifact job change them. Flag any change in an ordinary pull request.
+    - path: "CID.txt"
+      instructions: >-
+        Written only by the artifact job. Flag any change in an ordinary pull
+        request.
     - path: "{CID.txt,SHA256SUMS.txt,SHA256SUMS.asc,WASM-SHA256SUMS.txt,.github/release-signers.txt,keys/**,Dockerfile,compose.yaml,**/rust-toolchain.toml}"
       instructions: >-
         Identify the trusted producer and consumer of this change. Check pinned tool identity,
         signing-key changes, distinct signer quorum, and that the digest binds the intended
         artifact and commit where applicable. Use trusted CI/release evidence for provenance.
+    - path: ".coderabbit.yaml"
+      instructions: >-
+        This file decides what CodeRabbit reviews. Flag any change that narrows
+        review (a new path filter, a skipped author, auto review or a path
+        instruction turned off or weakened), or that lets CodeRabbit write to
+        the repo, approve, request changes, or post statuses or check runs.
     - path: "{.coderabbit*,**/.coderabbit/**,review-rules/**,sgconfig.yml,**/AGENTS.md,**/CLAUDE.md,.github/copilot-instructions.md}"
       instructions: >-
         Identify any change that narrows the files or findings reviewed, expands data access,
         grants a write action, or changes reviewer instructions. Describe the specific effect
         for the human responsible for review policy. Cite the changed setting or rule. Flag a rule deleted, downgraded, narrowed (a pattern removed) or given more ignores, and any tool switched from disabled to enabled.
+        This file decides what CodeRabbit reviews. Flag any change that narrows
+        review (a new path filter, a skipped author, auto review or a path
+        instruction turned off or weakened), or that lets CodeRabbit write to
+        the repo, approve, request changes, or post statuses or check runs.
   tools:
     ast-grep:
       enabled: true

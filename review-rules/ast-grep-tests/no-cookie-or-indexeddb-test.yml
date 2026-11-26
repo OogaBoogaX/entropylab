@@ -18,3 +18,11 @@ invalid:
     indexedDB.open("db");
   - |
     indexedDB.open("db", 1);
+  - |
+    window.document.cookie = "a=b";
+  - |
+    self.document.cookie = secret;
+  - |
+    globalThis.indexedDB.open("db");
+  - |
+    window.indexedDB.open("db", 1);

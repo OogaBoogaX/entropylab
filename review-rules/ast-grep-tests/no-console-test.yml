@@ -16,3 +16,11 @@ invalid:
     console.error(secret);
   - |
     console.debug();
+  - |
+    window.console.log("x");
+  - |
+    globalThis.console.error(secret);
+  - |
+    self.console.debug("x");
+  - |
+    console?.warn("x");

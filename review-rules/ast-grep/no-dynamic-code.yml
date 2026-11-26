@@ -4,11 +4,17 @@ severity: error
 files: ["src/js/**/*.js"]
 ignores: ["src/js/{entropylab,psbt,vanity,qr}-wasm-b64.js"]
 message: "Dynamic code and string timers are forbidden: they can turn data into executable code."
+note: "Advisory: CodeRabbit comments only; nothing blocks a merge. Names outside this regex are left to the path instructions."
 rule:
   any:
     - pattern: eval($$$ARGS)
+    - pattern: $G.eval($$$ARGS)
+    - pattern: Function($$$ARGS)
     - pattern: new Function($$$ARGS)
+    - pattern: new $G.Function($$$ARGS)
+    - pattern: $G.Function($$$ARGS)
     - pattern: setTimeout($S, $$$REST)
     - pattern: setInterval($S, $$$REST)
 constraints:
+  G: { regex: '^(window|globalThis|self)$' }
   S: { kind: string }

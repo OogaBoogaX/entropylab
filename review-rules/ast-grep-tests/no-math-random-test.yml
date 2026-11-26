@@ -18,3 +18,13 @@ invalid:
     globalThis.Math.random();
   - |
     self.Math.random();
+  - |
+    Math["random"]();
+  - |
+    Math['random']();
+  - |
+    const { random } = Math;
+  - |
+    let { random } = Math;
+  - |
+    var { random } = Math;

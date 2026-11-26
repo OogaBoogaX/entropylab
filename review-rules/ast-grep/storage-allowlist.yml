@@ -2,9 +2,16 @@ id: storage-allowlist
 language: JavaScript
 severity: warning
 files: ["src/js/**/*.js"]
-ignores: ["src/js/{entropylab,psbt,vanity,qr}-wasm-b64.js", "src/js/app.js", "src/js/browser-check.js", "src/js/i18n.js"]
-message: storage outside the UI-preference files; never store a secret.
+ignores: ["src/js/{entropylab,psbt,vanity,qr}-wasm-b64.js", "src/js/app.js", "src/js/browser-check.js", "src/js/i18n.js", "src/js/low-entropy-confirm.js"]
+message: "storage outside the UI-preference files; never store a secret."
+note: "Advisory: CodeRabbit comments only; nothing blocks a merge. Names outside this regex are left to the path instructions."
 rule:
   any:
     - pattern: localStorage.$METHOD($$$ARGS)
     - pattern: sessionStorage.$METHOD($$$ARGS)
+    - pattern: $G.localStorage.$METHOD($$$ARGS)
+    - pattern: $G.sessionStorage.$METHOD($$$ARGS)
+    - pattern: "localStorage[$K]"
+    - pattern: "$G.localStorage[$K]"
+constraints:
+  G: { regex: '^(window|globalThis|self)$' }

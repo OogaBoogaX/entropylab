@@ -26,3 +26,21 @@ invalid:
     history.pushState({}, "", "/x");
   - |
     history.replaceState({}, "", "/x");
+  - |
+    globalThis.location.hash = secret;
+  - |
+    self.location.search = "?x";
+  - |
+    globalThis.location.href = url;
+  - |
+    location.assign(url);
+  - |
+    location.replace(url);
+  - |
+    window.location.assign(url);
+  - |
+    globalThis.location.replace(url);
+  - |
+    window.history.pushState({}, "", "/x");
+  - |
+    self.history.replaceState({}, "", "/x");

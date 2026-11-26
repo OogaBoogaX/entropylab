@@ -3,7 +3,12 @@ language: JavaScript
 severity: error
 files: ["src/js/**/*.js"]
 ignores: ["src/js/{entropylab,psbt,vanity,qr}-wasm-b64.js"]
-message: src/js has no console calls; secrets must never reach logs.
+message: "src/js has no console calls; secrets must never reach logs."
+note: "Advisory: CodeRabbit comments only; nothing blocks a merge. Names outside this regex are left to the path instructions."
 rule:
   any:
     - pattern: console.$METHOD($$$ARGS)
+    - pattern: $G.console.$METHOD($$$ARGS)
+    - pattern: console?.$METHOD($$$ARGS)
+constraints:
+  G: { regex: '^(window|globalThis|self)$' }
