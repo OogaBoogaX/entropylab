@@ -74,6 +74,18 @@ test("the OTS lock pins every package of the client's closure by version and whe
   assert.deepEqual([...names].sort(), closure.map((name) => name.toLowerCase()).sort(), "the lock is exactly the closure");
 });
 
+test("the OTS lock pins GitPython past the submodule-clone RCE (GHSA-83vg-56qc-22m7)", () => {
+  // GitPython 3.2.0 validates a submodule's ".git" path only after cloning
+  // into it, so a crafted repository can run code during clone. The fix ships
+  // in 3.2.1; the lock must not fall back to the vulnerable wheel.
+  const entry = lockEntries().find((line) => /^GitPython==/i.test(line));
+  assert.ok(entry, "the lock pins GitPython");
+  const version = entry.match(/^GitPython==([0-9][0-9A-Za-z.]*)/i)[1];
+  const [major, minor, patch] = version.split(".").map(Number);
+  const fixed = major > 3 || (major === 3 && (minor > 2 || (minor === 2 && patch >= 1)));
+  assert.ok(fixed, `GitPython ${version} is vulnerable to GHSA-83vg-56qc-22m7; pin >= 3.2.1`);
+});
+
 test("every pip install in CI takes only the hash-locked OTS wheels", () => {
   let installs = 0;
   for (const { name, text } of workflows) {
