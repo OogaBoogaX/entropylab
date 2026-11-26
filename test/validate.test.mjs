@@ -196,16 +196,32 @@ const jsSourceFiles = () => {
   return files.sort();
 };
 
+// Constructors and functions are matched by name, not by the `new X` or `X.y`
+// spelling, so `new globalThis.WebSocket(...)`, `fetch?.(...)`,
+// `navigator?.clipboard` and `Math?.random()` are caught as well.
+const networkApiPattern = /\bfetch\s*(?:\?\.\s*)?\(|\bXMLHttpRequest\b|\bWebSocket\b|\bRTCPeerConnection\b|\bsendBeacon\b|\bWebTransport\b|\bEventSource\b|\bimportScripts\s*(?:\?\.\s*)?\(/;
+const clipboardWritePattern = /navigator\s*\??\.\s*clipboard|\bClipboardItem\b|execCommand\s*\(\s*["'`](copy|cut)["'`]/i;
+const mathRandomPattern = /\bMath\s*\??\.\s*random\b/;
+
 test("the source scan covers every JavaScript file", () => {
   const files = jsSourceFiles();
   assert.ok(files.length > 50, `expected more than 50 JavaScript files under src/js, found ${files.length}`);
+});
+
+test("the source-invariant patterns catch qualified and optional-chaining forms", () => {
+  assert.match('new globalThis.WebSocket("wss://example.test")', networkApiPattern);
+  assert.match('new window.EventSource("/events")', networkApiPattern);
+  assert.match('fetch?.("x")', networkApiPattern);
+  assert.match("navigator?.clipboard?.writeText(text)", clipboardWritePattern);
+  assert.match("Math?.random()", mathRandomPattern);
+  assert.doesNotMatch("globalThis.navigator?.mediaDevices", clipboardWritePattern);
 });
 
 test("no source file opens a network connection", () => {
   for (const path of jsSourceFiles()) {
     assert.doesNotMatch(
       read(path),
-      /\bfetch\s*\(|\bXMLHttpRequest\b|\bnew\s+WebSocket\b|\bRTCPeerConnection\b|\bsendBeacon\b|\bWebTransport\b|\bnew\s+EventSource\b|\bimportScripts\s*\(/,
+      networkApiPattern,
       `${path} opens a network connection; if the match is only a comment, reword the comment`,
     );
   }
@@ -227,7 +243,7 @@ test("only src/js/clipboard.js writes the system clipboard", () => {
     }
     assert.doesNotMatch(
       lines.join("\n"),
-      /navigator\s*\.\s*clipboard|\bClipboardItem\b|execCommand\s*\(\s*["'`](copy|cut)["'`]/i,
+      clipboardWritePattern,
       `${path} writes the system clipboard; only src/js/clipboard.js may`,
     );
   }
@@ -237,7 +253,7 @@ test("no source file uses Math.random", () => {
   for (const path of jsSourceFiles()) {
     assert.doesNotMatch(
       read(path),
-      /\bMath\s*\.\s*random\b/,
+      mathRandomPattern,
       `${path} uses Math.random; randomness must come from crypto.getRandomValues`,
     );
   }
