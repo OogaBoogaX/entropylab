@@ -22,7 +22,9 @@ constraints:
   GLOBAL: { regex: '^(window|globalThis|self)$' }
   NAV: { regex: '^(navigator|(window|globalThis|self)\.navigator)$' }
   CTOR: { regex: '^(XMLHttpRequest|WebSocket|EventSource|WebTransport|RTCPeerConnection)$' }
-  # Relative specifiers (./x.js, ../y.js) stay quiet; a remote or computed one does not.
+  # Only a plain relative string literal ("./x.js", '../y.js') stays quiet; a remote, computed or interpolated one does not.
   SPEC:
     not:
-      regex: '^["''`]\.\.?/'
+      all:
+        - kind: string
+        - regex: '^["'']\.\.?/'
