@@ -28,6 +28,7 @@ The build and the app both fail closed on the pin:
 - Opens the bundled release HTML in a WebView. There is no URL bar. Loads that are not that asset (a `file:` URL with no host and exactly that path) are ignored. Network loads are blocked, and the manifest does not request `INTERNET`.
 - The launch screen shows the EntropyLab version, the SHA-256 of the embedded HTML, the words `NO NETWORK`, and that this is a calculator, not a wallet, and it does not keep keys.
 - `FLAG_SECURE` is set so the recents thumbnail is blank.
+- On Android 15 and later the window draws edge to edge, so the app pads the launch screen and the page by the system-bar and display-cutout insets; the page's fixed header stays below the status bar. The pinned HTML is unchanged.
 - Rotation, resizing and declared keyboard configuration changes redraw the same live WebView without reloading the calculator. Its session stays only in that in-memory instance.
 - Leaving the app finishes the task and kills the process. The next open is a cold start. Process death and unhandled activity recreation also return to the launch screen.
 - No calculator or view-hierarchy state is saved in an Android saved-state Bundle. Activity destruction detaches and destroys its WebView; this does not prove secure erasure inside the platform.
@@ -70,7 +71,7 @@ builds `assembleDebug`, then hashes the HTML extracted from the APK and checks
 It also reads the merged manifest with `aapt dump xmltree`: backup must be off,
 the data-extraction rules must exclude every domain from cloud backup and device
 transfer, and `MainActivity` must handle all six `configChanges`.
-The workflow also runs `python3 android/lifecycle-check.py`: the actual wrapper callbacks execute against deterministic Android test doubles, covering all six declared `configChanges`, a packaged page that does not match the pin (or cannot be read) keeping Open disabled and never loading, form-data saving off, the bundled-page navigation check (including `file://<host>/android_asset/…`), launch and repeated rotation, empty saved-state output, background shutdown, cold creation/return and WebView cleanup. The pre-fix test failed because rotation recreated the WebView and discarded disposable input. Dispatch follows [Android’s documented configuration-change contract](https://developer.android.com/develop/adaptive-apps/cookbook/webview-state).
+The workflow also runs `python3 android/lifecycle-check.py`: the actual wrapper callbacks execute against deterministic Android test doubles, covering all six declared `configChanges`, system-bar and cutout insets applied as padding, a packaged page that does not match the pin (or cannot be read) keeping Open disabled and never loading, form-data saving off, the bundled-page navigation check (including `file://<host>/android_asset/…`), launch and repeated rotation, empty saved-state output, background shutdown, cold creation/return and WebView cleanup. The pre-fix test failed because rotation recreated the WebView and discarded disposable input. Dispatch follows [Android’s documented configuration-change contract](https://developer.android.com/develop/adaptive-apps/cookbook/webview-state).
 
 These callback tests are not an emulator and do not establish real device lifecycle or WebView behavior.
 

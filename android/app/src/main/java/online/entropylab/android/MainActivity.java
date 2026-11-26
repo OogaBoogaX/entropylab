@@ -2,8 +2,11 @@ package online.entropylab.android;
 
 import android.app.Activity;
 import android.content.res.Configuration;
+import android.graphics.Insets;
 import android.net.Uri;
+import android.os.Build;
 import android.os.Bundle;
+import android.view.WindowInsets;
 import android.view.WindowManager;
 import android.view.ViewGroup;
 import android.webkit.WebResourceRequest;
@@ -27,6 +30,17 @@ public final class MainActivity extends Activity {
         super.onCreate(savedInstanceState);
         getWindow().setFlags(WindowManager.LayoutParams.FLAG_SECURE, WindowManager.LayoutParams.FLAG_SECURE);
         setContentView(R.layout.activity_main);
+        // targetSdk 36 draws edge to edge on Android 15+, and the pinned HTML has
+        // no safe-area handling, so keep the launch screen and the page clear of
+        // the system bars and any display cutout here. Before Android 15 the
+        // window does not draw behind the bars and these insets arrive consumed.
+        findViewById(R.id.root).setOnApplyWindowInsetsListener((view, insets) -> {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                Insets bars = insets.getInsets(WindowInsets.Type.systemBars() | WindowInsets.Type.displayCutout());
+                view.setPadding(bars.left, bars.top, bars.right, bars.bottom);
+            }
+            return insets;
+        });
         String digest = hashAsset();
         hashMatches = digest.equals(BuildConfig.HTML_SHA256);
         TextView version = findViewById(R.id.version);
