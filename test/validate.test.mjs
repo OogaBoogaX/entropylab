@@ -198,10 +198,13 @@ const jsSourceFiles = () => {
 
 // Constructors and functions are matched by name, not by the `new X` or `X.y`
 // spelling, so `new globalThis.WebSocket(...)`, `fetch?.(...)`,
-// `navigator?.clipboard` and `Math?.random()` are caught as well.
-const networkApiPattern = /\bfetch\s*(?:\?\.\s*)?\(|\bXMLHttpRequest\b|\bWebSocket\b|\bRTCPeerConnection\b|\bsendBeacon\b|\bWebTransport\b|\bEventSource\b|\bimportScripts\s*(?:\?\.\s*)?\(/;
-const clipboardWritePattern = /navigator\s*\??\.\s*clipboard|\bClipboardItem\b|execCommand\s*\(\s*["'`](copy|cut)["'`]/i;
-const mathRandomPattern = /\bMath\s*\??\.\s*random\b/;
+// `navigator?.clipboard`, `Math?.random()` and string-literal bracket access
+// (`globalThis["fetch"]`, `navigator["clipboard"]`, `Math["random"]`) are caught
+// as well. A name assembled at run time ("fe" + "tch") cannot be caught by a
+// text scan; the page's CSP (connect-src 'none') and code review cover that.
+const networkApiPattern = /\bfetch\s*(?:\?\.\s*)?\(|\bXMLHttpRequest\b|\bWebSocket\b|\bRTCPeerConnection\b|\bsendBeacon\b|\bWebTransport\b|\bEventSource\b|\bimportScripts\s*(?:\?\.\s*)?\(|\[\s*["'`](?:fetch|importScripts)["'`]\s*\]/;
+const clipboardWritePattern = /navigator\s*\??\.\s*clipboard|\[\s*["'`]clipboard["'`]\s*\]|\bClipboardItem\b|execCommand\s*\(\s*["'`](copy|cut)["'`]/i;
+const mathRandomPattern = /\bMath\s*(?:\??\.\s*random\b|(?:\?\.)?\s*\[\s*["'`]random["'`]\s*\])/;
 
 test("the source scan covers every JavaScript file", () => {
   const files = jsSourceFiles();
@@ -214,6 +217,9 @@ test("the source-invariant patterns catch qualified and optional-chaining forms"
   assert.match('fetch?.("x")', networkApiPattern);
   assert.match("navigator?.clipboard?.writeText(text)", clipboardWritePattern);
   assert.match("Math?.random()", mathRandomPattern);
+  assert.match('globalThis["fetch"]("/endpoint")', networkApiPattern);
+  assert.match('navigator["clipboard"].writeText(text)', clipboardWritePattern);
+  assert.match('Math["random"]()', mathRandomPattern);
   assert.doesNotMatch("globalThis.navigator?.mediaDevices", clipboardWritePattern);
 });
 
