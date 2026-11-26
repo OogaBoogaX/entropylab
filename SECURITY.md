@@ -9,8 +9,8 @@ always use the latest version, available from the
 
 | Version | Supported          |
 | ------- | ------------------ |
-| 1.0.0   | :white_check_mark: |
-| < 1.0.0 | :x:                |
+| 1.1.0   | :white_check_mark: |
+| < 1.1.0 | :x:                |
 
 ## Security Considerations
 
@@ -108,12 +108,21 @@ following model:
    rootfs, one Ubuntu snapshot, clang 18.1.3) and requires a second build in
    that image to match the bytes it publishes; the artifact commit and the
    Pages deploy wait for that check. Their digests are published in
-   `WASM-SHA256SUMS.txt`. A host clang is a different compiler. The 1.0.0
-   hashes, and the page built from them, have been reproduced in that image
-   on three machines outside GitHub, by three people: Windows with WSL2 and
-   bare-metal Linux on x86_64, and macOS on ARM64 (the image under
-   Rosetta). The page alone also rebuilds to the same bytes on each of those
-   hosts without the image. [docs/Reproductions.md](docs/Reproductions.md)
+   `WASM-SHA256SUMS.txt`. A host clang is a different compiler. The
+   v1.0.0 `entropylab-wasm` and `vanity-wasm` modules are the bytes that
+   three people rebuilt in that image at `cb55bd9` on three machines outside
+   GitHub: Windows with WSL2 and bare-metal Linux on x86_64, and macOS on
+   ARM64 (the image under Rosetta). v1.0.0's `psbt-wasm` module, and every
+   module rock has published since (`qr-wasm` included), have no recorded
+   rebuild outside GitHub. A release page's footer names the source commit
+   to rebuild it from. The page committed inside the v1.0.0 git tag is an
+   earlier build with a different footer and is not the release. See the
+   [known issue](docs/Verify_Your_Download.md#known-issue-v100).
+   The v1.0.0 release page has been rebuilt from that commit only by its
+   author so far, on Windows (on the computer later found to be compromised;
+   see [Release signing keys](#release-signing-keys)) and on Linux (in a
+   separate hosted environment). No independent rebuild of it is recorded.
+   [docs/Reproductions.md](docs/Reproductions.md)
    records each rebuild by commit. Build-host paths are remapped out of the
    binary. The image is the boundary: the page and the modules are
    reproducible inside it. Its Dockerfile pins the base image, the package
@@ -238,7 +247,17 @@ following model:
   legacy and SegWit v0 ECDSA signatures with SIGHASH_ALL, plus Taproot key-path
   and tapscript signature records with SIGHASH_DEFAULT or SIGHASH_ALL. Other
   script shapes and sighash types, finalized Taproot script paths, and
-  annex-carrying signatures stay unverified. Repeated BIP340 nonces are still
+  annex-carrying signatures stay unverified. Finalized-field checks also
+  validate sibling scriptSig/witness fields already present in the sent PSBT,
+  require matching sent/returned UTXO claims, and never report valid when the
+  transaction cannot be serialized or the decoder caps verification. Their
+  decoding, script resolution and signatures share bounded work, with sibling
+  results reused rather than charging signatures twice. These checks follow
+  consensus, not relay policy: uncompressed SegWit v0 keys and unused legacy
+  stack items may be valid, while witness CLEANSTACK, NULLDUMMY and scriptSig
+  size limits still apply. See the `final follow-up` regression cases in
+  [the verifier tests](test/psbt-signer-audit-verify.test.mjs).
+  Repeated BIP340 nonces are still
   checked, although those nonces cannot be replayed like RFC 6979 nonces.
   The report marks these cases
   incomplete; a completed individual check is not a security conclusion for
@@ -815,9 +834,15 @@ extension that ignores them, or one written to steal.
   close it yourself. Chrome and Edge keep running after the last window
   closes unless "Continue running background apps" is off in their System
   settings.
-- Then close the browser and restart the computer. That is a precaution, not
-  a guarantee: a restart does not erase memory, and its contents can survive
-  a short power-off.
+- Then close the browser and shut the computer down completely: not sleep,
+  not hibernate, and not a restart, which can keep memory powered. On
+  Windows, hold Shift while you click Shut down, or turn off Fast startup;
+  otherwise Shut down saves part of the system to the hibernation file.
+  Leave it off for five to ten minutes before you turn it on again; memory
+  fades once the power is off. Reconnecting this computer to the internet
+  after a session is not advised, and if you do, do this first. It is a
+  precaution, not a guarantee: it does not erase what the system already
+  wrote to disk, such as swap or a hibernation file.
 - None of this protects a computer that is already compromised: malware or a
   malicious browser extension can read a secret as you type it.
 
@@ -826,7 +851,9 @@ extension that ignores them, or one written to steal.
 Releases are verified with the detached signatures in `SHA256SUMS.asc`
 (instructions in that file's header). Each signer's public key is committed
 under [`keys/`](keys/); the production deploy imports keys only from there,
-never from a release's `KEYS` file. The v1.0.0 signers and their keys:
+never from a release's `KEYS` file. The release signers and their keys (v1.0.0
+was signed with the first four rows; v1.1.0 by Portland.HODL, w-s-bitcoin and
+MrHodlX's interim key):
 
 | Signer | Key fingerprint | Status |
 | --- | --- | --- |
@@ -834,6 +861,7 @@ never from a release's `KEYS` file. The v1.0.0 signers and their keys:
 | w-s-bitcoin | `542E CCA3 B5CB 74CE C957 29B3 92C2 1496 202E 3774` | |
 | timechainb | `63EF 760E E641 A585 16D5 4930 F0B7 D606 C6FD 9D52` | |
 | MrHodlX | `6443 4EE4 8A96 C38E 78B7 875F 4E7E 416E E17D 237C` | **revoked** (announced 2026-10-30) |
+| MrHodlX (interim) | `DB19 EF73 4874 43AA EAC2 6687 17AB DC5F 9867 B54F` | expires 2027-01-31 |
 
 **MrHodlX's key 64434EE4… is revoked.** It was kept on a computer later found
 to be compromised. Treat any signature from it as untrusted, including its

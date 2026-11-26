@@ -1,0 +1,148 @@
+# yaml-language-server: $schema=https://coderabbit.ai/integrations/schema.v2.json
+# CodeRabbit review settings for EntropyLab.
+# It reviews every pull request to rock, bots' included. It skips only files
+# no text review can read, posts no summaries, labels, poems, statuses or
+# check runs, answers comments only when mentioned, and never pushes commits.
+language: en-US
+tone_instructions: >-
+  Be brief and plain. Report real defects only: correctness, security, key
+  handling, privacy. No praise, no emojis, no restating the diff.
+early_access: false
+
+reviews:
+  profile: chill
+  request_changes_workflow: false
+  high_level_summary: false
+  high_level_summary_in_walkthrough: false
+  collapse_walkthrough: true
+  changed_files_summary: false
+  sequence_diagrams: false
+  estimate_code_review_effort: false
+  related_issues: false
+  related_prs: false
+  suggested_labels: false
+  auto_apply_labels: false
+  suggested_reviewers: false
+  auto_assign_reviewers: false
+  in_progress_fortune: false
+  poem: false
+  review_status: false
+  # No commit status or check run: merges are gated by CI and the review bar,
+  # not by this bot.
+  commit_status: false
+  review_progress: false
+  # EntropyLab code is model-written by design, so AI-authorship flags are noise.
+  slop_detection:
+    enabled: false
+  pre_merge_checks:
+    docstrings:
+      mode: "off"
+    title:
+      mode: "off"
+    description:
+      mode: "off"
+    issue_assessment:
+      mode: "off"
+  # CodeRabbit never writes to the repo.
+  finishing_touches:
+    docstrings:
+      enabled: false
+    unit_tests:
+      enabled: false
+    autofix:
+      enabled: false
+    fix_ci:
+      enabled: false
+    resolve_merge_conflict:
+      enabled: false
+  auto_review:
+    enabled: true
+    drafts: false
+    # No author is skipped: Dependabot opens the lock-file changes and the
+    # translation bot the catalog changes, the two places a bot's change most
+    # needs a second look.
+  # Skipped: only files no text review can read. The built page, the WASM
+  # embeds (CI rebuilds both from source and the artifact job commits its own
+  # copies) and timestamp proofs. Lock files, release sums, translation
+  # catalogs and test vectors stay in review: see their instructions below.
+  path_filters:
+    - "!entropylab.html"
+    - "!**/*.ots"
+    - "!src/js/*-wasm-b64.js"
+  path_instructions:
+    - path: ".coderabbit.yaml"
+      instructions: >-
+        This file decides what CodeRabbit reviews. Flag any change that narrows
+        review (a new path filter, a skipped author, auto review or a path
+        instruction turned off or weakened), or that lets CodeRabbit write to
+        the repo, approve, request changes, or post statuses or check runs.
+    - path: "entropylab-*.html"
+      instructions: >-
+        Snapshot pages are build output that the build deletes and the repo
+        never tracks. Flag any pull request that adds or changes one.
+    - path: "test/fixtures/**"
+      instructions: >-
+        Test vectors come from published references (BIPs, Bitcoin Core, other
+        implementations). Flag any changed or removed expected value that the
+        pull request does not trace to its source, especially one changed in
+        the same pull request as the code it tests.
+    - path: "entropylab-wasm/src/aez/testvectors.rs"
+      instructions: >-
+        Published AEZ test vectors. Flag any changed or removed vector that the
+        pull request does not trace to its source.
+    - path: "src/**"
+      instructions: >-
+        EntropyLab is an offline, single-file Bitcoin key tool. Flag any change
+        that could let a secret (entropy, seed words, passphrase, private key,
+        WIF, xprv) reach the network, logs, the system clipboard, persistent
+        storage, the URL or an error message; any new network access, runtime
+        dependency or generated entropy; and any secret that is no longer wiped
+        or concealed on End Session.
+    - path: "*-wasm/**"
+      instructions: >-
+        These Rust crates derive seeds and keys and handle PSBTs. Flag any
+        secret (entropy, seed, private key, nonce) that could reach a log, a
+        panic or error message, or a returned string; any buffer holding one
+        that is no longer overwritten after use; any new dependency, unsafe
+        block or source of randomness; and any change to derivation, signing
+        or parsing that has no test vector.
+    - path: "package-lock.json"
+      instructions: >-
+        Flag every dependency that is added, removed or changes version and
+        is not explained by the pull request, and any resolved URL outside
+        the npm registry or integrity hash that changes without a version
+        change.
+    - path: "**/Cargo.lock"
+      instructions: >-
+        Flag every crate that is added, removed or changes version or
+        checksum and is not explained by the pull request, and any source
+        other than crates.io.
+    - path: "src/locales/**"
+      instructions: >-
+        Only the translation bot writes these catalogs. Flag any change here
+        in another author's pull request, and in any pull request a string
+        that adds or changes markup, or a translation whose meaning differs
+        from its English source.
+    - path: "*SHA256SUMS*"
+      instructions: >-
+        Release sums and signatures. Only the release process and the
+        artifact job change them. Flag any change in an ordinary pull request.
+    - path: "CID.txt"
+      instructions: >-
+        Written only by the artifact job. Flag any change in an ordinary pull
+        request.
+    - path: "test/**"
+      instructions: >-
+        A fix needs a regression test that fails without the fix. Flag tests
+        that cannot fail, assert only that code ran, or copy the code under test.
+    - path: ".github/**"
+      instructions: >-
+        Flag workflow changes that widen token permissions, use unpinned
+        actions, run pull_request_target on untrusted code, or touch the
+        release, signing or deploy path.
+
+# Answers a comment only when it is mentioned. Anyone can mention it, so a
+# reply in a pull request's thread is advice, never a review decision.
+chat:
+  art: false
+  auto_reply: false
