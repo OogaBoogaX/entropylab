@@ -39,6 +39,7 @@ reviews:
     issue_assessment: { mode: "off" }
     custom_checks: []
   finishing_touches:
+    docstrings: { enabled: false }
     simplify: { enabled: false }
     unit_tests: { enabled: false }
     autofix: { enabled: false }
