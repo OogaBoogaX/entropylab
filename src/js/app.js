@@ -24447,6 +24447,7 @@ async function hodlBoot() {
     onOpenTool: (tool, lesson) => {
       hodlShowWorkspace(tool);
       if (tool === "psbt") hodlShowPsbtTool({ inspect: "inspector", edit: "editor", nonce: "nonce" }[lesson] || "inspector", true);
+      else if (tool === "sp") hodlShowPrivacyTool("sp", true);
       else document.querySelector(`#workspace-tabs [data-workspace="${tool}"]`)?.focus();
     },
   });

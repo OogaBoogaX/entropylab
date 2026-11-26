@@ -211,6 +211,39 @@ test("guide entry and app lifecycle wiring belong to the source shell and boot",
   assert.match(app, /hodlFeatureGuide\?\.refresh\(\)/);
 });
 
+// The Guide's Open tool action must land on the lesson's own station: the
+// Privacy workspace keeps whichever station was last shown (BIP-47 included),
+// so the Silent Payments lesson selects its station, as PSBT lessons do theirs.
+test("Open tool from a workspace lesson selects that lesson's station before focus moves", () => {
+  const app = readFileSync(new URL("../src/js/app.js", import.meta.url), "utf8");
+  const head = app.indexOf("onOpenTool: (tool, lesson) => {");
+  assert.ok(head >= 0, "the boot wiring passes onOpenTool to initFeatureGuide");
+  let depth = 0, end = -1;
+  for (let i = app.indexOf("{", head); i < app.length; i++) {
+    if (app[i] === "{") depth++;
+    else if (app[i] === "}" && --depth === 0) { end = i + 1; break; }
+  }
+  const source = `return (tool, lesson) => ${app.slice(app.indexOf("{", head), end)}`;
+  const run = (tool, lesson) => {
+    const state = { workspace: "sp", privacy: "bip47", psbt: "inspector", calls: [] };
+    const doc = { querySelector: (selector) => ({ focus: () => state.calls.push(["focus", selector]) }) };
+    const onOpenTool = new Function("hodlShowWorkspace", "hodlShowPsbtTool", "hodlShowPrivacyTool", "document", source)(
+      (id) => { state.calls.push(["workspace", id]); state.workspace = id; },
+      (id, focus) => { state.calls.push(["psbt", id, focus]); state.psbt = id; },
+      (id, focus) => { state.calls.push(["privacy", id, focus]); state.privacy = id; },
+      doc,
+    );
+    onOpenTool(tool, lesson);
+    return state;
+  };
+  const silent = run("sp", "silent");
+  assert.equal(silent.workspace, "sp");
+  assert.equal(silent.privacy, "sp", "the Silent Payments lesson must not leave the BIP-47 station selected");
+  assert.deepEqual(silent.calls, [["workspace", "sp"], ["privacy", "sp", true]]);
+  assert.deepEqual(run("psbt", "nonce").calls, [["workspace", "psbt"], ["psbt", "nonce", true]]);
+  assert.deepEqual(run("calc", "keys").calls, [["workspace", "calc"], ["focus", '#workspace-tabs [data-workspace="calc"]']]);
+});
+
 test("the compiled candidate carries the guide entries and lesson controller", () => {
   const html = readFileSync(new URL("../entropylab.html", import.meta.url), "utf8");
   const bundle = html.match(/<script id="btc-calc-script">([\s\S]*?)<\/script>/)?.[1];
