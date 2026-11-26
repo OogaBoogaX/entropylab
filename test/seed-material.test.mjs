@@ -229,6 +229,40 @@ test("PSBT, BIP-85, SP and Vanity load the wallet's own root and words", async (
   assert.equal(hex.encode(plan.node), hex.encode(parent.privateKey) + hex.encode(parent.chainCode), "the derivation grind's node");
 });
 
+// Switching the SP session key replaces the wallet the station derives from,
+// so the previous wallet's results must go with it: its verify matches, its
+// send result and a revealed spend key all belong to the key just replaced
+// (red team v1.1.0, part09 #10). A pick that fails leaves no old results
+// either.
+test("picking a different SP session key clears the previous results", async () => {
+  const vector = VECTORS[1], wallet = await fromWords(vector), state = { id: 7, name: "Key 7", fields: { pass: vector.pass }, result: wallet };
+  const fields = new Map(["sp-error", "sp-key", "sp-pass", "sp-session", "sp-out"].map((id) => [id, { value: "", textContent: "", innerHTML: "" }]));
+  const page = new Proxy(inert, { get: (target, key) => key === "getElementById" ? (id) => fields.get(id) ?? inert : inert[key] });
+  const sp = await load(["hodlPickSpSessionKey", "hodlSpVerifyMatches", "hodlSpSendLast", "hodlSpReveal"],
+    { document: page, hodlElement: () => inert, hodlSpWipeKeys() {}, hodlRefreshStationKeyPickers() {} },
+    ["hodlSpVerifyMatches", "hodlSpSendLast", "hodlSpReveal"]);
+  const stale = () => {
+    fields.get("sp-out").innerHTML = "<div>previous wallet's revealed spend key</div>";
+    sp.__set.hodlSpVerifyMatches({ match: 1 });
+    sp.__set.hodlSpSendLast({ send: 1 });
+    sp.__set.hodlSpReveal(true);
+  };
+  stale();
+  sp.hodlPickSpSessionKey(state);
+  assert.equal(sp.hodlSpVerifyMatches, null, "the previous key's verify matches survived the pick");
+  assert.equal(sp.hodlSpSendLast, null, "the previous key's send result survived the pick");
+  assert.equal(sp.hodlSpReveal, false, "the previous key's revealed spend key stayed revealed");
+  assert.equal(fields.get("sp-out").innerHTML, "", "the previous key's results stayed on screen");
+  // A pick that throws (a state with no result) must leave no old results either.
+  stale();
+  sp.hodlPickSpSessionKey({ id: 9, name: "Key 9", fields: {}, result: null });
+  assert.notEqual(fields.get("sp-error").textContent, "", "the failed pick must report why");
+  assert.equal(sp.hodlSpVerifyMatches, null, "a failed pick left the previous key's verify matches");
+  assert.equal(sp.hodlSpSendLast, null, "a failed pick left the previous key's send result");
+  assert.equal(sp.hodlSpReveal, false, "a failed pick left the previous key's spend key revealed");
+  assert.equal(fields.get("sp-out").innerHTML, "", "a failed pick left the previous key's results on screen");
+});
+
 // Key Station refuses a multisig extended key outright ("…is a multisig
 // extended key. Use it in Multi Signature…"). The BIP-85 root loader parsed
 // the same keys with no scope check: a depth-0 Yprv/Zprv loaded silently and
