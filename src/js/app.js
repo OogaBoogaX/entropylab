@@ -15751,6 +15751,16 @@ function hodlSpWipeKeys() {
   hodlSpParentFingerprint = "";
   hodlSpNote = hodlNote("No session key. Receive and verify need a seed or root xprv.");
 }
+// Switching the session key replaces the wallet the station derives from, so
+// the previous key's results go with it: its verify matches, its send result
+// and a revealed spend key all belong to the key just replaced.
+function hodlSpClearResults() {
+  hodlSpReveal = false;
+  hodlSpVerifyMatches = null;
+  hodlSpSendLast = null;
+  let out = document.getElementById("sp-out");
+  if (out) out.innerHTML = "";
+}
 function hodlSpWipeMem() {
   hodlSpWipeKeys();
   hodlSpReveal = false;
@@ -15921,6 +15931,8 @@ function hodlPickSpSessionKey(state) {
   let error = document.getElementById("sp-error");
   if (error) error.textContent = "";
   try {
+    // Clear before the swap, so a pick that throws leaves no old results.
+    hodlSpClearResults();
     hodlSpUseKey(state);
     // The station's key field shows the words, as the user would type them.
     document.getElementById("sp-key").value = hodlResultMnemonic(state.result) || hodlResultRootXprv(state.result) || "";
@@ -16395,6 +16407,7 @@ function hodlInitSp() {
   let detachStationKey = () => {
     if (!hodlSpSource.startsWith("key:")) return;
     hodlSpWipeKeys();
+    hodlSpClearResults();
     hodlSpSource = document.getElementById("sp-key").value.trim() ? "manual" : "";
     if (hodlSpSource) hodlSpNote = hodlNote("Manual session key entered. It will be validated when you use this Station.");
     hodlPaintSpSession(hodlSpNote);
