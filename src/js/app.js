@@ -6359,16 +6359,28 @@ function hodlGlobalSyncCurrentBits(targetWords = hodlTargetWordCount) {
       return analysis.invalidRanges.length ? null : hodlNumberBaseBits(value, hodlEntropyFormat, config.words);
     }
     if (hodlKeyMode === "seed") {
-      let words;
-      if (hodlSeedMethod === "numbers") words = hodlParseSeedNumbers(value, config.words, hodlSeedZeroIndexed).wordSlots;
+      let words, entered = 0;
+      if (hodlSeedMethod === "numbers") {
+        // wordSlots stops at the target count; the extra numbers sit in
+        // entries, so count those to see an over-long paste.
+        let parsed = hodlParseSeedNumbers(value, config.words, hodlSeedZeroIndexed);
+        words = parsed.wordSlots;
+        entered = parsed.entries.length;
+      }
       else if (!hodlLooksExtendedKey(value)) {
+        let tokens = hodlNormalizeMnemonicText(value).split(" ").filter(Boolean);
+        entered = tokens.length;
         words = [];
-        for (let word of hodlNormalizeMnemonicText(value).split(" ").filter(Boolean)) {
+        for (let word of tokens) {
           if (!hodlBip39WordSet.has(word)) break;
           words.push(word);
         }
       }
       else return null;
+      // An over-long phrase is invalid, not truncated: publishing its first
+      // words would mirror a phrase the seed field itself rejects, while
+      // every other source publishes nothing when invalid.
+      if (entered > config.words) return null;
       let mnemonic = words.length === config.words ? words.join(" ") : "";
       if (mnemonic) return hodlIsValidMnemonic(mnemonic, hodlBip39Wordlist) ? bitsOf(hodlMnemonicToEntropy(mnemonic, hodlBip39Wordlist)) : null;
       return hodlGlobalSyncWordBits(words);
