@@ -566,6 +566,32 @@ const parseHex = (records) => loadModule().core.parseWalletDat(
   dbFromRecords(records.map(([key, value]) => [bytesToHex(hexToBytes(key)), bytesToHex(hexToBytes(value))])),
 );
 
+// Red team 2026-11-09: a wallet Bitcoin Core creates keeps its hardened path
+// steps after the key, and its DescriptorID hashes the compat form in which
+// those steps are written with '. The verifier rewrote only [origin] steps,
+// so every such wallet failed "Descriptor id", and one failed check locks
+// both the import and the download in the page. The fixture's ids follow
+// Core's rule (pinned by real records in test/core-created-descriptors.mjs).
+test("a Core-generated wallet passes every Descriptor id check", () => {
+  const { core } = loadModule();
+  const checks = core.verifyWalletDoc(parseHex(GENERATED_ROWS), coreDeps);
+  const ids = checks.filter((check) => check.label === "Descriptor id");
+  assert.equal(ids.length, 6, "one id check per generated descriptor");
+  assert.deepEqual(ids.filter((check) => check.tone !== "ok"), [], "every id is the one Core computes");
+  assert.deepEqual(badChecks(checks).filter((check) => check.label === "Descriptor id"), []);
+});
+
+// The browser suite carries its own copy of the generated rows. A fixture
+// change that is not copied there leaves the browser test on stale records.
+test("the browser suite embeds the same generated wallet rows", () => {
+  const html = read("test/browser-suite.html");
+  const marker = "const generatedRows = ";
+  const start = html.indexOf(marker);
+  assert.ok(start > 0, "the browser suite defines generatedRows");
+  const literal = html.slice(start + marker.length, html.indexOf(";\n", start));
+  assert.deepEqual(JSON.parse(literal), GENERATED_ROWS, "regenerate the literal as the header of test/core-generated-fixture.mjs describes");
+});
+
 test("a Core-generated wallet imports as exactly one root key", () => {
   const { core } = loadModule();
   const doc = parseHex(GENERATED_ROWS);

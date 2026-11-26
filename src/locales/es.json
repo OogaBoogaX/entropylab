@@ -1896,7 +1896,6 @@
   "The saved network does not match these derivation inputs. Review the network and path in Key Station.": "La red guardada no coincide con estas entradas de derivación. Revisa la red y la ruta en Key Station.",
   "Descriptor origin claims master {fingerprint}, account {account}' — not provable from the account key": "El origen del descriptor reclama la maestra {fingerprint}, cuenta {account}' — no se puede probar desde la clave de la cuenta",
   "This file has no password protection — anyone with it can read or alter its contents. Press Open journal again to accept it.": "Este archivo no tiene protección de contraseña; cualquiera que lo tenga puede leer o alterar su contenido. Presiona Abrir diario de nuevo para aceptarlo.",
-  "Core Wallet": "Core Wallet",
   "Core": "Core",
   "Wallets only look about 20 unused addresses ahead. If coins arrive at index {n}, raise your wallet's gap limit above that, or the balance will show as zero (Sparrow: Settings → Advanced → Gap limit). EntropyLab's Bitcoin Core export already covers this window.": "Las billeteras solo buscan unas 20 direcciones no utilizadas por delante. Si llegan monedas al índice {n}, aumenta el límite de brecha de tu billetera por encima de eso, o el saldo se mostrará como cero (Sparrow: Configuración → Avanzado → Límite de brecha). La exportación de Bitcoin Core de EntropyLab ya cubre esta ventana.",
   "Read errors": "Errores de lectura",
@@ -2594,5 +2593,6 @@
   "A trailing path can have at most 16 steps.": "Una ruta final puede tener como máximo 16 pasos.",
   "A derivation path index after the extended key is out of range (0 to 2,147,483,647).": "Un índice de ruta de derivación después de la clave extendida está fuera de rango (0 a 2,147,483,647).",
   "A BIP45 key must have plain cosigner step 0 before its branch, like /0/0/* or /0/<0;1>/*. This tool derives only cosigner 0; another cosigner step would derive a different wallet.": "Una clave BIP45 debe tener un paso de cosigner simple 0 antes de su rama, como /0/0/* o /0/<0;1>/*. Esta herramienta deriva solo el cosigner 0; otro paso de cosigner derivaría una billetera diferente.",
-  "A multipath step like <0;1> must be followed by the wildcard *, as in /<0;1>/*.": "Un paso de ruta múltiple como <0;1> debe ir seguido del comodín *, como en /<0;1>/*."
+  "A multipath step like <0;1> must be followed by the wildcard *, as in /<0;1>/*.": "Un paso de ruta múltiple como <0;1> debe ir seguido del comodín *, como en /<0;1>/*.",
+  "Bitcoin Core": "Bitcoin Core"
 }
