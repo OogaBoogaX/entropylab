@@ -3,10 +3,14 @@
     android:id="@+id/root"
     android:layout_width="match_parent"
     android:layout_height="match_parent">
-    <LinearLayout
+    <!-- Scrolls so Open stays reachable on short screens with large text. -->
+    <ScrollView
         android:id="@+id/launch"
         android:layout_width="match_parent"
-        android:layout_height="match_parent"
+        android:layout_height="match_parent">
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
         android:padding="24dp"
         android:orientation="vertical">
         <TextView
@@ -46,6 +50,7 @@
             android:layout_marginTop="24dp"
             android:text="Open calculator" />
     </LinearLayout>
+    </ScrollView>
     <WebView
         android:id="@+id/page"
         android:layout_width="match_parent"
