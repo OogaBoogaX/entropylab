@@ -175,6 +175,74 @@ test("the app never fetches, so the CSP forbids connections", () => {
   assert.doesNotMatch(read("src/js/online.js") + read("src/js/network-check.js") + read("src/js/browser-check.js"), /\bfetch\s*\(/);
 });
 
+// Deliberately no comment stripping: a regex literal such as `const s = /\/*/;`
+// can look like the start of a block comment and hide the rest of the file,
+// and a line of a multi-line template literal that begins with `//` still runs
+// its ${...} substitutions. Any stripper short of a real tokenizer can be
+// fooled, so these scans read the raw text; a comment that names a forbidden
+// API must be reworded.
+const jsSourceFiles = () => {
+  const files = [];
+  const walk = (dir) => {
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      const path = join(dir, entry.name);
+      if (entry.isDirectory()) walk(path);
+      else if (entry.name.endsWith(".js") && !entry.name.endsWith("-wasm-b64.js")) {
+        files.push(relative(root, path).split("\\").join("/"));
+      }
+    }
+  };
+  walk(join(root, "src/js"));
+  return files.sort();
+};
+
+test("the source scan covers every JavaScript file", () => {
+  const files = jsSourceFiles();
+  assert.ok(files.length > 50, `expected more than 50 JavaScript files under src/js, found ${files.length}`);
+});
+
+test("no source file opens a network connection", () => {
+  for (const path of jsSourceFiles()) {
+    assert.doesNotMatch(
+      read(path),
+      /\bfetch\s*\(|\bXMLHttpRequest\b|\bnew\s+WebSocket\b|\bRTCPeerConnection\b|\bsendBeacon\b|\bWebTransport\b|\bnew\s+EventSource\b|\bimportScripts\s*\(/,
+      `${path} opens a network connection; if the match is only a comment, reword the comment`,
+    );
+  }
+});
+
+test("only src/js/clipboard.js writes the system clipboard", () => {
+  const exempt = "// It never reads the system clipboard (no navigator.clipboard.readText, no";
+  for (const path of jsSourceFiles()) {
+    const text = read(path);
+    if (path === "src/js/clipboard.js") {
+      assert.match(text, /navigator\.clipboard/, "src/js/clipboard.js must remain the one clipboard writer");
+      continue;
+    }
+    const lines = text.split("\n");
+    if (path === "src/js/app-paste.js") {
+      const at = lines.findIndex((line) => line.trim() === exempt);
+      assert.notEqual(at, -1, "src/js/app-paste.js must keep its exact clipboard-read exemption line");
+      lines.splice(at, 1);
+    }
+    assert.doesNotMatch(
+      lines.join("\n"),
+      /navigator\s*\.\s*clipboard|\bClipboardItem\b|execCommand\s*\(\s*["'`](copy|cut)["'`]/i,
+      `${path} writes the system clipboard; only src/js/clipboard.js may`,
+    );
+  }
+});
+
+test("no source file uses Math.random", () => {
+  for (const path of jsSourceFiles()) {
+    assert.doesNotMatch(
+      read(path),
+      /\bMath\s*\.\s*random\b/,
+      `${path} uses Math.random; randomness must come from crypto.getRandomValues`,
+    );
+  }
+});
+
 test("the WASM boot chain has a failure path that kills the page", () => {
   const app = read("src/js/app.js");
   assert.match(
