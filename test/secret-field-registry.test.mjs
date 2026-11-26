@@ -113,8 +113,8 @@ const CLEARING_PATHS = [
     },
   },
   {
-    ids: ["codex32-shares"],
-    why: "Codex32 MS1 shares and secrets typed by the user",
+    ids: ["codex32-shares", "codex32-out"],
+    why: "Codex32 MS1 shares and secrets typed by the user, and the recovered secret, derived share and master seed shown",
     probe: (id) => assert.ok(lifecycle.includes(`"${id}"`), `#${id} missing from the lifecycle sweep`),
   },
   {
@@ -230,6 +230,18 @@ const SECRET_FIELDS = CLEARING_PATHS.flatMap((row) => row.ids);
 
 test("every registry id has its clearing path wired", () => {
   for (const row of CLEARING_PATHS) for (const id of row.ids) row.probe(id);
+});
+
+// Browser translation sends the page's text to an online service, so the page
+// marks every element that shows a secret with translate="no"
+// (src/js/text-services.js). A registered element that is not a form control
+// displays its secret as page text and must carry the attribute itself.
+test("registered elements that display secrets are withheld from browser translation", () => {
+  for (const id of SECRET_FIELDS) {
+    const tag = shell.match(new RegExp(`<(\\w+)\\b[^>]*\\sid="${id}"[^>]*>`));
+    if (!tag || ["input", "textarea", "select"].includes(tag[1])) continue;
+    assert.match(tag[0], /\stranslate="no"/, `#${id} shows a secret and must set translate="no"`);
+  }
 });
 
 // Settings and public helpers. Keep a one-sentence reason per field so the
