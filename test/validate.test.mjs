@@ -213,6 +213,8 @@ test("the source scan covers every JavaScript file", () => {
   assert.ok(files.length > 50, `expected more than 50 JavaScript files under src/js, found ${files.length}`);
   for (const skipped of wasmModulePaths) assert.ok(existsSync(join(root, skipped)), `${skipped} is skipped by the scan but missing`);
   assert.ok(files.includes("src/js/clipboard.js") && files.includes("src/js/app-paste.js"), "the scan must read clipboard.js and app-paste.js");
+  // The walk itself, not only the predicate: a real file one folder down must be in the list.
+  assert.ok(files.includes("src/js/anti-exfil-adapters/jade.js"), "the scan must reach files in subfolders of src/js");
   // Only the exact generated paths are exempt, never a name that merely ends like one.
   assert.equal(isScannedSource("src/js/psbt-wasm-b64.js"), false, "a generated WASM embed is skipped");
   assert.equal(isScannedSource("src/js/net-wasm-b64.js"), true, "a new file named like an embed is scanned");
