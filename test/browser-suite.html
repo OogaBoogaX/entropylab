@@ -7430,7 +7430,7 @@
     equal(walletTabs().length, committedBefore + 1, "Deriving did not commit exactly one new wallet tab");
     document.getElementById("msig-edit-inputs").click();
     await until(() => !document.getElementById("msig-lab").hidden && document.getElementById("msig-x-0")?.value, "lab restored with the wallet's inputs");
-    equal(document.getElementById("msig-x-0").value, decorated.match(/\]([^/]+)/)[1], "Edit input did not restore the co-signer's bare extended public key");
+    equal(document.getElementById("msig-x-0").value, decorated.match(/\]([^/]+)/)[1] + "/0/*", "Edit input did not restore the co-signer's key with its branch");
     equal(document.querySelector("#msig-keys .msig-master-fingerprint").value, "932f8b09", "Edit input did not restore the separate master fingerprint");
     equal(document.querySelector("#msig-keys .msig-full-path").value, "m/48'/0'/0'/2'", "Edit input did not restore the separate full derivation path");
     equal(document.getElementById("msig-n").value, "1", "Edit input did not restore the key count");
@@ -7463,7 +7463,7 @@
     const noteStyle = getComputedStyle(note);
     equal(parseFloat(noteStyle.marginTop), 0, "The edit note added space above the card's padding");
     equal(parseFloat(noteStyle.marginBottom), parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--space-component")), "The edit note did not leave the shared component gap below");
-    equal(document.getElementById("msig-x-0").value, decorated.match(/\]([^/]+)/)[1], "Editing changed the co-signer key");
+    equal(document.getElementById("msig-x-0").value, decorated.match(/\]([^/]+)/)[1] + "/0/*", "Editing changed the co-signer's key with its branch");
     equal(document.getElementById("msig-address-start").value, originalStart, "Editing changed the address window");
     equal(walletTabs().length, originalCount, "Editing committed a tab before derivation");
     input(document.getElementById("msig-x-0"), "invalid");
@@ -7507,7 +7507,7 @@
 
   await test("multisig honors deep trailing paths and decodes the BIP type from key origins", async () => {
     // Fixed public test vectors: seeds 0x01…01 and 0x07…07. Nothing secret.
-    const deepKey = "[932f8b09/48h/0h/0h/2h]xpub6ESghgmLD5FuqvXEbeiDS5WDT7nrbkcQHVGCcatqeMSqgeH7MjExsH6wnbgo5DU8bUUGGhQf9D8DwjHRBaGTq2VzbzHsQZMWPdcETmmbLAr/0/0/20/*";
+    const deepKey = "[932f8b09/48h/0h/0h/2h]xpub6ESghgmLD5FuqvXEbeiDS5WDT7nrbkcQHVGCcatqeMSqgeH7MjExsH6wnbgo5DU8bUUGGhQf9D8DwjHRBaGTq2VzbzHsQZMWPdcETmmbLAr/0/0/20";
     const bip84Key = "[63969fb2/84h/0h/0h]xpub6CiYiNEkeCVkJJNmhDHaZrcDNY8bv4pnAepV4uBLPB7qFYsMDGP4QHLbRquL5LNPv3KyNXXdDE3XkAMc7xKRT8vGVF2bkWn8qZTi7LYF6s4";
     document.querySelector('#workspace [data-workspace="msig"]').click();
     await until(() => !document.getElementById("msig-card").hidden, "multisig workspace");
@@ -7522,6 +7522,12 @@
     setMsigScript("p2wsh");
     input(document.getElementById("msig-network"), "0");
     input(document.getElementById("msig-n-number"), "1");
+    input(document.getElementById("msig-x-0"), `${deepKey}/*`);
+    await until(
+      () => (document.querySelector("[data-msig-key-status]")?.textContent || "").includes("branch 20, outside the form's branch window 0-1"),
+      "deep-path wildcard branch-window refusal",
+    );
+    assert(document.getElementById("msig-go").disabled, "a co-signer branch outside the form window must not enable Calculate");
     input(document.getElementById("msig-x-0"), deepKey);
     const go = await until(() => !document.getElementById("msig-go").disabled && document.getElementById("msig-go"), "deep-path multisig derive button");
     go.click();
