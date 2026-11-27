@@ -360,4 +360,3 @@ export function hodlInitCodex32({ copyIcon = () => "" } = {}) {
   });
   field("codex32-clear")?.addEventListener("click", hodlCodex32Wipe);
 }
-

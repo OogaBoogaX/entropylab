@@ -305,17 +305,34 @@
     } finally {
       card.hidden = wasHidden;
     }
+    const assertInvalidated = () => {
+      equal(out.textContent, "");
+      equal(error.textContent, "");
+      equal(reveal.checked, false);
+      // Dispatch directly even while the cleared result controls are hidden.
+      // This distinguishes deleting the result from merely concealing it.
+      reveal.checked = true;
+      reveal.dispatchEvent(new Event("change", { bubbles: true }));
+      equal(out.textContent, "");
+      assert(!out.hasAttribute("data-private-value"), "an invalidated result cannot be revealed");
+      reveal.checked = false;
+    };
     index.value = "e";
     index.dispatchEvent(new Event("input", { bubbles: true }));
-    equal(out.textContent, ""); equal(error.textContent, "");
+    assertInvalidated();
     index.value = "d";
     document.getElementById("codex32-derive").click();
+    showResult();
+    equal(out.textContent, expectedShare);
+    input.value += "\n";
     input.dispatchEvent(new Event("input", { bubbles: true }));
-    equal(out.textContent, ""); equal(error.textContent, "");
+    assertInvalidated();
     document.getElementById("codex32-recover").click();
+    showResult();
+    equal(out.textContent, "ms12names6xqguzttxkeqnjsjzv4jv3nz5k3kwgsphuh6evw\nd1808e096b35b209ca12132b264662a5");
     size.value = "32";
     size.dispatchEvent(new Event("change", { bubbles: true }));
-    equal(out.textContent, ""); equal(error.textContent, "");
+    assertInvalidated();
     index.value = "s";
     document.getElementById("codex32-derive").click();
     equal(out.textContent, "");
