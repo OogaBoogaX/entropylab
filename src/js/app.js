@@ -24261,6 +24261,8 @@ function hodlInitSecretFieldAutoClear() {
       if (spVerifyOutputs) spVerifyOutputs.value = "";
       if (spLabel) spLabel.value = "";
       if (spPayname) spPayname.value = "";
+      // The view can hold revealed SP private keys; hodlSyncSpView inside hodlSpWipeMem may not have run.
+      try { let spAddressView = document.getElementById("sp-address-view"); if (spAddressView) { spAddressView.replaceChildren(); spAddressView.hidden = true; } } catch {}
     } catch {}
     try {
       let lnSeed = document.getElementById("ln-seed"), lnPass = document.getElementById("ln-pass");

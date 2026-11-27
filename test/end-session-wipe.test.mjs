@@ -23,7 +23,11 @@ const loadInit = (stubs) => {
 };
 
 const noop = () => {};
-const makeElement = (id) => ({ id, value: "secret", innerHTML: "secret", textContent: "secret", dataset: {}, style: { removeProperty: noop }, click: noop });
+const makeElement = (id) => ({
+  id, value: "secret", innerHTML: "secret", textContent: "secret", dataset: {}, style: { removeProperty: noop }, click: noop,
+  hidden: false,
+  replaceChildren() { this.innerHTML = ""; this.textContent = ""; },
+});
 
 const makeStubs = (element, overrides = {}) => {
   const stubs = {
@@ -189,4 +193,22 @@ test("a throw refreshing the multisig pickers does not skip the output and last-
   assert.doesNotThrow(() => stubs.clear());
   assert.equal(out.innerHTML, "");
   assert.equal(stubs.hodlLastWordCache.size, 0);
+});
+
+test("a throw in the Silent Payments wipe does not leave revealed SP private keys in the address view", () => {
+  const elements = new Map();
+  const element = (id) => {
+    if (!elements.has(id)) elements.set(id, makeElement(id));
+    return elements.get(id);
+  };
+  const stubs = makeStubs(element, { hodlSpWipeMem: () => { throw new Error("boom"); } });
+  const init = loadInit(stubs);
+  init();
+  assert.ok(stubs.clear, "clearSecretFields was not registered");
+  const view = element("sp-address-view");
+  view.textContent = "revealed scan/spend private keys";
+  view.hidden = false;
+  assert.doesNotThrow(() => stubs.clear());
+  assert.equal(view.textContent, "", "End Session left revealed SP private keys in #sp-address-view");
+  assert.equal(view.hidden, true, "End Session left #sp-address-view visible");
 });
