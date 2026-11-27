@@ -69,6 +69,7 @@ import { checkRbfReplacement as hodlCheckRbfReplacement } from "./psbt-rbf-check
 // The Lightning node key tool (its own workspace tab): aezeed deciphering
 // and the LND/LDK node identity derivations live in lightning.js/aezeed.js.
 import { hodlInitLn, hodlLnWipeMem } from "./lightning.js";
+import { initSeedXor, seedXorWipeMem } from "./seed-xor.js";
 import { hodlCompareSchnorrNonces, hodlParseSchnorr, hodlTapKeySigs, hodlTapScriptPathSigs, hodlTapScriptSigs, hodlTapSighashProblems, hodlTapWitnessShape } from "./psbt-schnorr.js";
 import {
   buildDeriveAddressesCommands,
@@ -3503,10 +3504,10 @@ function hodlSeedQrExport(mnemonic, options = {}) {
   let compact = "";
   try {
     let bytes = hodlCompactSeedQrBytes(options.entropyHex);
-    if (bytes) compact = `<div class="watch-only-qr seed-qr"><div class="qr qr-seed" aria-label="CompactSeedQR">${hodlUqrRenderSvg(bytes, { ecc: "L", border: 4, pixelSize: 4, blackColor: "#111111", whiteColor: "#ffffff" })}</div><p class="muted">${hodlT("CompactSeedQR. Same seed, smaller binary code.")}</p><p class="muted">${hodlT("Compatible with: SeedSigner, Krux, Jade, Passport.")}</p></div>`;
+    if (bytes) compact = `<div class="watch-only-qr seed-qr"><div class="qr qr-seed" aria-label="CompactSeedQR">${hodlUqrRenderSvg(bytes, { ecc: "L", border: 4, pixelSize: 4, blackColor: "#111111", whiteColor: "#ffffff" })}</div><p class="muted">${hodlT("CompactSeedQR. Same seed, smaller binary code.")}</p><p class="muted">${hodlT("Compatible with: SeedSigner, Krux, Jade, Passport.")}</p>${hodlSeedQrCopyGrid("compact-seedqr", words)}</div>`;
   } catch {
   }
-  return `<details class="wallet-advanced seed-qr-export"><summary>${hodlT("SeedQR")}</summary>${passNote ? `<p class="muted">${passNote}</p>` : ""}<div class="seed-qr-pair"><div class="watch-only-qr seed-qr"><div class="qr qr-seed" aria-label="SeedQR">${hodlUqrRenderSvg(digits, { ecc: "L", border: 4, pixelSize: 4, blackColor: "#111111", whiteColor: "#ffffff" })}</div><p class="muted">${hodlT("SeedQR. Numeric.")}</p><p class="muted">${hodlT("Compatible with: SeedSigner, Krux, Jade, Passport, Coldcard Q.")}</p>${hodlPrivateFieldHtml("SeedQR digits", digits)}</div>${compact}</div></details>`;
+  return `<details class="wallet-advanced seed-qr-export"><summary>${hodlT("SeedQR")}</summary>${passNote ? `<p class="muted">${passNote}</p>` : ""}<div class="seed-qr-pair"><div class="watch-only-qr seed-qr"><div class="qr qr-seed" aria-label="SeedQR">${hodlUqrRenderSvg(digits, { ecc: "L", border: 4, pixelSize: 4, blackColor: "#111111", whiteColor: "#ffffff" })}</div><p class="muted">${hodlT("SeedQR. Numeric.")}</p><p class="muted">${hodlT("Compatible with: SeedSigner, Krux, Jade, Passport, Coldcard Q.")}</p>${hodlPrivateFieldHtml("SeedQR digits", digits)}${hodlSeedQrCopyGrid("standard-seedqr", words)}</div>${compact}</div></details>`;
 }
 var hodlSeedLengths = Object.freeze({
   12: Object.freeze({ words: 12, bits: 128, bytes: 16, hexChars: 32, hashRolls: 50, partialWords: 11, candidates: 128 }),
@@ -6787,6 +6788,11 @@ function hodlAppPasteLabel(id) {
     "nonce-pass": () => hodlTText("nonce passphrase"),
     "ln-seed": () => hodlTText("Lightning seed phrase"),
     "ln-pass": () => hodlTText("Lightning passphrase"),
+    "seedxor-original": () => hodlTText("original Seed XOR phrase"),
+    "seedxor-part-a": () => hodlTText("Seed XOR part A"),
+    "seedxor-part-b": () => hodlTText("Seed XOR part B"),
+    "seedxor-part-c": () => hodlTText("Seed XOR part C"),
+    "seedxor-part-d": () => hodlTText("Seed XOR part D"),
     "core-add-text": () => hodlTText("output descriptor"),
     "journal-input": () => hodlTText("raw rolls or input"),
     "journal-phrase": () => hodlTText("BIP39 seed or passphrase"),
@@ -7127,6 +7133,54 @@ const hodlPsbtScanHosts = [
   ["psbt-scan-host", "psbt-text"], ["nonce-scan-host", "nonce-text"], ["psbted-scan-host", "psbted-text"],
   ["rbf-scan-host", "psbt-rbf-original"], ["audit-scan-host", "psbt-audit-before"], ["psbted-compare-scan-host", "psbted-compare-text"],
 ];
+// Check a SLIP-39 backup (Verify tab) is preview-only the same way: release
+// builds fold the flag, so the module is never imported and there is no host.
+var hodlSlip39Check = null;
+function hodlBindSlip39Check() {
+  if (typeof __ENTROPYLAB_PREVIEW__ !== "undefined" && __ENTROPYLAB_PREVIEW__) {
+    import("./slip39-check.js").then((module) => {
+      let host = document.getElementById("slip39-check-host");
+      if (!host || hodlSlip39Check) return;
+      hodlSlip39Check = module.mountSlip39Check(host, {
+        translate: hodlTText,
+        network: () => hodlNetworkChoice,
+        // The Key Station's own readouts: a copyable field and the address table.
+        fieldHtml: (label, value) => hodlPublicFieldHtml(label, value),
+        addressTableHtml: (rows) => hodlAddressTable(rows, hodlTText("First receive addresses"), false, "slip39-receive"),
+      });
+    }).catch(() => {});
+  }
+}
+// Check a SeedQR copy (Verify tab) is preview-only the same way: release
+// builds fold the flag, so the module is never imported and there is no host.
+var hodlSeedQrCheck = null, hodlSeedQrModule = null;
+function hodlBindSeedQrCheck() {
+  if (typeof __ENTROPYLAB_PREVIEW__ !== "undefined" && __ENTROPYLAB_PREVIEW__) {
+    import("./seedqr-check.js").then((module) => {
+      hodlSeedQrModule = module;
+      let host = document.getElementById("seedqr-check-host");
+      if (!host || hodlSeedQrCheck) return;
+      hodlSeedQrCheck = module.mountSeedQrCheck(host, {
+        translate: hodlTText,
+        privateValue: (value, revealed) => hodlPrivateValue(value, "secret private-field-value", revealed),
+        network: () => hodlNetworkChoice,
+      });
+    }).catch(() => {});
+  }
+}
+// The SeedQR export's numbered copy grid and mask (preview builds, once the
+// module above has loaded); "" otherwise.
+function hodlSeedQrCopyGrid(format, words) {
+  if (typeof __ENTROPYLAB_PREVIEW__ === "undefined" || !__ENTROPYLAB_PREVIEW__ || !hodlSeedQrModule) return "";
+  let indices = Uint16Array.from(words, (word) => hodlBip39Wordlist.indexOf(word));
+  try {
+    return hodlSeedQrModule.seedQrCopyGridMarkup(format, indices, hodlTText);
+  } catch {
+    return "";
+  } finally {
+    indices.fill(0);
+  }
+}
 function hodlKeyScanHostMarkup() {
   return '<div id="key-scan-host"></div>';
 }
@@ -20205,11 +20259,15 @@ function hodlShowWorkspace(id) {
   // Preview builds only: a release build strips the Verify card.
   const verifyCard = document.getElementById("verify-card");
   if (verifyCard) verifyCard.hidden = id !== "verify";
+  const seedXorCard = document.getElementById("seedxor-card");
+  if (seedXorCard) seedXorCard.hidden = id !== "seedxor";
   // The context block sits outside its tool's card, so it is shown and hidden
   // with the card rather than by it.
   ["bip85", "sp", "msig", "calc", "vanity", "ln", "core"].forEach((tool) => {
     document.getElementById(`${tool}-tool-intro`).hidden = id !== tool;
   });
+  const seedXorIntro = document.getElementById("seedxor-tool-intro");
+  if (seedXorIntro) seedXorIntro.hidden = id !== "seedxor";
   hodlSyncPsbtTool();
   hodlSyncJournalTool();
   hodlSyncPrivacyTool();
@@ -20368,6 +20426,7 @@ async function hodlLoadTestKeys() {
 // push the nine tools past the desktop strip (owner, 2026-10-26); the full
 // name stays the accessible name and the hover title.
 var hodlWorkspaceTabs = [["calc", "Keys", "Keys"], ["msig", "Multi Signature", "MultiSig", "MultiSig"], ["psbt", "Transactions", "Txns"], ["ln", "Lightning", "LN"], ["core", "Bitcoin Core", "Core"], ["bip85", "BIP-85 Child", "BIP-85", "BIP-85"], ["sp", "Privacy", "Privacy"], ["vanity", "Vanity Address", "Vanity", "Vanity"], ["journal", "Journal", "Journal"], ["verify", "Verify", "Verify"]];
+if (__ENTROPYLAB_PREVIEW__) hodlWorkspaceTabs.splice(hodlWorkspaceTabs.findIndex(([id]) => id === "journal"), 0, ["seedxor", "Seed XOR", "XOR", "Seed XOR"]);
 // The Privacy workspace's stations: the id a station tab carries and the card
 // it shows. Later PRs add ["bip47", …] and ["check", …] rows here.
 var hodlPrivacyTools = [["sp", "sp-card"]];
@@ -23833,6 +23892,7 @@ function hodlInitWorkspace() {
   hodlInitVanity();
   hodlInitSp();
   hodlInitLn({ journalLog: hodlJournalLog, copyIcon: hodlClipboardIconMarkup, qrSvg: hodlQrSvg, pageNetwork: () => hodlInspectorNetwork() });
+  if (__ENTROPYLAB_PREVIEW__) initSeedXor({ doc: document, copyIcon: hodlClipboardIconMarkup });
 }
 var hodlKeyClearSyncQueued = false, hodlMsigClearSyncQueued = false, hodlDeriveSyncQueued = false;
 function hodlQueueKeyClearButtonSync() {
@@ -24153,6 +24213,8 @@ function hodlInitEndSession() {
 var hodlRevealIdleMs = 5 * 60 * 1000;
 function hodlConcealPrivateValues(options) {
   if (typeof hodlBip47Conceal === "function") hodlBip47Conceal();
+  try { hodlSlip39Check?.conceal(); } catch {}
+  try { hodlSeedQrCheck?.conceal(); } catch {}
   // Plain blur permits copying the opening/PSBT from another window. Other
   // conceal triggers retire the pasted host reveal, which remains sensitive.
   if (options?.reason !== "blur") {
@@ -24198,6 +24260,7 @@ function hodlInitSecretFieldAutoClear() {
     try { hodlSpWipeMem(); } catch {}
     try { hodlBip47WipeMem(); } catch {}
     try { hodlLnWipeMem(); } catch {}
+    try { if (__ENTROPYLAB_PREVIEW__) seedXorWipeMem(); } catch {}
     // Every derived wallet's row key bytes, shared results included: the
     // whole session is going (#546 B2). Before the Journal wipe, which empties
     // the Key Manager's pending keys. A result can be mid-update and throw,
@@ -24405,6 +24468,8 @@ function hodlInitSecretFieldAutoClear() {
       try { hodlKeyScanModule?.retireQrDecoders(); } catch {}
       try { hodlPsbtScanModule?.retireQrDecoders(); } catch {}
       try { hodlTextScanModule?.retireQrDecoders(); } catch {}
+      try { hodlSlip39Check?.clear(); } catch {}
+      try { hodlSeedQrCheck?.clear(); } catch {}
       // The form outlives the wipe: give it a fresh, closed panel.
       try { hodlBindKeyScan(); } catch {}
       try { hodlBindSeedScan(); } catch {}
@@ -24509,6 +24574,10 @@ function hodlApplyLocale() {
   document.querySelectorAll("#msig-keys textarea").forEach((ta) => {
     if (ta.value) hodlCheckXpub(ta);
   });
+  // Check a SLIP-39 backup relabels in place: re-mounting would drop the shares.
+  try { hodlSlip39Check?.retranslate(); } catch {}
+  // Check a SeedQR copy relabels in place: re-mounting would drop the copy.
+  try { hodlSeedQrCheck?.retranslate(); } catch {}
   try { hodlDestroyTextScans(); } catch {}
   try { hodlBindTextScans(); } catch {}
   // These three hosts are static, so a language switch re-mounts the panels
@@ -24521,6 +24590,8 @@ async function hodlBoot() {
   hodlInitStationPassphraseVaults();
   hodlInitWorkspace();
   initOtsVerifier(document);
+  hodlBindSlip39Check();
+  hodlBindSeedQrCheck();
   hodlInitAddressQr(hodlQrSvg, { copy: hodlClipboardIconMarkup, copied: hodlCopiedIconMarkup }, { frames: hodlPsbtQrFrames });
   hodlLowEntropyConfirm = initLowEntropyConfirm();
   hodlFingerprintCollisionConfirm = initFingerprintCollisionConfirm();
