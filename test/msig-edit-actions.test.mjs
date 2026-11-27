@@ -144,6 +144,49 @@ test("ordinary station derivation retains existing identity-based replacement", 
   assert.equal(context.hodlMsigs[1].name, original.name);
 });
 
+test("a listed wallet derived from the same keys gets its own tab instead of replacing the sorted one", () => {
+  const { context, original } = harness();
+  const before = json(original);
+  context.hodlActiveMsig = 0;
+  Object.assign(context.hodlMsigs[0], {
+    fields: { ...json(fields), keyOrder: "listed" },
+    result: { ...original.result },
+  });
+  context.hodlCommitDerivedMsig();
+  assert.equal(context.hodlMsigs.length, 3);
+  assert.equal(context.hodlMsigs[1], original);
+  assert.deepEqual(json(original), before);
+  assert.equal(context.hodlMsigs[2].fields.keyOrder, "listed");
+  assert.equal(context.hodlActiveMsig, 2);
+});
+
+test("deriving the same sorted wallet again still updates the existing tab", () => {
+  const { context, original } = harness();
+  context.hodlActiveMsig = 0;
+  Object.assign(context.hodlMsigs[0], { fields: json(fields), result: { ...original.result } });
+  context.hodlCommitDerivedMsig();
+  assert.equal(context.hodlMsigs.length, 2);
+  assert.equal(context.hodlMsigs[1].id, original.id);
+  assert.equal(context.hodlMsigs[1].name, original.name);
+  context.hodlActiveMsig = 0;
+  Object.assign(context.hodlMsigs[0], { fields: json(fields), result: { ...original.result } });
+  context.hodlCommitDerivedMsig();
+  assert.equal(context.hodlMsigs.length, 2);
+  assert.equal(context.hodlMsigs[1].id, original.id);
+  assert.equal(context.hodlMsigs[1].name, original.name);
+});
+
+test("a saved tab with no keyOrder field is treated as sorted", () => {
+  const { context, original } = harness();
+  delete original.fields.keyOrder;
+  context.hodlActiveMsig = 0;
+  Object.assign(context.hodlMsigs[0], { fields: json(fields), result: { ...original.result } });
+  context.hodlCommitDerivedMsig();
+  assert.equal(context.hodlMsigs.length, 2);
+  assert.equal(context.hodlMsigs[1].id, original.id);
+  assert.equal(context.hodlMsigs[1].name, original.name);
+});
+
 test("a multisig tab displays its stored name even when it has a saved quorum", () => {
   const { context, original } = harness();
   context.document = { createElement: () => ({

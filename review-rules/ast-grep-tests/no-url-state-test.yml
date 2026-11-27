@@ -1,0 +1,46 @@
+id: no-url-state
+valid:
+  - |
+    // location.hash = secret is forbidden
+    const s = "location.hash";
+  - |
+    const hash = location.hash;
+    const search = window.location.search;
+  - |
+    const f = history.pushState;
+    const g = history.replaceState;
+invalid:
+  - |
+    location.hash = secret;
+  - |
+    location.search = "?x";
+  - |
+    location.href = url;
+  - |
+    window.location.hash = secret;
+  - |
+    window.location.search = "?x";
+  - |
+    window.location.href = url;
+  - |
+    history.pushState({}, "", "/x");
+  - |
+    history.replaceState({}, "", "/x");
+  - |
+    globalThis.location.hash = secret;
+  - |
+    self.location.search = "?x";
+  - |
+    globalThis.location.href = url;
+  - |
+    location.assign(url);
+  - |
+    location.replace(url);
+  - |
+    window.location.assign(url);
+  - |
+    globalThis.location.replace(url);
+  - |
+    window.history.pushState({}, "", "/x");
+  - |
+    self.history.replaceState({}, "", "/x");

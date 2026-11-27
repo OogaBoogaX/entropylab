@@ -144,6 +144,49 @@ test("an over-long hex key goes invalid in sync instead of being truncated", () 
   assert.doesNotMatch(source, /\.slice\(0, 64\)/);
 });
 
+// An over-long seed phrase is invalid too, not a prefix to truncate. A 24-word
+// backup pasted while 12 words is selected used to publish its leading words,
+// which hodlApplyGlobalSync cut to 128 bits and re-checksummed: a fresh
+// 12-word phrase, unrelated to the backup, in every other method while the
+// seed field itself said "extra word". Expected bits are the published BIP39
+// vectors already used in test/seed-material.test.mjs: "abandon" is index 0,
+// the all-zero 12-word vector is 128 zero bits, and a partial word is 11 bits.
+test("an over-long seed phrase goes invalid in sync instead of being truncated", async () => {
+  await withDocument(async () => {
+    const { loadAppFunctions } = await import("./app-slice-harness.mjs");
+    const twelve = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about";
+    const twentyFour = `${"abandon ".repeat(23)}art`;
+    let value = "";
+    const slice = await loadAppFunctions(["hodlGlobalSyncCurrentBits"], {
+      stubs: { hodlGlobalSyncCurrentValue: () => value },
+      settable: ["hodlKeyMode", "hodlSeedMethod", "hodlSeedZeroIndexed"],
+    });
+    slice.__set.hodlKeyMode("seed");
+    slice.__set.hodlSeedMethod("words");
+    // A 24-word backup with 12 words selected publishes nothing.
+    value = twentyFour;
+    assert.equal(slice.hodlGlobalSyncCurrentBits(12), null, "24 words for a 12-word target");
+    // The 12-word vector itself still publishes its whole 128-bit entropy.
+    value = twelve;
+    assert.equal(slice.hodlGlobalSyncCurrentBits(12), "0".repeat(128), "the whole 12-word vector");
+    // One word past a valid 12-word phrase publishes nothing either.
+    value = `${twelve} abandon`;
+    assert.equal(slice.hodlGlobalSyncCurrentBits(12), null, "13 words for a 12-word target");
+    // Fewer words than the target is still being typed: partial bits as today.
+    value = twelve.split(" ").slice(0, 11).join(" ");
+    assert.equal(slice.hodlGlobalSyncCurrentBits(12), "0".repeat(121), "11 words are still being typed");
+    // Seed numbers count every number entered, not only the first twelve:
+    // the 1-indexed numbers of the 12-word vector ("abandon" = 1, "about" = 4)
+    // plus one more number publish nothing, while the twelve alone still do.
+    slice.__set.hodlSeedMethod("numbers");
+    slice.__set.hodlSeedZeroIndexed(false);
+    value = `${"1 ".repeat(11)}4`;
+    assert.equal(slice.hodlGlobalSyncCurrentBits(12), "0".repeat(128), "the 12-number vector");
+    value = `${"1 ".repeat(11)}4 1`;
+    assert.equal(slice.hodlGlobalSyncCurrentBits(12), null, "13 numbers for a 12-word target");
+  });
+});
+
 test("a hex key with a non-hex character goes invalid in sync instead of being cut off", () => {
   // Stopping at the first non-hex character published the digits before it:
   // a shorter key the private-key field rejects (the bitcoinjs/bip39
