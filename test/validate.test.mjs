@@ -1099,6 +1099,27 @@ test("seed text refuses punctuation inside a word but keeps CSV and JSON separat
     assert.equal(result.error, punctuation(2));
   }
 
+  // A token with no letters is not a word: the normalizer turns every
+  // non-letter into a separator, so a lone "." or "-" must not shift the
+  // position the message reports.
+  const validators = [
+    (text) => slice.hodlValidateMnemonic(text),
+    (text) => slice.hodlValidateTargetMnemonic(text, 12),
+  ];
+  for (const validate of validators) {
+    assert.deepEqual(validate(". " + dotted).error, validate(dotted).error, "a lone period is not a word");
+  }
+  const second = twelve.replace(/abandon (abandon)/, "abandon aban.don");
+  assert.notEqual(second, twelve, "fixture: the second word carries the punctuation");
+  assert.equal(slice.hodlValidateMnemonic(second).ok, false, "fixture: the dotted second word is refused");
+  for (const validate of validators) {
+    assert.deepEqual(
+      validate("abandon - " + second.slice("abandon ".length)).error,
+      validate(second).error,
+      "a lone hyphen is not a word",
+    );
+  }
+
   const mixed = twelve.replace("abandon", "aban-don1");
   assert.equal(slice.hodlValidateMnemonic(mixed).error, oldDigit);
   assert.equal(slice.hodlValidateTargetMnemonic(mixed, 12).error, oldDigit);

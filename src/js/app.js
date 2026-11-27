@@ -243,6 +243,7 @@ function hodlSeedTextProblem(value) {
   let position = 0;
   for (let token of text.split(/[,\;|"\[\]\s]+/)) {
     if (!token) continue;
+    if (!/[A-Za-z]/.test(token)) continue;
     position += 1;
     if (/[A-Za-z][^A-Za-z]+[A-Za-z]/.test(token)) return hodlNote("Word {n} has punctuation inside it. Remove the punctuation, or replace it with a space if it joins two words.", { n: position });
   }
