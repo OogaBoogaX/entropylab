@@ -331,6 +331,19 @@ words, pick one of the checksum words.</span></span>
           <button class="btn red clear-current-action" id="vanity-wipe" type="button" disabled>Clear Results</button>
         </div>
       </div>
+      <!-- preview -->
+      <div class="tool-intro edge-note is-info" id="seedtools-tool-intro" hidden>
+        <h2>Seed tools</h2>
+        <p class="muted tool-intro-note">Derive a BIP-85 child seed, work with Codex32 shares (checksum, recover, or make another share), or check a hand-copied SeedQR square by square. Makes no new entropy. Nothing leaves this page.</p>
+      </div>
+      <div class="key-manager no-print" id="seedtools-manager" hidden>
+        <div class="key-tab-strip">
+          <div class="key-tabs" id="seedtools-tool-tabs" role="tablist" aria-label="Seed tools stations">
+            <button class="tab key-tab active" id="seedtools-bip85-tab" type="button" role="tab" aria-selected="true" aria-controls="bip85-card" data-seedtools-tool="bip85"><span class="key-tab-label">BIP-85 child seeds</span></button>
+          </div>
+        </div>
+      </div>
+      <!-- /preview -->
       <div class="tool-intro edge-note is-info" id="bip85-tool-intro" hidden>
         <h2>Child seeds from a parent key</h2>
         <p class="muted tool-intro-note">Same parent, same settings, same child every time. English BIP-39 children match COLDCARD. No new entropy is generated.</p>

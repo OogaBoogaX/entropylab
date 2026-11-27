@@ -124,7 +124,7 @@ test("switching away from Vanity leaves an active grind running", () => {
   const element = () => ({ hidden: false });
   const makeWorkspace = new Function(
     "window", "document", "hodlElement", "hodlVanityCancel", "requestAnimationFrame", "cancelAnimationFrame",
-    "hodlSyncPsbtTool", "hodlSyncJournalTool", "hodlJournalLog", "hodlOutEl", "hodlQueueSegmentedControlSync", "hodlSyncPrivacyTool",
+    "hodlSyncPsbtTool", "hodlSyncJournalTool", "hodlJournalLog", "hodlOutEl", "hodlQueueSegmentedControlSync", "hodlSyncPrivacyTool", "PREVIEW",
     `let hodlWorkspace = "vanity";
      let hodlWorkspaceScrollFrame = 0;
      let hodlWalletResult = null;
@@ -146,6 +146,7 @@ test("switching away from Vanity leaves an active grind running", () => {
     { innerHTML: "result" },
     () => {},
     () => {},
+    false,
   );
 
   switchWorkspace("ln");
