@@ -232,12 +232,22 @@ function hodlBitBoxLookupWord(e, t) {
 function hodlNormalizeMnemonicText(e) {
   return e.trim().toLowerCase().replace(/[^a-z\s]/g, " ").split(/\s+/).filter(Boolean).join(" ");
 }
+// A seed phrase is read through the normalizer, which turns every non-letter
+// into a separator. Digits and non-ASCII letters are refused first; ASCII
+// punctuation between two letters inside a word is refused too, except comma,
+// semicolon, pipe, double quote and square brackets, which always separate
+// words (CSV and JSON pastes).
+function hodlSeedTextProblem(value) {
+  let text = String(value ?? "");
+  if (/[0-9]|[^\x00-\x7F]/.test(text)) return hodlNote("Seed words are the BIP39 English list: remove digits and non-ASCII characters.");
+  for (let token of text.split(/[,\;|"\[\]\s]+/)) {
+    if (/[A-Za-z][^A-Za-z]+[A-Za-z]/.test(token)) return hodlNote("\u201C{text}\u201D has punctuation inside a word. Remove it, or put a space between the words.", { text: token });
+  }
+  return null;
+}
 function hodlValidateMnemonic(e) {
-  // The normalizer turns every non-letter into a separator, so a digit or a
-  // non-ASCII letter glued to a word silently rewrites the phrase (and can
-  // still validate). Refuse it here too, where the PSBT, Silent Payments and
-  // Lightning stations read a pasted seed (audit follow-up).
-  if (/[0-9]|[^\x00-\x7F]/.test(String(e ?? ""))) return { ok: false, words: [], unknown: [], error: hodlNote("Seed words are the BIP39 English list: remove digits and non-ASCII characters.") };
+  let problem = hodlSeedTextProblem(e);
+  if (problem) return { ok: false, words: [], unknown: [], error: problem };
   let t = hodlNormalizeMnemonicText(e).split(" ").filter(Boolean), r = t.map((o, i) => ({ index: i, word: o })).filter(({ word: o }) => !hodlBip39Wordlist.includes(o));
   if (t.length === 0) return { ok: false, words: t, error: hodlNote("Type or paste your seed phrase."), unknown: r };
   if (![12, 15, 18, 21, 24].includes(t.length)) return { ok: false, words: t, unknown: r, error: hodlNote("A seed phrase is 12, 15, 18, 21, or 24 words. You entered {n}.", { n: t.length }) };
@@ -246,6 +256,7 @@ function hodlValidateMnemonic(e) {
   return hodlIsValidMnemonic(n, hodlBip39Wordlist) ? { ok: true, words: t, unknown: r } : { ok: false, words: t, unknown: r, error: hodlNote("Words are on the list, but the checksum does not match. One of the words is wrong, or this is not a BIP39 phrase.") };
 }
 function hodlLastWordCandidates(e) {
+  if (hodlSeedTextProblem(e)) return null;
   let t = hodlNormalizeMnemonicText(e).split(" ").filter(Boolean), n = { 11: 12, 14: 15, 17: 18, 20: 21, 23: 24 }[t.length];
   if (!n) return null;
   let o = t.filter((s) => !hodlBip39Wordlist.includes(s));
@@ -4784,13 +4795,8 @@ function hodlSeedCountStatus(count, targetWords = hodlTargetWordCount) {
   return entered <= config.words ? hodlT("{entered} of {words} BIP39 words entered", { entered, words: config.words }) : hodlT("{entered} entered · {words} required BIP39 words", { entered, words: config.words });
 }
 function hodlValidateTargetMnemonic(value, targetWords = hodlTargetWordCount) {
-  // Digits and non-ASCII letters are separators to the normalizer but word
-  // characters to the analyzer: "abandon1abandon" shows red and would still
-  // derive the clean phrase's wallet. Refuse them instead of silently
-  // changing the phrase (audit follow-up).
-  if (/[0-9]|[^\x00-\x7F]/.test(String(value ?? ""))) {
-    return { ok: false, words: [], error: hodlNote("Seed words are the BIP39 English list: remove digits and non-ASCII characters."), unknown: [] };
-  }
+  let problem = hodlSeedTextProblem(value);
+  if (problem) return { ok: false, words: [], error: problem, unknown: [] };
   let words = hodlNormalizeMnemonicText(value).split(" ").filter(Boolean), config = hodlSeedConfig(targetWords);
   if (!words.length) return { ok: false, words, error: hodlNote("{entered} of {words} BIP39 words entered · {n} remaining", { entered: 0, words: config.words, n: config.words }), unknown: [] };
   if (words.length !== config.words) {
@@ -4820,6 +4826,7 @@ function hodlParseSeedNumbers(value, targetWords = hodlTargetWordCount, zeroInde
 }
 function hodlSeedWordsToNumbers(value, zeroIndexed = hodlSeedZeroIndexed) {
   if (hodlLooksExtendedKey(value)) return "";
+  if (hodlSeedTextProblem(value)) return "";
   let words = hodlNormalizeMnemonicText(value).split(" ").filter(Boolean), indices = words.map((word) => hodlBip39WordIndex.get(word));
   return words.length && indices.every((index) => Number.isInteger(index)) ? indices.map((index) => index + (zeroIndexed ? 0 : 1)).join(" ") : "";
 }
@@ -4843,6 +4850,7 @@ function hodlSelectedSeedInput(targetWords = hodlTargetWordCount) {
   return { value, extended: hodlLooksExtendedKey(value), parsed: null };
 }
 function hodlTargetLastWords(value, targetWords = hodlTargetWordCount) {
+  if (hodlSeedTextProblem(value)) return null;
   let words = hodlNormalizeMnemonicText(value).split(" ").filter(Boolean), config = hodlSeedConfig(targetWords);
   if (words.length !== config.partialWords) return null;
   return hodlComputeTargetLastWords(words, config.words);
@@ -6368,6 +6376,7 @@ function hodlGlobalSyncCurrentBits(targetWords = hodlTargetWordCount) {
         entered = parsed.entries.length;
       }
       else if (!hodlLooksExtendedKey(value)) {
+        if (hodlSeedTextProblem(value)) return null;
         let tokens = hodlNormalizeMnemonicText(value).split(" ").filter(Boolean);
         entered = tokens.length;
         words = [];
