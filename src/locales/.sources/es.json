@@ -2636,5 +2636,7 @@
   "Split seed": "5301b2f29952b70cb5c4fdddaabd696ba474450fd0da03cae3771be922f9ade2",
   "Reveal private output": "897becbba6f87e22920ac9ff995d95ed17d203b7560d5703f8f8f7dfd6610b5d",
   "The restored phrase and split parts are seed backups. Anyone with the restored phrase, or with every split part, controls the wallet.": "f5073eeb057295d96c47d5bd706ddbd6621f202312c8d873b61b7d63c10ce3d9",
-  "Nothing is stored or sent. Clear, End Session, and leaving the page empty these fields; revealed output is concealed when you leave, print, or stay idle. Memory clearing is best-effort.": "be89c62efd5b5bda94f13bc5fca650db10330b2c22200f4d6bcf3bd8deda84c0"
+  "Nothing is stored or sent. Clear, End Session, and leaving the page empty these fields; revealed output is concealed when you leave, print, or stay idle. Memory clearing is best-effort.": "be89c62efd5b5bda94f13bc5fca650db10330b2c22200f4d6bcf3bd8deda84c0",
+  "Check a SeedQR copy": "b3466e1f6e3a6811281efd888862a73a118ad09e8afbe1f77fdef308fe302199",
+  "Checks a SeedQR you copied by hand, square by square, with a QR reader that shares no code with the wallet that made it. It lists every wrong square, even ones a scanner would silently correct. Nothing leaves this page.": "896c25e27271a9baa595933136cea559930752d38671b8cb841b3f303c527d77"
 }
