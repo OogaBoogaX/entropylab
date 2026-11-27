@@ -1073,7 +1073,15 @@ words, pick one of the checksum words.</span></span>
           <button class="btn red" id="codex32-clear" type="button">Clear</button>
         </div>
         <p class="err" id="codex32-error" role="alert"></p>
-        <pre class="mono" id="codex32-out" aria-live="polite" translate="no"></pre>
+        <div id="codex32-result" hidden>
+          <label class="choice"><input type="checkbox" id="codex32-reveal" data-private-reveal aria-controls="codex32-readout">
+            <span class="private-heading">Reveal private result</span>
+          </label>
+          <div class="private-field is-revealed" id="codex32-readout" data-private-field hidden>
+            <p class="label copy-field-label">Codex32 result<span id="codex32-copy"></span></p>
+            <pre class="mono" id="codex32-out" data-i18n-skip translate="no"></pre>
+          </div>
+        </div>
       </section>
     <div class="tool-intro edge-note is-info" id="journal-tool-intro" hidden>
         <h2>Entropy Journal</h2>

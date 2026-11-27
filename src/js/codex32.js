@@ -7,6 +7,8 @@
 // Calculate Checksum appends a checksum to the header and payload that were
 // typed. It does not search for a transcription error already in that payload.
 
+import { privateCopyButtonHtml } from "./private-data.js";
+
 const CHARSET = "qpzry9x8gf2tvdw0s3jn54khce6mua7l";
 const CHAR_AT = new Map([...CHARSET].map((character, index) => [character, index]));
 const MS32_CONST = 0x10ce0795c2fd1e62an;
@@ -255,10 +257,33 @@ function field(id) {
   return document.getElementById(id);
 }
 
-function clearResult() {
+let resultBytes = null;
+
+function renderResult() {
+  const reveal = field("codex32-reveal");
   const out = field("codex32-out");
+  const readout = field("codex32-readout");
+  const result = field("codex32-result");
+  const shown = Boolean(resultBytes && reveal?.checked);
+  if (out) {
+    out.textContent = shown ? new TextDecoder().decode(resultBytes) : "";
+    out.toggleAttribute("data-private-value", shown);
+  }
+  if (readout) readout.hidden = !shown;
+  if (result) result.hidden = !resultBytes;
+}
+
+function concealResult() {
+  const reveal = field("codex32-reveal");
+  if (reveal) reveal.checked = false;
+  renderResult();
+}
+
+function clearResult() {
+  resultBytes?.fill(0);
+  resultBytes = null;
+  concealResult();
   const error = field("codex32-error");
-  if (out) out.textContent = "";
   if (error) error.textContent = "";
 }
 
@@ -275,14 +300,14 @@ export function hodlCodex32Wipe() {
   const index = field("codex32-index");
   if (shares) shares.value = "";
   if (index) index.value = "";
-  resetSeedSize();
   clearResult();
+  resetSeedSize();
 }
 
 function show(text) {
   clearResult();
-  const out = field("codex32-out");
-  if (out) out.textContent = text;
+  resultBytes = new TextEncoder().encode(text);
+  renderResult();
 }
 
 function fail(error) {
@@ -291,10 +316,15 @@ function fail(error) {
   if (node) node.textContent = error?.message || String(error);
 }
 
-export function hodlInitCodex32() {
+export function hodlInitCodex32({ copyIcon = () => "" } = {}) {
   const shares = field("codex32-shares");
   if (!shares || shares.dataset.codex32Ready) return;
   shares.dataset.codex32Ready = "1";
+  const copy = field("codex32-copy");
+  if (copy) copy.innerHTML = privateCopyButtonHtml(copyIcon, { label: "Copy to EntropyLab's clipboard" });
+  field("codex32-reveal")?.addEventListener("change", renderResult);
+  document.addEventListener("hodl:conceal", concealResult);
+  renderResult();
   shares.addEventListener("input", () => {
     resetSeedSize();
     clearResult();

@@ -10,6 +10,7 @@ import {
   completeCodex32Checksum,
   deriveCodex32Share,
   hodlInitCodex32,
+  hodlCodex32Wipe,
   parseCodex32,
   recoverCodex32Secret,
 } from "../src/js/codex32.js";
@@ -95,23 +96,41 @@ test("checksum completion requires the user's supported seed size instead of inf
   }
 });
 
+test("BIP-93 vector 3 accepts arbitrary discarded bits without changing the master seed", () => {
+  const expected = "ffeeddccbbaa99887766554433221100";
+  for (const variant of [
+    secret3,
+    "ms13cashsllhdmn9m42vcsamx24zrxgs3qpte35dvzkjpt0r",
+    "ms13cashsllhdmn9m42vcsamx24zrxgs3qzfatvdwq5692k6",
+    "ms13cashsllhdmn9m42vcsamx24zrxgs3qrsx6ydhed97jx2",
+  ]) assert.equal(parseCodex32(variant).masterSeedHex, expected);
+});
+
 test("editing checksum inputs, shares, or the target immediately retires the previous result", (t) => {
   const previous = globalThis.document;
-  const nodes = new Map(["shares", "index", "size", "out", "error", "checksum", "recover", "derive", "clear"].map((name) => [
+  const nodes = new Map(["shares", "index", "size", "out", "result", "readout", "reveal", "copy", "error", "checksum", "recover", "derive", "clear"].map((name) => [
     "codex32-" + name,
-    Object.assign(new EventTarget(), { value: "", textContent: "", dataset: {} }),
+    Object.assign(new EventTarget(), { value: "", textContent: "", dataset: {}, checked: false, hidden: false, toggleAttribute() {} }),
   ]));
   const field = (name) => nodes.get("codex32-" + name);
   const click = (name) => field(name).dispatchEvent(new Event("click"));
   let sizeSyncs = 0;
   field("size").addEventListener("entropylab:sync-select", () => { sizeSyncs++; });
-  globalThis.document = { getElementById: (id) => nodes.get(id) };
+  globalThis.document = Object.assign(new EventTarget(), { getElementById: (id) => nodes.get(id) });
   t.after(() => { globalThis.document = previous; });
   hodlInitCodex32();
+  const reveal = () => {
+    field("reveal").checked = true;
+    field("reveal").dispatchEvent(new Event("change"));
+  };
   for (const [name, event] of [["shares", "input"], ["index", "input"], ["size", "change"]]) {
     field("shares").value = shareA + "\n" + shareC;
     field("size").value = "32";
     click("recover");
+    assert.equal(field("out").textContent, "", "recover must not display private material by default");
+    assert.equal(field("readout").hidden, true);
+    reveal();
+    assert.equal(field("readout").hidden, false);
     assert.equal(field("out").textContent, secret2 + "\nd1808e096b35b209ca12132b264662a5");
     field("error").textContent = "earlier validation error";
     field(name).value = name === "shares" ? "" : name === "size" ? "32" : "d";
@@ -127,9 +146,24 @@ test("editing checksum inputs, shares, or the target immediately retires the pre
   assert.match(field("error").textContent, /seed size/i);
   field("size").value = "32";
   click("checksum");
+  assert.equal(field("out").textContent, "");
+  reveal();
   assert.equal(field("out").textContent, v4 + "\nffeeddccbbaa99887766554433221100ffeeddccbbaa99887766554433221100");
-  click("clear");
+  document.dispatchEvent(new Event("hodl:conceal"));
+  assert.equal(field("out").textContent, "");
+  assert.equal(field("reveal").checked, false);
+  assert.equal(field("readout").hidden, true);
+  reveal();
+  assert.ok(field("out").textContent);
+  field("index").value = "d";
+  hodlCodex32Wipe();
+  assert.equal(field("shares").value, "");
+  assert.equal(field("index").value, "");
   assert.equal(field("size").value, "");
+  assert.equal(field("out").textContent, "");
+  assert.equal(field("result").hidden, true);
+  reveal();
+  assert.equal(field("out").textContent, "", "a wiped result is no longer available to reveal");
   assert.equal(sizeSyncs, 2, "input edits and Clear refresh the shared size picker");
 });
 
@@ -250,8 +284,8 @@ test("the calculator does not generate entropy or accept other prefixes as tools
   assert.doesNotMatch(shell, /CW1|CX1/);
   assert.match(shell, /id="codex32-card"/);
   const app = read("src/js/app.js");
-  assert.match(app, /hodlInitCodex32\(\)/);
+  assert.match(app, /hodlInitCodex32\(\{/);
   assert.match(app, /getElementById\("codex32-card"\)\.hidden = id !== "codex32"/);
   assert.doesNotMatch(app, /\["codex32",/);
-  assert.match(app, /getElementById\("codex32-shares"\)/);
+  assert.match(app, /hodlCodex32Wipe\(\)/);
 });

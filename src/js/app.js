@@ -69,7 +69,7 @@ import { checkRbfReplacement as hodlCheckRbfReplacement } from "./psbt-rbf-check
 // The Lightning node key tool (its own workspace tab): aezeed deciphering
 // and the LND/LDK node identity derivations live in lightning.js/aezeed.js.
 import { hodlInitLn, hodlLnWipeMem } from "./lightning.js";
-import { hodlInitCodex32 } from "./codex32.js";
+import { hodlInitCodex32, hodlCodex32Wipe } from "./codex32.js";
 import { hodlCompareSchnorrNonces, hodlParseSchnorr, hodlTapKeySigs, hodlTapScriptPathSigs, hodlTapScriptSigs, hodlTapSighashProblems, hodlTapWitnessShape } from "./psbt-schnorr.js";
 import {
   buildDeriveAddressesCommands,
@@ -23753,7 +23753,7 @@ function hodlInitWorkspace() {
   hodlInitVanity();
   hodlInitSp();
   hodlInitLn({ journalLog: hodlJournalLog, copyIcon: hodlClipboardIconMarkup, qrSvg: hodlQrSvg, pageNetwork: () => hodlInspectorNetwork() });
-  hodlInitCodex32();
+  hodlInitCodex32({ copyIcon: hodlClipboardIconMarkup });
 }
 var hodlKeyClearSyncQueued = false, hodlMsigClearSyncQueued = false, hodlDeriveSyncQueued = false;
 function hodlQueueKeyClearButtonSync() {
@@ -24119,6 +24119,7 @@ function hodlInitSecretFieldAutoClear() {
     try { hodlSpWipeMem(); } catch {}
     try { hodlBip47WipeMem(); } catch {}
     try { hodlLnWipeMem(); } catch {}
+    try { hodlCodex32Wipe(); } catch {}
     // Every derived wallet's row key bytes, shared results included: the
     // whole session is going (#546 B2). Before the Journal wipe, which empties
     // the Key Manager's pending keys. A result can be mid-update and throw,
@@ -24230,12 +24231,6 @@ function hodlInitSecretFieldAutoClear() {
     let lnOut = document.getElementById("ln-out"), lnError = document.getElementById("ln-error");
     if (lnOut) lnOut.innerHTML = "";
     if (lnError) lnError.textContent = "";
-    let codex32Shares = document.getElementById("codex32-shares"), codex32Index = document.getElementById("codex32-index");
-    if (codex32Shares) codex32Shares.value = "";
-    if (codex32Index) codex32Index.value = "";
-    let codex32Out = document.getElementById("codex32-out"), codex32Error = document.getElementById("codex32-error");
-    if (codex32Out) codex32Out.textContent = "";
-    if (codex32Error) codex32Error.textContent = "";
     // Found vanity passphrases and the brought-in salt are private key
     // material; stop the grinder and drop them too. The cancelled grinder
     // keeps the run's words and passphrase in its callbacks, so drop it with

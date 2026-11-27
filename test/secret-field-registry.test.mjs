@@ -21,6 +21,7 @@ const expandable = read("src/js/expandable.js");
 const psbtEditor = read("src/js/psbt-editor.js");
 const coreWallet = read("src/js/core-wallet-ui.js");
 const lightning = read("src/js/lightning.js");
+const codex32 = read("src/js/codex32.js");
 
 // A named top-level function body in app.js, for "this id is cleared in
 // this function" probes.
@@ -113,9 +114,13 @@ const CLEARING_PATHS = [
     },
   },
   {
-    ids: ["codex32-shares", "codex32-out"],
+    ids: ["codex32-shares", "codex32-reveal", "codex32-out"],
     why: "Codex32 MS1 shares and secrets typed by the user, and the recovered secret, derived share and master seed shown",
-    probe: (id) => assert.ok(lifecycle.includes(`"${id}"`), `#${id} missing from the lifecycle sweep`),
+    probe: () => {
+      assert.match(lifecycle, /hodlCodex32Wipe\(\)/, "End Session and pagehide must reach the Codex32 wipe");
+      assert.match(codex32, /export function hodlCodex32Wipe\(\) \{[\s\S]*?clearResult\(\)/,
+        "the Codex32 wipe clears its retained result; populated fields are checked in codex32.test.mjs");
+    },
   },
   {
     ids: ["journal-create-password", "journal-create-confirm", "journal-open-password", "journal-search", "journal-file"],

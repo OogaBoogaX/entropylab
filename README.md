@@ -376,7 +376,8 @@ an explicit error before those pairs are allocated.
   secret. Completing a missing checksum requires the expected seed size
   recorded with the source material (16, 32 or 64 bytes); the calculator
   never infers it from a checksum-free string's length. Editing the strings,
-  expected size or target share index clears the previous result.
+  expected size or target share index clears the previous result. Results
+  are concealed until revealed and copy only to EntropyLab's clipboard.
 - A session **Journal** has three working areas: **Notes**, **Keys**, and
   **Session**. Notes opens first; Keys holds recoverable key inputs, and
   Session shows the current report first, saved historical snapshots in their

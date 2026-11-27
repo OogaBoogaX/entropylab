@@ -551,9 +551,13 @@ material. Its security posture rests on the following model:
   length. Editing the strings, expected size or target index clears the
   previous result and error. Derive
   refuses index `s`, which would reveal the secret; CW1 and CX1 strings are
-  refused. Shares typed in, the recovered secret and its master seed are
-  shown in the page and cleared with the other secret fields on page hide
-  and back/forward-cache restore.
+  refused. Codex32 results start concealed. Revealed results cannot be
+  selected and copy only to EntropyLab's clipboard. Conceal removes their
+  text from the page and clears that clipboard; End Session and pagehide
+  clear the inputs and overwrite the result bytes held by the calculator.
+  As elsewhere, this cannot erase browser-managed copies. See
+  [Codex32 regression tests](test/codex32.test.mjs) and
+  [browser checks](test/browser-suite.html).
 - The single-file design inlines all scripts (`script-src 'unsafe-inline'`),
   and the secp256k1 WebAssembly module adds `wasm-unsafe-eval` to the
   content security policy: Chromium and WebKit engines refuse to compile a

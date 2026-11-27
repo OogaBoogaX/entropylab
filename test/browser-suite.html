@@ -260,16 +260,26 @@
 
   await wait(500);
 
-  await test("MS1 calculator rejects mistyped complete seeds and clears stale results", () => {
+  await test("MS1 calculator rejects mistyped complete seeds and clears stale results", async () => {
     const input = document.getElementById("codex32-shares");
     const index = document.getElementById("codex32-index");
     const size = document.getElementById("codex32-size");
     const out = document.getElementById("codex32-out");
+    const reveal = document.getElementById("codex32-reveal");
+    const card = document.getElementById("codex32-card");
+    const wasHidden = card.hidden;
+    const showResult = () => {
+      equal(out.textContent, "");
+      assert(!out.hasAttribute("data-private-value"), "concealed result must not contain a private readout");
+      assert(!reveal.checked, "new result must start concealed");
+      reveal.click();
+    };
     const error = document.getElementById("codex32-error");
     const valid = "ms10testsxxxxxxxxxxxxxxxxxxxxxxxxxx4nzvca9cmczlw";
     input.value = valid.slice(0, -13);
     size.value = "16";
     document.getElementById("codex32-checksum").click();
+    showResult();
     equal(out.textContent, valid + "\n318c6318c6318c6318c6318c6318c631");
     input.value = "ms10testsxxxxxxxxxxxqxxxxxxxxxxxxxx4nzvca9cmczlw";
     document.getElementById("codex32-checksum").click();
@@ -277,10 +287,24 @@
     assert(/Checksum/.test(error.textContent), "mistyped seed must report checksum failure");
     input.value = "MS12NAMEA320ZYXWVUTSRQPNMLKJHGFEDCAXRPP870HKKQRM\nMS12NAMECACDEFGHJKLMNPQRSTUVWXYZ023FTR2GDZMPY6PN";
     document.getElementById("codex32-recover").click();
+    showResult();
     equal(out.textContent, "ms12names6xqguzttxkeqnjsjzv4jv3nz5k3kwgsphuh6evw\nd1808e096b35b209ca12132b264662a5");
     index.value = "d";
     document.getElementById("codex32-derive").click();
-    equal(out.textContent, "ms12namedll4f8jlh4e5vdvuldlfxu2jhdnlsm97xvenrxeg");
+    showResult();
+    const expectedShare = "ms12namedll4f8jlh4e5vdvuldlfxu2jhdnlsm97xvenrxeg";
+    try {
+      card.hidden = false;
+      await privateReadout(out, expectedShare);
+      document.dispatchEvent(new Event("hodl:conceal"));
+      equal(out.textContent, "");
+      equal(reveal.checked, false);
+      equal(window.__entropyLabAppClipboard(), "");
+      reveal.click();
+      equal(out.textContent, expectedShare);
+    } finally {
+      card.hidden = wasHidden;
+    }
     index.value = "e";
     index.dispatchEvent(new Event("input", { bubbles: true }));
     equal(out.textContent, ""); equal(error.textContent, "");
