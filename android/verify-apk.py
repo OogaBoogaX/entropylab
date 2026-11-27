@@ -23,6 +23,11 @@ def attribute(name):
     if len(found) != 1:
         raise SystemExit(f"Merged manifest has {len(found)} android:{name} attributes, expected 1")
     return found[0].strip()
+# With no attribute Android defaults to false. Reject an explicit true, a
+# malformed value, or multiple declarations rather than assuming a release build.
+debuggable = re.findall(r"android:debuggable\(0x[0-9a-f]+\)=(.*)$", manifest, re.M)
+if debuggable and (len(debuggable) != 1 or debuggable[0].strip() != "(type 0x12)0x0"):
+    raise SystemExit("Merged manifest does not keep android:debuggable off")
 for name in ("allowBackup", "fullBackupContent"):
     if attribute(name) != "(type 0x12)0x0":
         raise SystemExit(f"Merged manifest does not set android:{name}=false")
@@ -64,4 +69,4 @@ mask = int(attribute("configChanges").rsplit(")", 1)[-1], 16)
 missing = [name for name, bit in handled.items() if not mask & bit]
 if missing:
     raise SystemExit(f"Merged MainActivity configChanges {mask:#x} is missing {missing}")
-print(f"Packaged HTML OK {actual}; APK requests no permissions; backup and device transfer off; configChanges {mask:#x}")
+print(f"Packaged HTML OK {actual}; APK is not debuggable and requests no permissions; backup and device transfer off; configChanges {mask:#x}")

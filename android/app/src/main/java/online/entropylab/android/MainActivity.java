@@ -29,6 +29,7 @@ public final class MainActivity extends Activity {
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         getWindow().setFlags(WindowManager.LayoutParams.FLAG_SECURE, WindowManager.LayoutParams.FLAG_SECURE);
+        WebView.setWebContentsDebuggingEnabled(false);
         setContentView(R.layout.activity_main);
         // targetSdk 36 draws edge to edge on Android 15+, and the pinned HTML has
         // no safe-area handling, so keep the launch screen and the page clear of

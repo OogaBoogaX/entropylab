@@ -40,12 +40,12 @@ jobs:
       # validate the committed jar against Gradle's published checksums first.
       - name: Validate Gradle wrapper jar
         uses: gradle/actions/wrapper-validation@3f5f9adaf7d9fecd50b5935e54106014257a94e6 # v6.4.0
-      - name: Build debug APK
+      - name: Build unsigned, non-debuggable release APK
         working-directory: android
-        run: ./gradlew :app:assembleDebug --no-daemon
+        run: ./gradlew :app:assembleRelease --no-daemon
       - name: Verify packaged bytes, permissions and merged manifest
         working-directory: android
-        run: python3 verify-apk.py app/build/outputs/apk/debug/app-debug.apk "$ANDROID_HOME/build-tools/35.0.0/aapt"
+        run: python3 verify-apk.py app/build/outputs/apk/release/app-release-unsigned.apk "$ANDROID_HOME/build-tools/35.0.0/aapt"
       # Fail closed at build time: one changed byte must stop Gradle packaging.
       - name: Check the Gradle pin refuses a changed asset
         working-directory: android

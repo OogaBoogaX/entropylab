@@ -7,7 +7,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync, copyFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -17,7 +17,7 @@ const root = dirname(dirname(fileURLToPath(import.meta.url)));
 const fakeJava = (dir, label) => {
   mkdirSync(dir, { recursive: true });
   const path = join(dir, "java");
-  writeFileSync(path, `#!/bin/sh\necho "${label}" "$@"\n`);
+  writeFileSync(path, `#!/bin/sh\nprintf '%s\\n' "${label}" "$@"\n`);
   chmodSync(path, 0o755);
 };
 
@@ -31,13 +31,18 @@ test("android/gradlew runs JAVA_HOME's java when set, PATH's otherwise", { skip:
     fakeJava(join(dir, "jdk", "bin"), "jdk21");
     fakeJava(join(dir, "path"), "path-java");
     const PATH = `${join(dir, "path")}:/usr/bin:/bin`;
-    const run = (env) => spawnSync("sh", [join(root, "android/gradlew"), ":app:assembleDebug"], { env: { PATH, ...env }, encoding: "utf8" });
+    const checkout = join(dir, "Entropy Lab checkout", "android");
+    mkdirSync(checkout, { recursive: true });
+    copyFileSync(join(root, "android/gradlew"), join(checkout, "gradlew"));
+    const argv = ["-classpath", join(checkout, "gradle/wrapper/gradle-wrapper.jar"),
+      "org.gradle.wrapper.GradleWrapperMain", ":app:assembleRelease"];
+    const run = (env) => spawnSync("sh", [join(checkout, "gradlew"), ":app:assembleRelease"], { env: { PATH, ...env }, encoding: "utf8" });
     const withHome = run({ JAVA_HOME: join(dir, "jdk") });
     assert.equal(withHome.status, 0, withHome.stderr);
-    assert.match(withHome.stdout, /^jdk21 -classpath \S+\/gradle\/wrapper\/gradle-wrapper\.jar org\.gradle\.wrapper\.GradleWrapperMain :app:assembleDebug$/m);
+    assert.deepEqual(withHome.stdout.trimEnd().split("\n"), ["jdk21", ...argv]);
     const withoutHome = run({});
     assert.equal(withoutHome.status, 0, withoutHome.stderr);
-    assert.match(withoutHome.stdout, /^path-java -classpath \S+ org\.gradle\.wrapper\.GradleWrapperMain :app:assembleDebug$/m);
+    assert.deepEqual(withoutHome.stdout.trimEnd().split("\n"), ["path-java", ...argv]);
     const invalidHome = run({ JAVA_HOME: join(dir, "missing") });
     assert.notEqual(invalidHome.status, 0, "an invalid JAVA_HOME fell back to PATH's java");
     assert.doesNotMatch(invalidHome.stdout, /path-java/);
@@ -52,12 +57,12 @@ const skipApk = process.platform === "win32" ? "POSIX stand-in aapt" : !PYTHON &
 // aapt dump xmltree of the merged manifest, as the CI workflow's build-tools
 // 35.0.0 aapt prints it. configChanges 0xdb0 is the six changes MainActivity
 // handles.
-const manifestDump = (rulesRef) => `N: android=http://schemas.android.com/apk/res/android
+const manifestDump = (rulesRef, debuggable) => `N: android=http://schemas.android.com/apk/res/android
   E: manifest (line=2)
     A: android:compileSdkVersion(0x01010572)=(type 0x10)0x24
     A: package="online.entropylab.android" (Raw: "online.entropylab.android")
     E: application (line=3)
-      A: android:label(0x01010001)="EntropyLab" (Raw: "EntropyLab")
+${debuggable === undefined ? "" : `      A: android:debuggable(0x0101000f)=(type 0x12)${debuggable}\n`}      A: android:label(0x01010001)="EntropyLab" (Raw: "EntropyLab")
       A: android:allowBackup(0x01010280)=(type 0x12)0x0
       A: android:fullBackupContent(0x010104eb)=(type 0x12)0x0
       A: android:dataExtractionRules(0x0101064b)=${rulesRef}
@@ -109,15 +114,15 @@ esac
 
 // Runs android/verify-apk.py on an APK holding the pinned HTML, with the
 // stand-in aapt answering from these dumps.
-const verifyApk = ({ rulesRef = "@0x7f040000", rules = rulesDump() } = {}) => {
+const verifyApk = ({ rulesRef = "@0x7f040000", rules = rulesDump(), debuggable } = {}) => {
   const dir = mkdtempSync(join(tmpdir(), "entropylab-verify-apk-"));
   try {
-    const apk = join(dir, "app-debug.apk");
+    const apk = join(dir, "app-release-unsigned.apk");
     const zip = spawnSync("python3", ["-c", "import sys, zipfile\nwith zipfile.ZipFile(sys.argv[1], 'w') as z: z.write(sys.argv[2], 'assets/entropylab.html')", apk, join(root, "android/app/src/main/assets/entropylab.html")], { encoding: "utf8" });
     assert.equal(zip.status, 0, zip.stderr);
     writeFileSync(join(dir, "permissions.txt"), "package: online.entropylab.android\n");
     writeFileSync(join(dir, "resources.txt"), resourcesDump);
-    writeFileSync(join(dir, "manifest.txt"), manifestDump(rulesRef));
+    writeFileSync(join(dir, "manifest.txt"), manifestDump(rulesRef, debuggable));
     writeFileSync(join(dir, "rules.txt"), rules);
     writeFileSync(join(dir, "aapt"), STAND_IN_AAPT);
     chmodSync(join(dir, "aapt"), 0o755);
@@ -154,4 +159,10 @@ test("verify-apk.py counts only whole-domain exclusions as backup off", { skip: 
   accepted(verifyApk({ rules: rulesDump(() => ".") }));
   refused(verifyApk({ rules: rulesDump(() => "one-file") }), /do not exclude/);
   refused(verifyApk({ rules: rulesDump((section, domain) => (section === "device-transfer" && domain === "file" ? "one-file" : undefined)) }), /\['file'\] from device-transfer/);
+});
+
+test("verify-apk.py rejects a debuggable APK", { skip: skipApk }, () => {
+  accepted(verifyApk());
+  accepted(verifyApk({ debuggable: "0x0" }));
+  refused(verifyApk({ debuggable: "0xffffffff" }), /debuggable/);
 });
