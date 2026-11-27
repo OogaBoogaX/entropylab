@@ -367,6 +367,17 @@ an explicit error before those pairs are allocated.
   wallet birthday are shown alongside the node key; the decoded entropy and
   salt and the BIP32 root xprv (what `chantools showrootkey` prints) sit
   behind a reveal toggle. Decoding only: the tab never creates seeds.
+- Completes checksums, recovers secrets, and derives shares for BIP-93
+  Codex32 **MS1** strings (a Codex32 tab held back from release navigation
+  while its UI is polished). Every result is checksum math and Lagrange
+  interpolation over exactly the strings supplied — deterministic, with no
+  wallet generation, no seed splitting, and no entropy invented. CW1 and CX1
+  strings are refused, and Derive refuses index `s`, which would reveal the
+  secret. Completing a missing checksum requires the expected seed size
+  recorded with the source material (16, 32 or 64 bytes); the calculator
+  never infers it from a checksum-free string's length. Editing the strings,
+  expected size or target share index clears the previous result. Results
+  are concealed until revealed and copy only to EntropyLab's clipboard.
 - A preview-only **Seed XOR** tab restores the two to four parts produced by
   Coldcard's Split Existing menu, in any order. It validates every 12-, 18-,
   or 24-word English BIP39 part, XORs the entropy bytes rather than the input

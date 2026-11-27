@@ -21,6 +21,7 @@ const expandable = read("src/js/expandable.js");
 const psbtEditor = read("src/js/psbt-editor.js");
 const coreWallet = read("src/js/core-wallet-ui.js");
 const lightning = read("src/js/lightning.js");
+const codex32 = read("src/js/codex32.js");
 const seedXor = read("src/js/seed-xor.js");
 
 // A named top-level function body in app.js, for "this id is cleared in
@@ -111,6 +112,15 @@ const CLEARING_PATHS = [
         return;
       }
       assert.ok(lifecycle.includes(`"${id}"`), `#${id} missing from the lifecycle sweep`);
+    },
+  },
+  {
+    ids: ["codex32-shares", "codex32-reveal", "codex32-out"],
+    why: "Codex32 MS1 shares and secrets typed by the user, and the recovered secret, derived share and master seed shown",
+    probe: () => {
+      assert.match(lifecycle, /hodlCodex32Wipe\(\)/, "End Session and pagehide must reach the Codex32 wipe");
+      assert.match(codex32, /export function hodlCodex32Wipe\(\) \{[\s\S]*?clearResult\(\)/,
+        "the Codex32 wipe clears its retained result; populated fields are checked in codex32.test.mjs");
     },
   },
   {
@@ -238,6 +248,18 @@ test("every registry id has its clearing path wired", () => {
   for (const row of CLEARING_PATHS) for (const id of row.ids) row.probe(id);
 });
 
+// Browser translation sends the page's text to an online service, so the page
+// marks every element that shows a secret with translate="no"
+// (src/js/text-services.js). A registered element that is not a form control
+// displays its secret as page text and must carry the attribute itself.
+test("registered elements that display secrets are withheld from browser translation", () => {
+  for (const id of SECRET_FIELDS) {
+    const tag = shell.match(new RegExp(`<(\\w+)\\b[^>]*\\sid="${id}"[^>]*>`));
+    if (!tag || ["input", "textarea", "select"].includes(tag[1])) continue;
+    assert.match(tag[0], /\stranslate="no"/, `#${id} shows a secret and must set translate="no"`);
+  }
+});
+
 // Settings and public helpers. Keep a one-sentence reason per field so the
 // next field is classified consciously, not by default.
 const PUBLIC_FIELDS = {
@@ -302,6 +324,7 @@ const PUBLIC_FIELDS = {
   "vanity-prefix": "the desired address prefix — public output text, not key material",
   "vanity-start": "grind range setting",
   "vanity-workers": "worker-count setting",
+  "codex32-index": "target share index character, not key material",
 };
 
 test("the registry covers every known secret-bearing field", () => {

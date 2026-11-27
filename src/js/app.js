@@ -69,6 +69,7 @@ import { checkRbfReplacement as hodlCheckRbfReplacement } from "./psbt-rbf-check
 // The Lightning node key tool (its own workspace tab): aezeed deciphering
 // and the LND/LDK node identity derivations live in lightning.js/aezeed.js.
 import { hodlInitLn, hodlLnWipeMem } from "./lightning.js";
+import { hodlInitCodex32, hodlCodex32Wipe } from "./codex32.js";
 import { initSeedXor, seedXorWipeMem } from "./seed-xor.js";
 import { hodlCompareSchnorrNonces, hodlParseSchnorr, hodlTapKeySigs, hodlTapScriptPathSigs, hodlTapScriptSigs, hodlTapSighashProblems, hodlTapWitnessShape } from "./psbt-schnorr.js";
 import {
@@ -20256,6 +20257,8 @@ function hodlShowWorkspace(id) {
   document.getElementById("sp-card").hidden = id !== "sp";
   document.getElementById("vanity-card").hidden = id !== "vanity";
   document.getElementById("ln-card").hidden = id !== "ln";
+  document.getElementById("codex32-card").hidden = id !== "codex32";
+  document.getElementById("codex32-tool-intro").hidden = id !== "codex32";
   document.getElementById("core-card").hidden = id !== "core";
   // Preview builds only: a release build strips the Verify card.
   const verifyCard = document.getElementById("verify-card");
@@ -20431,8 +20434,9 @@ if (__ENTROPYLAB_PREVIEW__) hodlWorkspaceTabs.splice(hodlWorkspaceTabs.findIndex
 // it shows. Later PRs add ["bip47", …] and ["check", …] rows here.
 var hodlPrivacyTools = [["sp", "sp-card"]];
 var hodlPrivacyTool = "sp";
-// Every tool is released: Lightning joined after its key worker (#1203) and
+// Lightning joined after its key worker (#1203) and
 // polish (#1211), placed after Transactions (owner, 2026-10-26).
+// Codex32 remains outside release navigation; its MS1 calculator stays in source.
 var hodlPsbtTool = "inspector";
 function hodlSyncPsbtTool() {
   let visible = hodlWorkspace === "psbt",
@@ -23837,6 +23841,7 @@ function hodlInitWorkspace() {
   hodlInitVanity();
   hodlInitSp();
   hodlInitLn({ journalLog: hodlJournalLog, copyIcon: hodlClipboardIconMarkup, qrSvg: hodlQrSvg, pageNetwork: () => hodlInspectorNetwork() });
+  hodlInitCodex32({ copyIcon: hodlClipboardIconMarkup });
   if (__ENTROPYLAB_PREVIEW__) initSeedXor({ doc: document, copyIcon: hodlClipboardIconMarkup });
 }
 var hodlKeyClearSyncQueued = false, hodlMsigClearSyncQueued = false, hodlDeriveSyncQueued = false;
@@ -24205,6 +24210,7 @@ function hodlInitSecretFieldAutoClear() {
     try { hodlSpWipeMem(); } catch {}
     try { hodlBip47WipeMem(); } catch {}
     try { hodlLnWipeMem(); } catch {}
+    try { hodlCodex32Wipe(); } catch {}
     try { if (__ENTROPYLAB_PREVIEW__) seedXorWipeMem(); } catch {}
     // Every derived wallet's row key bytes, shared results included: the
     // whole session is going (#546 B2). Before the Journal wipe, which empties
