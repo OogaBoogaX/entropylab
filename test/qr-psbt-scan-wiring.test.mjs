@@ -149,7 +149,7 @@ test("End Session and the language switch tear the panels down", () => {
   const psbtDestroy = wipe.indexOf("hodlDestroyPsbtScans()");
   assert.ok(keyDestroy >= 0, "End Session no longer destroys the Key Station panel");
   assert.ok(psbtDestroy > keyDestroy, "End Session must destroy the PSBT panels next to the Key Station's");
-  assert.ok(psbtDestroy - keyDestroy < 400, "the PSBT teardown belongs with the Key Station's, before the wipe continues");
+  assert.ok(wipe.slice(keyDestroy, psbtDestroy).split("\n").length <= 12, "the PSBT teardown belongs with the Key Station's, before the wipe continues");
   const psbtRetire = wipe.indexOf("hodlPsbtScanModule?.retireQrDecoders()");
   assert.ok(psbtRetire > psbtDestroy, "End Session retires the decoders after the PSBT panels are destroyed");
   const keyBind = wipe.indexOf("hodlBindKeyScan()"), psbtBind = wipe.indexOf("hodlBindPsbtScans()");

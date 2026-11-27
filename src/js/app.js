@@ -17072,7 +17072,6 @@ function hodlRenderPsbt(psbt, nonceSourceTag = new Uint8Array(), nonceCheckedAt 
     } catch (exception) {
       declaredSighashError = exception.message || String(exception);
     }
-    let declaredLabel = declaredSighashError ? "" : declaredSighash === null ? hodlTText("SIGHASH_ALL (default)") : hodlSighashLabel(declaredSighash);
     let previous = tx.inputs[index], destination = claim ? hodlAddr(claim.script, network) : hodlTText("(previous output details unavailable)"), signatures = hodlPartialSigs(entries), tapSignatures = hodlTapSigsParsed(entries), finalized = hodlFinalized(entries),
       // Whether SIGHASH 0 is Taproot's DEFAULT: decided by the resolved
       // previous output, so a P2WPKH input that merely carries a 0x13-0x18
@@ -17081,6 +17080,9 @@ function hodlRenderPsbt(psbt, nonceSourceTag = new Uint8Array(), nonceCheckedAt 
       taprootish = claim ? isP2tr(claim.script) : entries.some((entry) => entry.type >= 0x13 && entry.type <= 0x18),
       finalTapPolicy = [],
       finalUnread = false;
+    // SIGHASH_DEFAULT (0) is Taproot's full-commitment policy, so name it
+    // rather than reporting an unknown base type (red-team part07 #1).
+    let declaredLabel = declaredSighashError ? "" : declaredSighash === null ? hodlTText("SIGHASH_ALL (default)") : taprootish && declaredSighash === 0 ? "SIGHASH_DEFAULT (0x0)" : hodlSighashLabel(declaredSighash);
     if (finalized) {
       // Finalized signatures moved into the final script fields must not
       // escape repeated-nonce analysis (issue #87).
@@ -24147,197 +24149,220 @@ function hodlInitSecretFieldAutoClear() {
     for (let result of [hodlWalletResult, ...hodlKeys.map((state) => state.result), ...hodlKeyManagerPending.map((state) => state.result), ...hodlCommittedResults]) try {
       hodlWipeWalletKeys(result);
     } catch {}
-    hodlCommittedResults.clear();
-    try { hodlJournalWipeMem(); } catch {}
-    hodlKeys = hodlKeys.map((state) => {
-      let fields = state.fields || {}, privateKeys = fields.privateKeys;
-      if (privateKeys) Object.keys(privateKeys).forEach((kind) => {
-        privateKeys[kind] = "";
+    // One failing wipe must not skip the rest (see the rule at the top).
+    try {
+      hodlCommittedResults.clear();
+      try { hodlJournalWipeMem(); } catch {}
+      hodlKeys = hodlKeys.map((state) => {
+        let fields = state.fields || {}, privateKeys = fields.privateKeys;
+        if (privateKeys) Object.keys(privateKeys).forEach((kind) => {
+          privateKeys[kind] = "";
+        });
+        Object.keys(fields).forEach((id) => {
+          if (id === "privateKeys") return;
+          if (ArrayBuffer.isView(fields[id])) fields[id].fill(0);
+          fields[id] = "";
+        });
+        if (Array.isArray(state.diceCoinPositions)) state.diceCoinPositions.length = 0;
+        state.lastWord = "";
+        state.dplusLastWord = "";
+        state.result = null;
+        state.reveal = false;
+        state.error = "";
+        state.errorSpec = null;
+        return state.isLab ? hodlNewLabState() : hodlNewKeyState(state.name, state.id, state.number);
       });
-      Object.keys(fields).forEach((id) => {
-        if (id === "privateKeys") return;
-        if (ArrayBuffer.isView(fields[id])) fields[id].fill(0);
-        fields[id] = "";
-      });
-      if (Array.isArray(state.diceCoinPositions)) state.diceCoinPositions.length = 0;
-      state.lastWord = "";
-      state.dplusLastWord = "";
-      state.result = null;
-      state.reveal = false;
-      state.error = "";
-      state.errorSpec = null;
-      return state.isLab ? hodlNewLabState() : hodlNewKeyState(state.name, state.id, state.number);
-    });
-    hodlWalletResult = null;
-    hodlRevealPrivate = false;
-    hodlPickedLastWord = "";
-    hodlDiceCoinPositions = [];
-    // MultiSig stations hold watch-only data (the descriptor import refuses
-    // private keys), but the same restore rule applies: a bfcache restore
-    // must not bring a session's form back. Reset every tab like the
-    // station's own Clear, then re-render the (empty) active one.
-    hodlMsigs = hodlMsigs.map((state) => (state.isLab ? hodlNewMsigLabState() : hodlNewMsigState(state.name, state.id, state.number)));
-    hodlRestoreMsig();
-    for (let id of ["dice", "hex", "bin", "base4", "base8", "base32", "base64", "seed", "seed-numbers", "key", "pass", "cards", "direct-cards"]) {
-      let field = document.getElementById(id);
-      if (field) {
-        field.value = "";
-        delete field.dataset.previousValue;
-        // A beforeinput with no paired input event (aborted, or IME
-        // composition) leaves this expando holding the field's prior value.
-        delete field.hodlDiceBeforeInput;
+      hodlWalletResult = null;
+      hodlRevealPrivate = false;
+      hodlPickedLastWord = "";
+      hodlDiceCoinPositions = [];
+    } catch {}
+    try {
+      // MultiSig stations hold watch-only data (the descriptor import refuses
+      // private keys), but the same restore rule applies: a bfcache restore
+      // must not bring a session's form back. Reset every tab like the
+      // station's own Clear, then re-render the (empty) active one.
+      hodlMsigs = hodlMsigs.map((state) => (state.isLab ? hodlNewMsigLabState() : hodlNewMsigState(state.name, state.id, state.number)));
+      hodlRestoreMsig();
+    } catch {}
+    try {
+      for (let id of ["dice", "hex", "bin", "base4", "base8", "base32", "base64", "seed", "seed-numbers", "key", "pass", "cards", "direct-cards"]) {
+        let field = document.getElementById(id);
+        if (field) {
+          field.value = "";
+          delete field.dataset.previousValue;
+          // A beforeinput with no paired input event (aborted, or IME
+          // composition) leaves this expando holding the field's prior value.
+          delete field.hodlDiceBeforeInput;
+        }
       }
-    }
-    hodlClearPassphraseField();
-    let psbtKey = document.getElementById("psbt-key"), psbtPass = document.getElementById("psbt-pass");
-    if (psbtKey) psbtKey.value = "";
-    if (psbtPass) psbtPass.value = "";
-    hodlClearStationPassphrase("psbt-pass");
-    let psbtText = document.getElementById("psbt-text"), psbtAxTranscript = document.getElementById("psbt-ax-transcript"), psbtAuditBefore = document.getElementById("psbt-audit-before");
-    if (psbtText) psbtText.value = "";
-    if (psbtAxTranscript) psbtAxTranscript.value = "";
-    if (psbtAuditBefore) psbtAuditBefore.value = "";
-    // A pending audit upload must not write it back once the read finishes.
-    try { hodlPsbtRetireAuditUploads(); } catch {}
-    try { hodlPsbtRetireInspectorUploads(); } catch {}
-    // The rendered audit holds change addresses and fingerprints derived
-    // from the loaded key; retire it with the field it was computed from.
-    try { hodlPsbtClearSignerAudit(); } catch {}
-    for (let id of ["nonce-key", "nonce-pass", "nonce-text", "descriptor-reuse-text"]) {
-      let field = document.getElementById(id);
-      if (field) field.value = "";
-    }
-    // The pasted RBF original is a PSBT too: it can hide an xprv in
-    // proprietary fields, so it wipes with the same sweep, and a pending
-    // upload of it retires with the session.
-    let psbtRbfOriginal = document.getElementById("psbt-rbf-original");
-    if (psbtRbfOriginal) psbtRbfOriginal.value = "";
-    try { hodlPsbtRetireRbfUploads(); } catch {}
-    // The key-reuse verdict lists derived keys and paths: retire it with its field.
-    for (let id of ["descriptor-reuse-out", "descriptor-reuse-error"]) {
-      let output = document.getElementById(id);
-      if (output) output.innerHTML = "";
-    }
-    hodlClearStationPassphrase("nonce-pass");
-    hodlSyncPsbtControls();
-    let bip85Key = document.getElementById("bip85-key"), bip85Out = document.getElementById("bip85-out"), bip85Error = document.getElementById("bip85-error"), bip85Session = document.getElementById("bip85-session");
-    if (bip85Key) bip85Key.value = "";
-    if (bip85Out) bip85Out.innerHTML = "";
-    if (bip85Error) bip85Error.textContent = "";
-    if (bip85Session) bip85Session.textContent = hodlBip85Note;
-    hodlRenderBip85Tabs();
-    hodlSyncBip85View();
-    let spKey = document.getElementById("sp-key"), spPass = document.getElementById("sp-pass");
-    if (spKey) spKey.value = "";
-    if (spPass) spPass.value = "";
-    hodlClearStationPassphrase("sp-pass");
-    let spVins = document.getElementById("sp-send-vins");
-    if (spVins) spVins.value = "";
-    let spOut = document.getElementById("sp-out"), spError = document.getElementById("sp-error"), spSession = document.getElementById("sp-session");
-    if (spOut) spOut.innerHTML = "";
-    hodlSpVerifyMatches = null;
-    hodlSpSendLast = null;
-    if (spError) spError.textContent = "";
-    if (spSession) hodlPaintSpSession(hodlSpNote);
-    let spRecipients = document.getElementById("sp-recipients"), spVerifyVins = document.getElementById("sp-verify-vins"), spVerifyOutputs = document.getElementById("sp-verify-outputs"), spLabel = document.getElementById("sp-label"), spPayname = document.getElementById("sp-payname");
-    if (spRecipients) spRecipients.value = "";
-    if (spVerifyVins) spVerifyVins.value = "";
-    if (spVerifyOutputs) spVerifyOutputs.value = "";
-    if (spLabel) spLabel.value = "";
-    if (spPayname) spPayname.value = "";
-    let lnSeed = document.getElementById("ln-seed"), lnPass = document.getElementById("ln-pass");
-    if (lnSeed) lnSeed.value = "";
-    if (lnPass) lnPass.value = "";
-    let lnOut = document.getElementById("ln-out"), lnError = document.getElementById("ln-error");
-    if (lnOut) lnOut.innerHTML = "";
-    if (lnError) lnError.textContent = "";
-    // Found vanity passphrases and the brought-in salt are private key
-    // material; stop the grinder and drop them too. The cancelled grinder
-    // keeps the run's words and passphrase in its callbacks, so drop it with
-    // the matches, as hodlVanityClearResults does (audit A35-1).
-    hodlVanityCancel();
-    hodlVanityGrinder = null;
-    hodlVanityMatches = [];
-    hodlVanityFound = 0;
-    hodlVanityReveal = false;
-    hodlVanityRun = null;
-    hodlVanitySource = "";
-    hodlVanityApplying = false;
-    let vanityOut = document.getElementById("vanity-out");
-    if (vanityOut) {
-      vanityOut.innerHTML = "";
-      vanityOut.style.removeProperty("--vanity-pass-width");
-    }
-    hodlSetVanityError(null);
-    hodlVanitySetStatus(hodlNote("Idle. No range has been ground this session."));
-    hodlVanitySyncSource();
-    hodlVanitySyncControls();
-    // The keys above were just reset, so their passphrases (and thus the
-    // vanity picker's chips) are gone too.
-    hodlRefreshMsigSessionPickers();
-    hodlRefreshStationKeyPickers();
-    // The <pre> mirrors behind each input hold a second live copy of whatever
-    // was typed (dice rolls, seed words, passphrase, private key).
-    document.querySelectorAll(".dice-input-highlight, .dice-word-grid, #last-words, #brain-lab-hex").forEach((highlight) => {
-      highlight.textContent = "";
-    });
-    // The dealt-cards strip, the worked word/number calculations and the die
-    // fairness panel render the typed transcript back (card faces, per-word
-    // BIP39 indices, roll counts), and a progress line quotes the rejected
-    // word or token in an error cue. Emptying the field leaves these copies.
-    for (let id of ["dealt-cards", "dice-manual-calculations", "cards-manual-calculations", "number-base-calculations", "dice-fairness", "dice-meta", "cards-meta", "entropy-meta", "seed-meta", "seed-number-meta", "private-key-meta"]) {
-      let panel = document.getElementById(id);
-      if (panel) panel.textContent = "";
-    }
-    // Copy buttons keep the phrase/child secret in a data attribute.
-    document.querySelectorAll("[data-phrase]").forEach((button) => button.removeAttribute("data-phrase"));
-    hodlLastWordCache.clear(); // cached partial mnemonic phrases
-    let out = document.getElementById("out");
-    if (out) out.innerHTML = "";
-    hodlSetWorkspaceError("key", null);
-    // The PSBT editor holds the loaded document in module state; its own wipe
-    // button drops it. Last, so a failure there cannot skip the clears above.
-    let psbtEditorWipe = document.getElementById("psbted-wipe");
-    if (psbtEditorWipe) try {
-      psbtEditorWipe.dataset.journalSilent = "true";
-      psbtEditorWipe.click();
-    } catch {} finally {
-      delete psbtEditorWipe.dataset.journalSilent;
-    }
-    try { hodlKeyScan?.destroy(); } catch {}
-    hodlKeyScan = null;
-    try { hodlSeedPicker?.destroy(); } catch {}
-    hodlSeedPicker = null;
-    try { hodlSecureDicePad?.destroy(); } catch {}
-    hodlSecureDicePad = null;
-    // The PSBT panels come down before any decoder is retired (their decoders
-    // live in the same registry as the Key Station's), then the registry goes.
-    try { hodlDestroyPsbtScans(); } catch {}
-    // The seed scan panel shares the Key Station's decoders: it comes down
-    // before they are retired too.
-    try { hodlSeedScan?.destroy(); } catch {}
-    hodlSeedScan = null;
-    hodlSeedScanOpenAfterMount = false;
-    hodlKeyScanOpenAfterMount = false;
-    try { hodlDestroyTextScans(); } catch {}
-    try { hodlKeyScanModule?.retireQrDecoders(); } catch {}
-    try { hodlPsbtScanModule?.retireQrDecoders(); } catch {}
-    try { hodlTextScanModule?.retireQrDecoders(); } catch {}
-    // The form outlives the wipe: give it a fresh, closed panel.
-    try { hodlBindKeyScan(); } catch {}
-    try { hodlBindSeedScan(); } catch {}
-    // The PSBT hosts are static: give them fresh, closed panels too.
-    try { hodlBindPsbtScans(); } catch {}
-    try { hodlBindTextScans(); } catch {}
-    try { hodlSecureEntryConfirm?.close({ restoreFocus: false }); } catch {}
-    try { hodlSecureEntryEnd(); } catch {}
-    // The seed form showed the picker: redraw it as the standard field.
-    try { if (document.getElementById("seed-picker-host")) hodlSetMode(hodlKeyMode); } catch {}
-    try { hodlReleaseSecureKeyField(); } catch {}
-    // The masked key field showed the vault: redraw it as the standard field.
-    try { if (document.querySelector("[data-secure-key]")) hodlSetMode(hodlKeyMode); } catch {}
-    try { if (document.getElementById("secure-dice-host")) hodlSetMode(hodlKeyMode); } catch {}
-    hodlSyncWorkspaceCounts();
+      hodlClearPassphraseField();
+    } catch {}
+    try {
+      let psbtKey = document.getElementById("psbt-key"), psbtPass = document.getElementById("psbt-pass");
+      if (psbtKey) psbtKey.value = "";
+      if (psbtPass) psbtPass.value = "";
+      try { hodlClearStationPassphrase("psbt-pass"); } catch {}
+      let psbtText = document.getElementById("psbt-text"), psbtAxTranscript = document.getElementById("psbt-ax-transcript"), psbtAuditBefore = document.getElementById("psbt-audit-before");
+      if (psbtText) psbtText.value = "";
+      if (psbtAxTranscript) psbtAxTranscript.value = "";
+      if (psbtAuditBefore) psbtAuditBefore.value = "";
+      // A pending audit upload must not write it back once the read finishes.
+      try { hodlPsbtRetireAuditUploads(); } catch {}
+      try { hodlPsbtRetireInspectorUploads(); } catch {}
+      // The rendered audit holds change addresses and fingerprints derived
+      // from the loaded key; retire it with the field it was computed from.
+      try { hodlPsbtClearSignerAudit(); } catch {}
+    } catch {}
+    try {
+      for (let id of ["nonce-key", "nonce-pass", "nonce-text", "descriptor-reuse-text"]) {
+        let field = document.getElementById(id);
+        if (field) field.value = "";
+      }
+      // The pasted RBF original is a PSBT too: it can hide an xprv in
+      // proprietary fields, so it wipes with the same sweep, and a pending
+      // upload of it retires with the session.
+      let psbtRbfOriginal = document.getElementById("psbt-rbf-original");
+      if (psbtRbfOriginal) psbtRbfOriginal.value = "";
+      try { hodlPsbtRetireRbfUploads(); } catch {}
+      // The key-reuse verdict lists derived keys and paths: retire it with its field.
+      for (let id of ["descriptor-reuse-out", "descriptor-reuse-error"]) {
+        let output = document.getElementById(id);
+        if (output) output.innerHTML = "";
+      }
+      try { hodlClearStationPassphrase("nonce-pass"); } catch {}
+      try { hodlSyncPsbtControls(); } catch {}
+    } catch {}
+    try {
+      let bip85Key = document.getElementById("bip85-key"), bip85Out = document.getElementById("bip85-out"), bip85Error = document.getElementById("bip85-error"), bip85Session = document.getElementById("bip85-session");
+      if (bip85Key) bip85Key.value = "";
+      if (bip85Out) bip85Out.innerHTML = "";
+      if (bip85Error) bip85Error.textContent = "";
+      if (bip85Session) bip85Session.textContent = hodlBip85Note;
+      try { hodlRenderBip85Tabs(); } catch {}
+      try { hodlSyncBip85View(); } catch {}
+    } catch {}
+    try {
+      let spKey = document.getElementById("sp-key"), spPass = document.getElementById("sp-pass");
+      if (spKey) spKey.value = "";
+      if (spPass) spPass.value = "";
+      try { hodlClearStationPassphrase("sp-pass"); } catch {}
+      let spVins = document.getElementById("sp-send-vins");
+      if (spVins) spVins.value = "";
+      let spOut = document.getElementById("sp-out"), spError = document.getElementById("sp-error"), spSession = document.getElementById("sp-session");
+      if (spOut) spOut.innerHTML = "";
+      hodlSpVerifyMatches = null;
+      hodlSpSendLast = null;
+      if (spError) spError.textContent = "";
+      if (spSession) try { hodlPaintSpSession(hodlSpNote); } catch {}
+      let spRecipients = document.getElementById("sp-recipients"), spVerifyVins = document.getElementById("sp-verify-vins"), spVerifyOutputs = document.getElementById("sp-verify-outputs"), spLabel = document.getElementById("sp-label"), spPayname = document.getElementById("sp-payname");
+      if (spRecipients) spRecipients.value = "";
+      if (spVerifyVins) spVerifyVins.value = "";
+      if (spVerifyOutputs) spVerifyOutputs.value = "";
+      if (spLabel) spLabel.value = "";
+      if (spPayname) spPayname.value = "";
+    } catch {}
+    try {
+      let lnSeed = document.getElementById("ln-seed"), lnPass = document.getElementById("ln-pass");
+      if (lnSeed) lnSeed.value = "";
+      if (lnPass) lnPass.value = "";
+      let lnOut = document.getElementById("ln-out"), lnError = document.getElementById("ln-error");
+      if (lnOut) lnOut.innerHTML = "";
+      if (lnError) lnError.textContent = "";
+    } catch {}
+    try {
+      // Found vanity passphrases and the brought-in salt are private key
+      // material; stop the grinder and drop them too. The cancelled grinder
+      // keeps the run's words and passphrase in its callbacks, so drop it with
+      // the matches, as hodlVanityClearResults does (audit A35-1).
+      try { hodlVanityCancel(); } catch {}
+      hodlVanityGrinder = null;
+      hodlVanityMatches = [];
+      hodlVanityFound = 0;
+      hodlVanityReveal = false;
+      hodlVanityRun = null;
+      hodlVanitySource = "";
+      hodlVanityApplying = false;
+      let vanityOut = document.getElementById("vanity-out");
+      if (vanityOut) {
+        vanityOut.innerHTML = "";
+        vanityOut.style.removeProperty("--vanity-pass-width");
+      }
+      hodlSetVanityError(null);
+      hodlVanitySetStatus(hodlNote("Idle. No range has been ground this session."));
+      hodlVanitySyncSource();
+      hodlVanitySyncControls();
+    } catch {}
+    try {
+      // The keys above were just reset, so their passphrases (and thus the
+      // vanity picker's chips) are gone too.
+      try { hodlRefreshMsigSessionPickers(); } catch {}
+      try { hodlRefreshStationKeyPickers(); } catch {}
+      // The <pre> mirrors behind each input hold a second live copy of whatever
+      // was typed (dice rolls, seed words, passphrase, private key).
+      document.querySelectorAll(".dice-input-highlight, .dice-word-grid, #last-words, #brain-lab-hex").forEach((highlight) => {
+        highlight.textContent = "";
+      });
+      // The dealt-cards strip, the worked word/number calculations and the die
+      // fairness panel render the typed transcript back (card faces, per-word
+      // BIP39 indices, roll counts), and a progress line quotes the rejected
+      // word or token in an error cue. Emptying the field leaves these copies.
+      for (let id of ["dealt-cards", "dice-manual-calculations", "cards-manual-calculations", "number-base-calculations", "dice-fairness", "dice-meta", "cards-meta", "entropy-meta", "seed-meta", "seed-number-meta", "private-key-meta"]) {
+        let panel = document.getElementById(id);
+        if (panel) panel.textContent = "";
+      }
+      // Copy buttons keep the phrase/child secret in a data attribute.
+      document.querySelectorAll("[data-phrase]").forEach((button) => button.removeAttribute("data-phrase"));
+      hodlLastWordCache.clear(); // cached partial mnemonic phrases
+      let out = document.getElementById("out");
+      if (out) out.innerHTML = "";
+      hodlSetWorkspaceError("key", null);
+    } catch {}
+    try {
+      // The PSBT editor holds the loaded document in module state; its own wipe
+      // button drops it. Last, so a failure there cannot skip the clears above.
+      let psbtEditorWipe = document.getElementById("psbted-wipe");
+      if (psbtEditorWipe) try {
+        psbtEditorWipe.dataset.journalSilent = "true";
+        psbtEditorWipe.click();
+      } catch {} finally {
+        delete psbtEditorWipe.dataset.journalSilent;
+      }
+      try { hodlKeyScan?.destroy(); } catch {}
+      hodlKeyScan = null;
+      try { hodlSeedPicker?.destroy(); } catch {}
+      hodlSeedPicker = null;
+      try { hodlSecureDicePad?.destroy(); } catch {}
+      hodlSecureDicePad = null;
+      // The PSBT panels come down before any decoder is retired (their decoders
+      // live in the same registry as the Key Station's), then the registry goes.
+      try { hodlDestroyPsbtScans(); } catch {}
+      // The seed scan panel shares the Key Station's decoders: it comes down
+      // before they are retired too.
+      try { hodlSeedScan?.destroy(); } catch {}
+      hodlSeedScan = null;
+      hodlSeedScanOpenAfterMount = false;
+      hodlKeyScanOpenAfterMount = false;
+      try { hodlDestroyTextScans(); } catch {}
+      try { hodlKeyScanModule?.retireQrDecoders(); } catch {}
+      try { hodlPsbtScanModule?.retireQrDecoders(); } catch {}
+      try { hodlTextScanModule?.retireQrDecoders(); } catch {}
+      // The form outlives the wipe: give it a fresh, closed panel.
+      try { hodlBindKeyScan(); } catch {}
+      try { hodlBindSeedScan(); } catch {}
+      // The PSBT hosts are static: give them fresh, closed panels too.
+      try { hodlBindPsbtScans(); } catch {}
+      try { hodlBindTextScans(); } catch {}
+      try { hodlSecureEntryConfirm?.close({ restoreFocus: false }); } catch {}
+      try { hodlSecureEntryEnd(); } catch {}
+      // The seed form showed the picker: redraw it as the standard field.
+      try { if (document.getElementById("seed-picker-host")) hodlSetMode(hodlKeyMode); } catch {}
+      try { hodlReleaseSecureKeyField(); } catch {}
+      // The masked key field showed the vault: redraw it as the standard field.
+      try { if (document.querySelector("[data-secure-key]")) hodlSetMode(hodlKeyMode); } catch {}
+      try { if (document.getElementById("secure-dice-host")) hodlSetMode(hodlKeyMode); } catch {}
+      try { hodlSyncWorkspaceCounts(); } catch {}
+    } catch {}
   };
   addEventListener("pagehide", clearSecretFields);
   addEventListener("pageshow", (event) => {
