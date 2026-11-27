@@ -2635,5 +2635,6 @@
   "This reproduces Coldcard's deterministic split using double-SHA256. EntropyLab does not generate entropy or offer a random split.": "Esto reproduce la división determinista de Coldcard usando double-SHA256. EntropyLab no genera entropía ni ofrece una división aleatoria.",
   "Split seed": "Dividir semilla",
   "Reveal private output": "Revelar salida privada",
-  "The restored phrase and split parts are seed backups. Anyone with the restored phrase, or with every split part, controls the wallet.": "La frase restaurada y las partes divididas son copias de seguridad de la semilla. Cualquiera con la frase restaurada, o con cada parte dividida, controla la billetera."
+  "The restored phrase and split parts are seed backups. Anyone with the restored phrase, or with every split part, controls the wallet.": "La frase restaurada y las partes divididas son copias de seguridad de la semilla. Cualquiera con la frase restaurada, o con cada parte dividida, controla la billetera.",
+  "Nothing is stored or sent. Clear, End Session, and leaving the page empty these fields; revealed output is concealed when you leave, print, or stay idle. Memory clearing is best-effort.": "Nada se almacena ni se envía. Borrar, Finalizar Sesión y salir de la página vacían estos campos; la salida revelada se oculta cuando sales, imprimes o permaneces inactivo. La limpieza de memoria es un esfuerzo de buena fe."
 }
