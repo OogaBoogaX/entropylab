@@ -1190,6 +1190,39 @@ pub(crate) fn analyze(tx: &Transaction, inputs: &[Vec<RawPair>]) -> Vec<Problem>
         .map(|(index, map)| input_claims(tx, index, map, &mut problems))
         .collect();
 
+    // Bitcoin Core's CheckTxInputs: every spent output's value, and their
+    // total, must be in MoneyRange (bad-txns-inputvalues-outofrange). A
+    // claim is the only amount a PSBT offers, so it is checked here.
+    let mut total_sats: u64 = 0;
+    let mut total_out_of_range = false;
+    let mut any_out_of_range = false;
+    for (index, (witness_claim, non_witness_claim)) in claims.iter().enumerate() {
+        let Some(claim) = witness_claim.as_ref().or(non_witness_claim.as_ref()) else { continue };
+        if claim.value > Amount::MAX_MONEY {
+            any_out_of_range = true;
+            problems.push(Problem::error(
+                format!("input {index}"),
+                "input_value_out_of_range",
+                format!(
+                    "claimed previous output of {} sats is outside Bitcoin's money range (Core: bad-txns-inputvalues-outofrange)",
+                    claim.value.to_sat()
+                ),
+            ));
+            continue;
+        }
+        match total_sats.checked_add(claim.value.to_sat()) {
+            Some(sum) if sum <= Amount::MAX_MONEY.to_sat() => total_sats = sum,
+            _ => total_out_of_range = true,
+        }
+    }
+    if total_out_of_range && !any_out_of_range {
+        problems.push(Problem::error(
+            "transaction".into(),
+            "input_total_out_of_range",
+            "claimed previous outputs total more than Bitcoin's money range (Core: bad-txns-inputvalues-outofrange)",
+        ));
+    }
+
     // The taproot prevout set: every input's claim, or nothing (BIP-341
     // commits to all of them).
     let all_claims: Option<Vec<TxOut>> = claims
@@ -2240,6 +2273,63 @@ mod tests {
         let map = vec![pair("01", &witness_utxo_value(&claim)), pair("13", &hex_encode(&bad))];
         let problems = analyze(&tx, &[map]);
         assert!(problems.iter().any(|p| p.code == "tap_sig_invalid" && p.severity == WARNING));
+    }
+
+    /// Bitcoin Core's CheckTxInputs: every spent output's value, and their
+    /// total, must be in MoneyRange (bad-txns-inputvalues-outofrange). A
+    /// claimed previous output above MAX_MONEY must be an error-severity
+    /// problem, not silence.
+    #[test]
+    fn a_claimed_input_value_above_max_money_is_an_error() {
+        let (tx, claim) = fixture();
+        let mut huge = claim.clone();
+        huge.value = Amount::from_sat(u64::MAX);
+        let problems = analyze(&tx, &[vec![pair("01", &witness_utxo_value(&huge))]]);
+        assert!(
+            problems.iter().any(|p| p.code == "input_value_out_of_range" && p.severity == ERROR && p.scope == "input 0"),
+            "{problems:?}"
+        );
+    }
+
+    /// Each claim is inside MAX_MONEY (21,000,000 BTC) but their sum is not:
+    /// one transaction-scope error, and no per-input one.
+    #[test]
+    fn a_claimed_input_total_above_max_money_is_one_error() {
+        let (tx, claim) = fixture();
+        let mut tx = tx;
+        let mut second = tx.input[0].clone();
+        second.previous_output = OutPoint {
+            txid: Txid::from_raw_hash(bitcoin::hashes::sha256d::Hash::from_byte_array([0x22; 32])),
+            vout: 1,
+        };
+        tx.input.push(second);
+        let mut big = claim.clone();
+        big.value = Amount::from_sat(1_500_000_000_000_000);
+        let map = || vec![pair("01", &witness_utxo_value(&big))];
+        let problems = analyze(&tx, &[map(), map()]);
+        assert_eq!(
+            problems
+                .iter()
+                .filter(|p| p.code == "input_total_out_of_range" && p.severity == ERROR && p.scope == "transaction")
+                .count(),
+            1,
+            "{problems:?}"
+        );
+        assert!(!problems.iter().any(|p| p.code == "input_value_out_of_range"), "{problems:?}");
+    }
+
+    /// The ordinary in-range claim raises neither money-range problem.
+    #[test]
+    fn an_in_range_claimed_input_value_raises_no_money_range_problem() {
+        let (tx, claim) = fixture();
+        let (prev, txid) = prev_tx_for(&claim);
+        let mut tx = tx;
+        tx.input[0].previous_output.txid = txid;
+        let problems = analyze(&tx, &[vec![pair("00", &hex_encode(&encode::serialize(&prev)))]]);
+        assert!(
+            !problems.iter().any(|p| p.code == "input_value_out_of_range" || p.code == "input_total_out_of_range"),
+            "{problems:?}"
+        );
     }
 }
 
