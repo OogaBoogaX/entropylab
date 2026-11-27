@@ -6,10 +6,10 @@ private keys into wallet recovery information without intentionally sending
 sensitive data to a server. The whole application is one HTML file, and its
 markup passes the W3C HTML validator with zero errors.
 
-Current version: **v1.1.0-dev**
+Current version: **v1.1.1-dev**
 
 That is the development line on `rock`, which the website follows. The latest
-signed release is [v1.0.0](https://github.com/OogaBoogaX/entropylab/releases/tag/v1.0.0).
+signed release is [v1.1.0](https://github.com/OogaBoogaX/entropylab/releases/tag/v1.1.0).
 
 Official website: [entropylab.online](https://entropylab.online)
 
@@ -21,8 +21,9 @@ lets the page make no network requests of its own (the hosted copy's service
 worker checks for updates). Under the maintainers' process, every pull request
 other than automated translation updates is reviewed by five models and an
 adversarial red team before it merges, and model-written code runs only in an
-isolated sandbox. Releases are signed by four maintainers and reproducible
-byte for byte inside the pinned build image. The
+isolated sandbox. Four maintainers hold release signing keys, and at least
+three of them sign each release. Releases are reproducible byte for byte
+inside the pinned build image. The
 [security posture](docs/SECURITY_POSTURE.md) maps each claim to the code and
 tests behind it and lists the known limits. Report vulnerabilities privately
 through
@@ -276,7 +277,7 @@ an explicit error before those pairs are allocated.
   The Editor's input label is version-neutral; the decoded report identifies
   the submitted PSBT version. The separate PSBT Inspector and Nonce Inspector
   retain their v0-only input labels and parsing limits.
-- Verifies and extends Bitcoin Core descriptor wallets (Core Wallet tab):
+- Verifies and extends Bitcoin Core descriptor wallets (Bitcoin Core tab):
   upload a SQLite `wallet.dat` (Bitcoin Core 23+; legacy Berkeley DB wallets
   are refused) and every record is decoded — client versions, wallet flags,
   sync locators, descriptors with their cached branch parents and private-key
@@ -356,8 +357,7 @@ an explicit error before those pairs are allocated.
   so the Keys tab, its exports, and the Journal show the vanity wallet. BIP-85
   children stay unchanged. Found passphrases stay in
   page memory, are masked until revealed, and are wiped with the session.
-- Derives Lightning node identity public keys (a Lightning tab held back from
-  release navigation while its UI is polished) from a seed
+- Derives Lightning node identity public keys (the Lightning tab) from a seed
   phrase: an LND 24-word **aezeed** cipher seed is deciphered in WebAssembly
   (scrypt key derivation, AEZ v5, CRC-32C checksum; a wrong passphrase is
   detected, unlike BIP39) and its entropy derives the node key at LND's
@@ -367,6 +367,13 @@ an explicit error before those pairs are allocated.
   wallet birthday are shown alongside the node key; the decoded entropy and
   salt and the BIP32 root xprv (what `chantools showrootkey` prints) sit
   behind a reveal toggle. Decoding only: the tab never creates seeds.
+- A preview-only **Seed XOR** tab restores the two to four parts produced by
+  Coldcard's Split Existing menu, in any order. It validates every 12-, 18-,
+  or 24-word English BIP39 part, XORs the entropy bytes rather than the input
+  checksum bits, and computes the restored phrase's fresh BIP39 checksum. The
+  deterministic split reproduces Coldcard's double-SHA256 construction; no
+  random split or new entropy is offered. Results stay concealed until
+  explicitly revealed, and Clear and session teardown empty the phrases.
 - A session **Journal** has three working areas: **Notes**, **Keys**, and
   **Session**. Notes opens first; Keys holds recoverable key inputs, and
   Session shows the current report first, saved historical snapshots in their
@@ -804,8 +811,14 @@ for the exact bytes built by CI, and an OpenTimestamps proof
 
 ```sh
 sha256sum -c SHA256SUMS.txt
-gh attestation verify entropylab.html -R OogaBoogaX/entropylab
+gh attestation verify entropylab.html -R OogaBoogaX/entropylab --signer-workflow OogaBoogaX/entropylab/.github/workflows/ci-cd.yml --source-ref refs/heads/rock
 ```
+
+The two extra options matter. `--signer-workflow` and `--source-ref` accept
+only an attestation made by this repository's CI workflow for the `rock`
+branch. Without them the check would also accept an attestation made by any
+other workflow or branch in this repository. They need GitHub CLI
+2.68.0 or later; an older one stops with `unknown flag: --source-ref`.
 
 The four WASM modules embedded in the HTML (secp256k1, PSBT, vanity and the
 QR decoder) are committed as

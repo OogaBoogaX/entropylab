@@ -9,8 +9,8 @@ always use the latest version, available from the
 
 | Version | Supported          |
 | ------- | ------------------ |
-| 1.0.0   | :white_check_mark: |
-| < 1.0.0 | :x:                |
+| 1.1.0   | :white_check_mark: |
+| < 1.1.0 | :x:                |
 
 ## Security Considerations
 
@@ -89,12 +89,21 @@ material. Its security posture rests on the following model:
    rootfs, one Ubuntu snapshot, clang 18.1.3) and requires a second build in
    that image to match the bytes it publishes; the artifact commit and the
    Pages deploy wait for that check. Their digests are published in
-   `WASM-SHA256SUMS.txt`. A host clang is a different compiler. The 1.0.0
-   hashes, and the page built from them, have been reproduced in that image
-   on three machines outside GitHub, by three people: Windows with WSL2 and
-   bare-metal Linux on x86_64, and macOS on ARM64 (the image under
-   Rosetta). The page alone also rebuilds to the same bytes on each of those
-   hosts without the image. [docs/Reproductions.md](docs/Reproductions.md)
+   `WASM-SHA256SUMS.txt`. A host clang is a different compiler. The
+   v1.0.0 `entropylab-wasm` and `vanity-wasm` modules are the bytes that
+   three people rebuilt in that image at `cb55bd9` on three machines outside
+   GitHub: Windows with WSL2 and bare-metal Linux on x86_64, and macOS on
+   ARM64 (the image under Rosetta). v1.0.0's `psbt-wasm` module, and every
+   module rock has published since (`qr-wasm` included), have no recorded
+   rebuild outside GitHub. A release page's footer names the source commit
+   to rebuild it from. The page committed inside the v1.0.0 git tag is an
+   earlier build with a different footer and is not the release. See the
+   [known issue](docs/Verify_Your_Download.md#known-issue-v100).
+   The v1.0.0 release page has been rebuilt from that commit only by its
+   author so far, on Windows (on the computer later found to be compromised;
+   see [Release signing keys](#release-signing-keys)) and on Linux (in a
+   separate hosted environment). No independent rebuild of it is recorded.
+   [docs/Reproductions.md](docs/Reproductions.md)
    records each rebuild by commit. Build-host paths are remapped out of the
    binary. The image is the boundary: the page and the modules are
    reproducible inside it. Its Dockerfile pins the base image, the package
@@ -219,7 +228,17 @@ material. Its security posture rests on the following model:
   legacy and SegWit v0 ECDSA signatures with SIGHASH_ALL, plus Taproot key-path
   and tapscript signature records with SIGHASH_DEFAULT or SIGHASH_ALL. Other
   script shapes and sighash types, finalized Taproot script paths, and
-  annex-carrying signatures stay unverified. Repeated BIP340 nonces are still
+  annex-carrying signatures stay unverified. Finalized-field checks also
+  validate sibling scriptSig/witness fields already present in the sent PSBT,
+  require matching sent/returned UTXO claims, and never report valid when the
+  transaction cannot be serialized or the decoder caps verification. Their
+  decoding, script resolution and signatures share bounded work, with sibling
+  results reused rather than charging signatures twice. These checks follow
+  consensus, not relay policy: uncompressed SegWit v0 keys and unused legacy
+  stack items may be valid, while witness CLEANSTACK, NULLDUMMY and scriptSig
+  size limits still apply. See the `final follow-up` regression cases in
+  [the verifier tests](test/psbt-signer-audit-verify.test.mjs).
+  Repeated BIP340 nonces are still
   checked, although those nonces cannot be replayed like RFC 6979 nonces.
   The report marks these cases
   incomplete; a completed individual check is not a security conclusion for
@@ -614,6 +633,27 @@ Clearing remains best-effort.
 Coverage counts/indexes retained in the result are transaction metadata, not
 cryptographic secrets; Clear Capture retires that result too.
 
+### Preview-only Seed XOR
+
+The preview Seed XOR tab restores checksum-valid English BIP39 parts of the same
+12-, 18-, or 24-word length by XORing their entropy bytes and calculating the
+result's new checksum. It rejects malformed phrases, bad input checksums, and
+mixed or unsupported lengths. The library accepts two or more parts, including
+duplicate and all-zero-entropy parts as Coldcard does; the tab accepts the two
+to four parts Coldcard's Split Existing menu produces. Duplicate parts are not
+deduplicated, and an all-zero result warns without being rejected. Published
+Coldcard vectors and rejection cases pin this contract in
+[`test/seed-xor.test.mjs`](test/seed-xor.test.mjs).
+
+The deterministic split uses Coldcard's double-SHA256 domain and part labels and
+is checked against published device outputs. It transforms only the phrase the
+user supplied and never generates entropy. Results stay out of the DOM until
+revealed; private copies use EntropyLab's clipboard. Editing clears a stale
+result, while Clear, End Session, and pagehide empty every phrase field and the
+retained result, with the usual best-effort limits for JavaScript strings. The
+implementation is [`src/js/seed-xor.js`](src/js/seed-xor.js), and the markup and
+navigation are stripped from release builds by the existing preview gates.
+
 ### Released PSBT camera lifecycle
 
 PSBT scanning opts into continuous acquisition on the existing camera
@@ -632,6 +672,50 @@ capture. The ordinary private-value conceal sweep is not bypassed by the
 permission-prompt exception. Supersession and destruction leave the capture
 stopped, and activation callbacks that stop it cannot allocate a stale timer.
 Browser/OS copies and camera buffers remain outside reliable erasure.
+
+### Preview-only SLIP-39 backup check
+
+Check a SLIP-39 backup (Verify tab, `src/js/slip39-check.js`) reads the
+SLIP-39 shares a user types, one per field, and combines them with
+`src/js/slip39.js`, written from the SLIP-0039 specification. It shares no
+code with any wallet and never splits a secret or makes a random value. A
+share is read only with a valid RS1024 checksum, a valid length and zero
+padding. A set is combined only when every share agrees on identifier,
+extendable flag, iteration exponent, group threshold, group count and
+length, each group has exactly its threshold of distinct members, there are
+exactly the group threshold of groups, and the digest verifies at the member
+and the group level; anything else is refused with a reason and shows no
+wallet (`test/slip39.test.mjs`, all 45 official SLIP-0039 vectors including
+the invalid ones). The passphrase must be printable ASCII and is held in a
+`PassphraseVault` field. The decrypted master secret is the BIP32 seed: it
+is used once to derive the master fingerprint and first receive addresses
+for every network, then zeroed, so a network change redraws stored public
+addresses. Decryption runs PBKDF2-HMAC-SHA256 on the page's thread, so the
+panel refuses iteration exponents above 6 instead of freezing the page.
+
+Its randomness test compares two threshold sets from two throwaway wallets.
+It reconstructs each set's random values (the random part R of each digest
+share and, where 3 or more shares are needed, the shares drawn at random)
+and reports runs of 8 or more bytes repeated between or within the sets,
+a repeated identifier or encrypted secret, and trivial values (all zero,
+one byte repeated, a short block repeated, a counter). It decrypts nothing
+and needs no passphrase, and a share entered in both sets is compared, not
+refused: a generator restarted from the same state gives two wallets the
+same random share word for word. The rebuilt values are checked against the
+draws of the SLIP-0039 reference implementation
+(`test/slip39-reference.test.mjs`). It is a tripwire for generators that
+repeat or are broken, not a measure of randomness: a generator that never repeats can
+still be predictable. The panel tells the user to enter throwaway wallets
+only.
+
+Typed shares, the passphrase and everything combined from them live in page
+memory and the panel's DOM only; there are no storage, clipboard or console
+writes (`test/slip39-check.test.mjs`). The master fingerprint and addresses
+are public readouts and copy like the Key Station's. Every conceal trigger takes the typed
+shares off the page until the user asks for them again, and Clear, Clear
+Fields, End Session and page exit empty the panel. This is best effort, as
+below: the fields' own text and the strings handed to the parser cannot be
+zeroed.
 
 ## What the page can and cannot erase
 
@@ -796,9 +880,15 @@ extension that ignores them, or one written to steal.
   close it yourself. Chrome and Edge keep running after the last window
   closes unless "Continue running background apps" is off in their System
   settings.
-- Then close the browser and restart the computer. That is a precaution, not
-  a guarantee: a restart does not erase memory, and its contents can survive
-  a short power-off.
+- Then close the browser and shut the computer down completely: not sleep,
+  not hibernate, and not a restart, which can keep memory powered. On
+  Windows, hold Shift while you click Shut down, or turn off Fast startup;
+  otherwise Shut down saves part of the system to the hibernation file.
+  Leave it off for five to ten minutes before you turn it on again; memory
+  fades once the power is off. Reconnecting this computer to the internet
+  after a session is not advised, and if you do, do this first. It is a
+  precaution, not a guarantee: it does not erase what the system already
+  wrote to disk, such as swap or a hibernation file.
 - None of this protects a computer that is already compromised: malware or a
   malicious browser extension can read a secret as you type it.
 
@@ -807,7 +897,9 @@ extension that ignores them, or one written to steal.
 Releases are verified with the detached signatures in `SHA256SUMS.asc`
 (instructions in that file's header). Each signer's public key is committed
 under [`keys/`](keys/); the production deploy imports keys only from there,
-never from a release's `KEYS` file. The v1.0.0 signers and their keys:
+never from a release's `KEYS` file. The release signers and their keys (v1.0.0
+was signed with the first four rows; v1.1.0 by Portland.HODL, w-s-bitcoin and
+MrHodlX's interim key):
 
 | Signer | Key fingerprint | Status |
 | --- | --- | --- |
@@ -815,6 +907,7 @@ never from a release's `KEYS` file. The v1.0.0 signers and their keys:
 | w-s-bitcoin | `542E CCA3 B5CB 74CE C957 29B3 92C2 1496 202E 3774` | |
 | timechainb | `63EF 760E E641 A585 16D5 4930 F0B7 D606 C6FD 9D52` | |
 | MrHodlX | `6443 4EE4 8A96 C38E 78B7 875F 4E7E 416E E17D 237C` | **revoked** (announced 2026-10-30) |
+| MrHodlX (interim) | `DB19 EF73 4874 43AA EAC2 6687 17AB DC5F 9867 B54F` | expires 2027-01-31 |
 
 **MrHodlX's key 64434EE4… is revoked.** It was kept on a computer later found
 to be compromised. Treat any signature from it as untrusted, including its

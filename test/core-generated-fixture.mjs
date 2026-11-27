@@ -96,7 +96,14 @@ export const buildGeneratedUnitRecords = (seed, { embeddedTpub = null, purposes 
       const keyed = `${inner}/${purpose}h/1h/0h/${internal ? 1 : 0}/*`;
       const body = wrapper === "pkh" ? `pkh(${keyed})` : wrapper === "wpkh" ? `wpkh(${keyed})` : `tr(${keyed})`;
       const descriptor = `${body}#${descriptorChecksum(body)}`;
-      const id = sha256(utf8(descriptor)); // compat form == body: no origin key info
+      // DescriptorID is the hash of Core's compat form, which writes every
+      // hardened step with ', the ones after the key included (checked
+      // against a wallet created by bitcoin-wallet v32.1.0; see the real
+      // records in test/core-created-descriptors.mjs). Built here by hand,
+      // independently of the module under test.
+      const compatKeyed = `${inner}/${purpose}'/1'/0'/${internal ? 1 : 0}/*`;
+      const compatBody = wrapper === "pkh" ? `pkh(${compatKeyed})` : wrapper === "wpkh" ? `wpkh(${compatKeyed})` : `tr(${compatKeyed})`;
+      const id = sha256(utf8(`${compatBody}#${descriptorChecksum(compatBody)}`));
       rows.push([concat(streamString("walletdescriptor"), id), concat(streamString(descriptor), u64le(0), u32le(0), u32le(0), u32le(1000))]);
       let account = master;
       for (const index of [purpose, 1, 0]) account = hdDeriveHardened(account, index);

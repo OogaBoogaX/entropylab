@@ -1,0 +1,30 @@
+id: no-dynamic-code
+valid:
+  - |
+    // eval(code) is forbidden
+    const s = "eval";
+  - |
+    setTimeout(() => {}, 10);
+    setInterval(fn, 10);
+  - |
+    const F = Function;
+    const timer = "setTimeout";
+invalid:
+  - |
+    eval("1+1");
+  - |
+    new Function("return 1");
+  - |
+    setTimeout("alert(1)", 10);
+  - |
+    setInterval("tick()", 100);
+  - |
+    window.eval("1+1");
+  - |
+    globalThis.eval(code);
+  - |
+    Function("return 1")();
+  - |
+    new window.Function("return 1");
+  - |
+    self.Function("tick()");
