@@ -2695,3 +2695,14 @@ test("the Core wallet.dat + dice/cards key method is gone", () => {
   assert.throws(() => read("src/js/core-mix.js"), /ENOENT/);
   assert.match(appSource, /import \{ initCoreWallet \} from "\.\/core-wallet-ui\.js";/, "the Core Wallet tab stays");
 });
+
+test("every section description uses the muted description style", () => {
+  const descriptions = [...shell.matchAll(/<p\b[^>]*\sclass="([^"]*)"/g)]
+    .map((match) => match[1].split(/\s+/).filter(Boolean))
+    .filter((classes) => classes.includes("label-description") && !classes.includes("field-note"));
+  assert.ok(descriptions.length > 1, `expected several section descriptions, found ${descriptions.length}`);
+  const unmuted = descriptions
+    .filter((classes) => !classes.includes("muted"))
+    .map((classes) => classes.join(" "));
+  assert.deepEqual(unmuted, [], `section descriptions must use the muted style: ${unmuted.join(" | ")}`);
+});
