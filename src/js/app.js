@@ -7151,6 +7151,36 @@ function hodlBindSlip39Check() {
     }).catch(() => {});
   }
 }
+// Check a SeedQR copy (Verify tab) is preview-only the same way: release
+// builds fold the flag, so the module is never imported and there is no host.
+var hodlSeedQrCheck = null, hodlSeedQrModule = null;
+function hodlBindSeedQrCheck() {
+  if (typeof __ENTROPYLAB_PREVIEW__ !== "undefined" && __ENTROPYLAB_PREVIEW__) {
+    import("./seedqr-check.js").then((module) => {
+      hodlSeedQrModule = module;
+      let host = document.getElementById("seedqr-check-host");
+      if (!host || hodlSeedQrCheck) return;
+      hodlSeedQrCheck = module.mountSeedQrCheck(host, {
+        translate: hodlTText,
+        privateValue: (value, revealed) => hodlPrivateValue(value, "secret private-field-value", revealed),
+        network: () => hodlNetworkChoice,
+      });
+    }).catch(() => {});
+  }
+}
+// The SeedQR export's numbered copy grid and mask (preview builds, once the
+// module above has loaded); "" otherwise.
+function hodlSeedQrCopyGrid(format, words) {
+  if (typeof __ENTROPYLAB_PREVIEW__ === "undefined" || !__ENTROPYLAB_PREVIEW__ || !hodlSeedQrModule) return "";
+  let indices = Uint16Array.from(words, (word) => hodlBip39Wordlist.indexOf(word));
+  try {
+    return hodlSeedQrModule.seedQrCopyGridMarkup(format, indices, hodlTText);
+  } catch {
+    return "";
+  } finally {
+    indices.fill(0);
+  }
+}
 function hodlKeyScanHostMarkup() {
   return '<div id="key-scan-host"></div>';
 }
@@ -24128,6 +24158,7 @@ var hodlRevealIdleMs = 5 * 60 * 1000;
 function hodlConcealPrivateValues(options) {
   if (typeof hodlBip47Conceal === "function") hodlBip47Conceal();
   try { hodlSlip39Check?.conceal(); } catch {}
+  try { hodlSeedQrCheck?.conceal(); } catch {}
   // Plain blur permits copying the opening/PSBT from another window. Other
   // conceal triggers retire the pasted host reveal, which remains sensitive.
   if (options?.reason !== "blur") {
@@ -24382,6 +24413,7 @@ function hodlInitSecretFieldAutoClear() {
       try { hodlPsbtScanModule?.retireQrDecoders(); } catch {}
       try { hodlTextScanModule?.retireQrDecoders(); } catch {}
       try { hodlSlip39Check?.clear(); } catch {}
+      try { hodlSeedQrCheck?.clear(); } catch {}
       // The form outlives the wipe: give it a fresh, closed panel.
       try { hodlBindKeyScan(); } catch {}
       try { hodlBindSeedScan(); } catch {}
@@ -24488,6 +24520,8 @@ function hodlApplyLocale() {
   });
   // Check a SLIP-39 backup relabels in place: re-mounting would drop the shares.
   try { hodlSlip39Check?.retranslate(); } catch {}
+  // Check a SeedQR copy relabels in place: re-mounting would drop the copy.
+  try { hodlSeedQrCheck?.retranslate(); } catch {}
   try { hodlDestroyTextScans(); } catch {}
   try { hodlBindTextScans(); } catch {}
   // These three hosts are static, so a language switch re-mounts the panels
@@ -24501,6 +24535,7 @@ async function hodlBoot() {
   hodlInitWorkspace();
   initOtsVerifier(document);
   hodlBindSlip39Check();
+  hodlBindSeedQrCheck();
   hodlInitAddressQr(hodlQrSvg, { copy: hodlClipboardIconMarkup, copied: hodlCopiedIconMarkup }, { frames: hodlPsbtQrFrames });
   hodlLowEntropyConfirm = initLowEntropyConfirm();
   hodlFingerprintCollisionConfirm = initFingerprintCollisionConfirm();
