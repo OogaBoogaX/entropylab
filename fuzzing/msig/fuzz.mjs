@@ -203,9 +203,10 @@ function randomDecoration(bip45 = false) {
 }
 
 // Random honored derivation path: 1-3 unhardened numeric steps appended after
-// the extended key (xpub…/0/20), sometimes carrying the branch wildcard when
-// deep enough that the wildcard is not the sole step (xpub…/0/0/20/* — every
-// step preserved, branches derived below). Hardened steps are rejected by the
+// the extended key (xpub…/0/20). A trailing wildcard, when deep enough that
+// the wildcard is not the sole step (xpub…/0/0/20/*), is read the way the
+// descriptor importer reads it: the last plain step is the branch and only
+// the steps before it are the fixed path. Hardened steps are rejected by the
 // app's co-signer parse (covered by the unit suites), so they are not fuzzed
 // here.
 function randomDerivationPath(bip45 = false) {
@@ -245,7 +246,7 @@ function runPipeline(config, cosigners, suffixFor = () => "") {
   }
   const branchesList = branches.map((b) => b.branch);
   const multipath = hodlWatchOnlyMultipathDescriptor(branches[0].checksummed, branchesList);
-  return { tokens: tokens.map((t) => t.token), paths: tokens.map((t) => t.parsed.derivationPath || ""), branches, multipath };
+  return { tokens: tokens.map((t) => t.token), parsed: tokens.map((t) => t.parsed), paths: tokens.map((t) => t.parsed.derivationPath || ""), branches, multipath };
 }
 
 // Engine rows vs the independent scure leg: every cosigner's child sits below
@@ -304,11 +305,24 @@ function checkConfig(config) {
 
   // (4) Honored trailing paths: the token keeps the parsed path, every
   // address derives below it (engine vs scure at the extended path), and the
-  // multipath export lands below it too.
-  const honored = runPipeline(config, cosigners, () => randomDerivationPath(config.bip45));
+  // multipath export lands below it too. A wildcard suffix names its last
+  // plain step as the branch, so only the steps before it are the fixed path.
+  const honoredSuffixes = [];
+  const honored = runPipeline(config, cosigners, () => {
+    const suffix = randomDerivationPath(config.bip45);
+    honoredSuffixes.push(suffix);
+    return suffix;
+  });
   honored.paths.forEach((path, i) => {
+    const steps = honoredSuffixes[i].split("/").filter(Boolean);
+    const wildcard = steps[steps.length - 1] === "*";
+    const expected = (wildcard ? steps.slice(0, -2) : steps).join("/");
     checks += 1;
-    if (path && !honored.tokens[i].endsWith(`/${path}`)) fail(`honored path ${path} missing from token ${honored.tokens[i]}`);
+    if (path !== expected) fail(`honored path ${path} != generated ${expected} from ${honoredSuffixes[i]}`);
+    if (wildcard) {
+      checks += 1;
+      if (honored.parsed[i].branch !== Number(steps[steps.length - 2])) fail(`honored branch ${honored.parsed[i].branch} != generated ${steps[steps.length - 2]} from ${honoredSuffixes[i]}`);
+    }
   });
   checkAddresses(config, cosigners, honored, "honored");
   checkMultipath(config, honored, "honored");
@@ -340,9 +354,13 @@ const GUARD_TOKENS = [
   }
   assertEqual(hodlParseKeyOrigin(hodlFilterXpub(GUARD_TOKENS[0] + "/0/1/0")).derivationPath, "0/1/0", "guard honored path");
   assertEqual(hodlParseKeyOrigin(hodlFilterXpub(GUARD_TOKENS[0] + "/<0;1>/*")).derivationPath, "", "guard decoration is not honored");
-  // A deep tail keeps every step ahead of the wildcard — the wildcard form
-  // and the bare path honor identically.
-  assertEqual(hodlParseKeyOrigin(hodlFilterXpub(GUARD_TOKENS[0] + "/0/0/20/*")).derivationPath, "0/0/20", "guard deep wildcard path preserved");
+  // A deep tail is read the way the descriptor importer reads it: the last
+  // plain step ahead of the wildcard is the branch and only the steps before
+  // it are the fixed path, so the wildcard form no longer equals the bare
+  // path (the bare path /0/0/20 still honors 0/0/20, below).
+  const deepWildcard = hodlParseKeyOrigin(hodlFilterXpub(GUARD_TOKENS[0] + "/0/0/20/*"));
+  assertEqual(deepWildcard.derivationPath, "0/0", "guard deep wildcard fixed path");
+  assertEqual(deepWildcard.branch, 20, "guard deep wildcard branch");
   // Honored trailing path: a numeric path is kept in the token, branches and
   // indexes derive below it, and the multipath export lands below it —
   // xpub/0/0/20 exports as xpub/0/0/20/<0;1>/*. Expected addresses were
