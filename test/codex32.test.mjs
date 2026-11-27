@@ -96,6 +96,20 @@ test("checksum completion requires the user's supported seed size instead of inf
   }
 });
 
+test("checksum completion rejects an already-checksummed string at every bare payload length", () => {
+  // Synthetic zero payloads with valid regular/long checksums. The 55-byte
+  // string is 112 characters, the exact length of a bare 64-byte payload.
+  for (const [symbols, checksum, size] of [
+    [13, "hvn8l2r0gh8gd", 16],
+    [39, "z0hdjyz64ce0p", 32],
+    [88, "g3v36qfk4fmtvj7", 64],
+  ]) {
+    const complete = "ms10tests" + "q".repeat(symbols) + checksum;
+    assert.equal(complete.length, 9 + Math.ceil(size * 8 / 5));
+    assert.throws(() => completeCodex32Checksum(complete, size), /master seed length is not supported/);
+  }
+});
+
 test("BIP-93 vector 3 accepts arbitrary discarded bits without changing the master seed", () => {
   const expected = "ffeeddccbbaa99887766554433221100";
   for (const variant of [

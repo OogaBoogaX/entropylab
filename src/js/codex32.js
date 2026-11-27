@@ -147,7 +147,7 @@ export function parseCodex32(input) {
 }
 
 // Append a checksum to the header and payload the user typed. A string that
-// already has a valid checksum is returned unchanged. A failed checksum on a
+// already has a valid checksum and a supported length is returned unchanged. A failed checksum on a
 // length that is not a bare header+payload is rejected; characters are never
 // substituted to hunt for a nearby valid string.
 export function completeCodex32Checksum(input, seedBytes) {
@@ -157,14 +157,15 @@ export function completeCodex32Checksum(input, seedBytes) {
     if (verifyChecksum(values)) return text;
     throw new Error("Checksum does not match. This calculator does not search for a transcription error.");
   }
-  // A valid 24-byte complete string is also 61 characters. Refuse it rather
-  // than treat its existing checksum as part of a 32-byte payload.
-  if (text.length === 61 && verifyChecksum(dataValues(text))) {
+  if (!INCOMPLETE_CHECKSUM.has(text.length)) {
+    throw new Error("That is not an MS1 header and payload, or a complete MS1 string.");
+  }
+  const values = dataValues(text);
+  // An unsupported complete string can match a bare payload length. Never
+  // reinterpret a checksum that already verifies as more seed data.
+  if (verifyChecksum(values)) {
     throw new Error("MS1 master seed length is not supported; use 16, 32, or 64 bytes.");
   }
-  const checksumLength = INCOMPLETE_CHECKSUM.get(text.length);
-  if (!checksumLength) throw new Error("That is not an MS1 header and payload, or a complete MS1 string.");
-  const values = dataValues(text);
   if (!SEED_LENGTHS.has(seedBytes)) throw new Error("Choose the expected seed size: 16, 32, or 64 bytes.");
   if (text.length !== 9 + Math.ceil(seedBytes * 8 / 5)) {
     throw new Error("MS1 header and payload length does not match the selected seed size.");
