@@ -392,6 +392,15 @@
     }
   });
 
+  const reachGuideQuiz = () => {
+    for (let clicks = 0; !document.getElementById("guide-check"); clicks += 1) {
+      assert(clicks < 8, "quiz did not appear within 8 clicks");
+      const next = document.getElementById("guide-next");
+      assert(next, "Next disappeared before the quiz");
+      next.click();
+    }
+  };
+
   await test("feature guide replays, deep-links and leaves wallet inputs and network untouched", () => {
     const entry = document.getElementById("guide-open");
     const before = [...document.querySelectorAll("#calc-card input, #calc-card textarea, #calc-card select")].map((node) => [node.id, node.value, node.checked]);
@@ -437,7 +446,7 @@
       assert(overlay().hidden, "Close left guide visible");
       entry.click(); document.getElementById("guide-resume").click();
       equal(document.getElementById("guide-step").dataset.guideStep, second);
-      while (!document.getElementById("guide-check")) document.getElementById("guide-next").click();
+      reachGuideQuiz();
       document.getElementById("guide-check").open = true;
       document.getElementById("guide-answer-0").click();
       equal(document.getElementById("guide-feedback").dataset.guideCorrect, "false");
@@ -505,7 +514,7 @@
       // Step 1 stays short at phone size: at most about two and a half screens of the scroll area (it was over three).
       const first = document.getElementById("guide-content");
       assert(first.scrollHeight <= 2.5 * first.clientHeight, `step 1 runs ${first.scrollHeight}px in a ${first.clientHeight}px view`);
-      while (!document.getElementById("guide-check")) document.getElementById("guide-next").click();
+      reachGuideQuiz();
       document.getElementById("guide-check").open = true;
       document.getElementById("guide-answer-1").scrollIntoView({ block: "center" });
       document.getElementById("guide-answer-1").click();

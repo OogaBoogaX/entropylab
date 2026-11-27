@@ -103,6 +103,16 @@ function withPage(run, translate = (text) => text) {
     }
   }
 }
+function advanceGuide(click, until, description) {
+  for (let clicks = 0; !until(); clicks += 1) {
+    assert.ok(clicks < 8, `guide did not reach ${description} within 8 clicks`);
+    click("#guide-next");
+  }
+}
+
+const finishGuide = (doc, click) => advanceGuide(click, () => !doc.getElementById("guide-next"), "the end");
+const reachGuideQuiz = (doc, click) => advanceGuide(click, () => doc.getElementById("guide-check"), "the quiz");
+
 test("lazy dialog, deep links, close/resume, repeated completion and explicit navigation", () => withPage(({ doc, guide, click, opened, opener }) => {
   assert.equal(doc.getElementById("feature-guide-overlay"), null);
   click("#guide-open");
@@ -119,7 +129,7 @@ test("lazy dialog, deep links, close/resume, repeated completion and explicit na
   assert.equal(doc.getElementById("guide-step").dataset.guideStep, step);
   click("#guide-contents");
   click('[data-guide-lesson="keys"]');
-  while (doc.getElementById("guide-next")) click("#guide-next");
+  finishGuide(doc, click);
   assert.ok(doc.querySelector('[data-guide-complete="keys"]'));
   click('[data-guide-action="restart"]');
   assert.equal(doc.getElementById("guide-step").dataset.guideStep, featureGuideLessons().find((item) => item.id === "keys").steps[0].id);
@@ -287,7 +297,7 @@ test("optional routes advance only explicitly and reject unknown routes", () => 
   guide.open(null, opener);
   click('#guide-route-recovery');
   assert.equal(doc.getElementById('guide-step').dataset.guideStep, 'exports-public');
-  while (doc.getElementById('guide-next')) click('#guide-next');
+  finishGuide(doc, click);
   click('#guide-route-next');
   assert.equal(doc.getElementById('guide-step').dataset.guideStep, 'multisig-quorum');
   assert.deepEqual(opened, []);
@@ -320,14 +330,14 @@ test("checks appear once after lesson concepts, never on earlier steps", () => w
 }));
 test("completed route reopening offers the next lesson, while interruptions resume the same step", () => withPage(({ guide, click, doc, opened, opener }) => {
   guide.open(null, opener); click('#guide-route-wallet');
-  while (doc.getElementById('guide-next')) click('#guide-next');
+  finishGuide(doc, click);
   click('#guide-close'); guide.open(null, opener);
   assert.equal(doc.getElementById('guide-resume'), null);
   click('#guide-continue-route');
   assert.equal(doc.getElementById('guide-step').dataset.guideStep, 'keys-methods');
   click('#guide-next'); click('#guide-close'); guide.open(null, opener); click('#guide-resume');
   assert.equal(doc.getElementById('guide-step').dataset.guideStep, 'keys-labs');
-  while (doc.getElementById('guide-next')) click('#guide-next');
+  finishGuide(doc, click);
   assert.ok(doc.getElementById('guide-finish-lessons'));
   click('#guide-finish-bip85');
   assert.equal(doc.getElementById('guide-step').dataset.guideStep, 'bip85-recipe');
@@ -350,7 +360,7 @@ test("the Basics entry continues into the wallet route and contents offers one w
   basics.dataset.guideOpen = "basics";
   doc.body.append(basics);
   click("#basics-entry");
-  while (doc.getElementById("guide-next")) click("#guide-next");
+  finishGuide(doc, click);
   assert.equal(doc.getElementById("guide-content").dataset.guideComplete, "basics");
   assert.equal(doc.getElementById("guide-route-next")?.dataset.guideLesson, "keys", "the beginner entry must not dead-end");
   click("#guide-route-next");
@@ -364,7 +374,7 @@ test("the Basics entry continues into the wallet route and contents offers one w
 test("finish screens never offer the lesson just finished", () => withPage(({ guide, click, doc, opener }) => {
   for (const lesson of featureGuideLessons()) {
     guide.open(lesson.id, opener);
-    while (doc.getElementById("guide-next")) click("#guide-next");
+    finishGuide(doc, click);
     assert.ok(doc.getElementById("guide-finish-lessons")?.querySelector("[data-guide-lesson]"), `${lesson.id} offers other lessons`);
     assert.equal(doc.querySelector(`#guide-finish-lessons [data-guide-lesson="${lesson.id}"]`), null, `${lesson.id} offers itself`);
   }
@@ -396,10 +406,10 @@ test("guide sentences are whole translation units, never glued fragments", () =>
     click("#guide-route-wallet");
     click("#guide-next");
     guide.open("basics", opener);
-    while (!doc.getElementById("guide-check")) click("#guide-next");
+    reachGuideQuiz(doc, click);
     click("#guide-answer-0");
     click("#guide-answer-1");
-    while (doc.getElementById("guide-next")) click("#guide-next");
+    finishGuide(doc, click);
   }, translate);
   assert.ok(keys.length);
   for (const key of keys) assert.equal(key, key.trim(), `${JSON.stringify(key)} is a sentence fragment`);
@@ -441,14 +451,14 @@ test("Tab continues beside the focused guide heading without making headings ord
   checkHeading(doc.getElementById("guide-route-wallet"));
   guide.open("basics", opener);
   checkHeading(doc.getElementById("guide-verify").querySelector("summary"));
-  while (doc.getElementById("guide-next")) click("#guide-next");
+  finishGuide(doc, click);
   checkHeading(doc.getElementById("guide-route-next"));
 }));
 
 test("Tab continues from focused quiz feedback in either direction and otherwise skips it", () => withPage(({ guide, doc, click, opener }) => {
   const tab = (shiftKey = false) => doc.getElementById("feature-guide-overlay").dispatchEvent({ type: "keydown", key: "Tab", shiftKey, preventDefault() {} });
   guide.open("basics", opener);
-  while (!doc.getElementById("guide-check")) click("#guide-next");
+  reachGuideQuiz(doc, click);
   doc.getElementById("guide-check").open = true;
   click("#guide-answer-1");
   const feedback = doc.getElementById("guide-feedback");
@@ -466,7 +476,7 @@ test("Tab continues from focused quiz feedback in either direction and otherwise
 
 test("finish recommendations stay behind an optional disclosure and reach every other lesson", () => withPage(({ guide, doc, click, opener, opened }) => {
   guide.open("basics", opener);
-  while (doc.getElementById("guide-next")) click("#guide-next");
+  finishGuide(doc, click);
   const links = doc.getElementById("guide-finish-lessons");
   const disclosure = links.closest("details");
   assert.ok(disclosure);
