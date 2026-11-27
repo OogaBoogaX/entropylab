@@ -2636,5 +2636,7 @@
   "Split seed": "Dividir semente",
   "Reveal private output": "Revelar saída privada",
   "The restored phrase and split parts are seed backups. Anyone with the restored phrase, or with every split part, controls the wallet.": "A frase restaurada e as partes divididas são backups da semente. Qualquer pessoa com a frase restaurada, ou com todas as partes divididas, controla a carteira.",
-  "Nothing is stored or sent. Clear, End Session, and leaving the page empty these fields; revealed output is concealed when you leave, print, or stay idle. Memory clearing is best-effort.": "Nada é armazenado ou enviado. Limpar, Encerrar Sessão e sair da página esvaziam esses campos; a saída revelada é ocultada quando você sai, imprime ou fica ocioso. A limpeza da memória é feita com o melhor esforço."
+  "Nothing is stored or sent. Clear, End Session, and leaving the page empty these fields; revealed output is concealed when you leave, print, or stay idle. Memory clearing is best-effort.": "Nada é armazenado ou enviado. Limpar, Encerrar Sessão e sair da página esvaziam esses campos; a saída revelada é ocultada quando você sai, imprime ou fica ocioso. A limpeza da memória é feita com o melhor esforço.",
+  "Check a SeedQR copy": "Verificar uma cópia SeedQR",
+  "Checks a SeedQR you copied by hand, square by square, with a QR reader that shares no code with the wallet that made it. It lists every wrong square, even ones a scanner would silently correct. Nothing leaves this page.": "Verifica uma SeedQR que você copiou manualmente, quadrado por quadrado, com um leitor de QR que não compartilha código com a carteira que a criou. Ele lista cada quadrado errado, mesmo aqueles que um scanner corrigiria silenciosamente. Nada sai desta página."
 }
