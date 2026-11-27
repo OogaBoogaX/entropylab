@@ -1395,7 +1395,7 @@ td { border-top: 1px solid var(--border); padding: var(--inset-cell); vertical-a
 .disclaimer-card:not([hidden]), .end-session-card {
   display: flex; flex-direction: column;
 }
-.end-session-card, .modal-card.is-scrollable {
+.disclaimer-card:not([hidden]), .end-session-card, .modal-card.is-scrollable {
   max-height: calc(100vh - 2 * var(--inset-modal)); max-height: calc(100dvh - 2 * var(--inset-modal));
 }
 .modal-card.is-scrollable { overflow-y: auto; }

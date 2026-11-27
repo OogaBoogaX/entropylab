@@ -185,6 +185,8 @@
   const confirm = document.getElementById("beta-disclaimer-confirm");
   const proof = document.getElementById("beta-disclaimer-proof");
   const confirmTitle = document.getElementById("beta-disclaimer-confirm-title");
+  const firstWarning = document.getElementById("beta-disclaimer-text");
+  const secondWarning = document.getElementById("beta-disclaimer-confirm-text");
   const proofTexts = Array.from({ length: 10 }, (_, n) => document.getElementById(`beta-disclaimer-proof-text-${n}`));
   if (!overlay || !accept || !stepOne || !stepTwo || !confirm || !proof || proofTexts.includes(null)) return;
   const KEY = "entropylab-disclaimer-accepted";
@@ -208,14 +210,19 @@
   // The gate cannot import the shared helper (it is inlined through its own
   // build token), so the same cycle is repeated here. It stays unescapable:
   // no Escape, no backdrop click, only the acknowledgement.
-  // On the second step Tab moves between the proof field and the button,
-  // which has nothing else to reach.
+  // The warning is part of the Tab order so a keyboard user can scroll
+  // it before reaching the proof field. Skip disabled confirmation.
   overlay.addEventListener?.("keydown", (event) => {
     if (event.key !== "Tab") return;
     event.preventDefault();
-    if (stepTwo.hidden) return;
-    if (document.activeElement === proof && !confirm.disabled) confirm.focus();
-    else proof.focus();
+    const controls = (stepTwo.hidden
+      ? [firstWarning, accept]
+      : [secondWarning, proof, confirm.disabled ? null : confirm]).filter(Boolean);
+    const active = controls.indexOf(document.activeElement);
+    const next = event.shiftKey
+      ? (active <= 0 ? controls.length - 1 : active - 1)
+      : (active + 1) % controls.length;
+    controls[next].focus();
   });
   // Set by "I Understand"; until then nothing typed can match it.
   let digit = null;

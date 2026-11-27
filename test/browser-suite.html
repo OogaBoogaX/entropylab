@@ -1998,6 +1998,32 @@
     );
   });
 
+  await test("the disclaimer keeps the proof controls in view when its warning scrolls", () => {
+    const first = document.getElementById("beta-disclaimer-step-1");
+    const card = document.getElementById("beta-disclaimer-step-2");
+    const text = document.getElementById("beta-disclaimer-confirm-text");
+    const warning = document.createElement("p");
+    const proofText = document.getElementById("beta-disclaimer-proof-text-0");
+    // Stand in for a long translation or enlarged browser text at this size.
+    warning.textContent = text.textContent.repeat(12);
+    text.append(warning);
+    first.hidden = true;
+    card.hidden = false;
+    proofText.hidden = false;
+    try {
+      assert(text.scrollHeight > text.clientHeight, "the long warning is not scrollable");
+      for (const id of ["beta-disclaimer-confirm-title", "beta-disclaimer-proof-label", "beta-disclaimer-proof", "beta-disclaimer-confirm"]) {
+        const rect = document.getElementById(id).getBoundingClientRect();
+        assert(rect.height > 0 && rect.top >= 0 && rect.bottom <= innerHeight, id + " is clipped by the viewport");
+      }
+    } finally {
+      card.hidden = true;
+      first.hidden = false;
+      proofText.hidden = true;
+      warning.remove();
+    }
+  });
+
   await test("tool tabs answer the arrow keys and name themselves in full", async () => {
     const strip = document.getElementById("workspace-tabs");
     const tabs = [...strip.querySelectorAll("[data-workspace]")];
