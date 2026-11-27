@@ -43,13 +43,34 @@ test("the binary filter keeps 0, 1, and whitespace only", () => {
   assert.equal(hodlFilterBin("01201a3"), "0101", "digits past 1 and letters drop out");
 });
 
-test("the seed filter lowercases words but never mangles an extended key", () => {
+test("the seed filter lowercases words, keeps punctuation, and never mangles an extended key", () => {
   assert.equal(hodlFilterSeed("Abandon ABILITY"), "abandon ability");
-  assert.equal(hodlFilterSeed("word-one_two!"), "wordonetwo", "punctuation is stripped before analysis");
+  assert.equal(hodlFilterSeed("word-one_two!"), "word-one_two!", "punctuation reaches the validator");
+  assert.equal(hodlFilterSeed('["Abandon","Ability"]'), '["abandon","ability"]', "a JSON list keeps every character and is lowercased");
   const xpub = `xpub6BosfCnifzxcFwrSzQiqu2DBVTshkCXacvNsWGYJVVhhawA7d4R5WSWGFNbi8Aw6ZRc1brxMyWMzG3DSSSSoekkudhUd9yLb6qx39T9nMdj`;
   assert.equal(hodlFilterSeed(xpub), xpub, "extended keys are case-sensitive and must survive verbatim");
   const xprvLike = `xprv${"A".repeat(107)}`;
   assert.equal(hodlFilterSeed(xprvLike), xprvLike);
+  // Wrapping punctuation is not part of the key: the bare key comes back so
+  // the seed analysis still sees an extended key and imports it.
+  for (const wrapped of [`[${xpub}]`, `"${xpub}",`, `  ["${xpub}"]  `, `${xpub}\n`]) {
+    assert.equal(hodlFilterSeed(wrapped), xpub, JSON.stringify(wrapped));
+  }
+  // A mark inside the key is never deleted: the text is not returned as a key,
+  // and the key's own validation refuses it later.
+  const marked = `${xpub.slice(0, 40)}-${xpub.slice(40)}`;
+  const markedResult = hodlFilterSeed(marked);
+  assert.equal(hodlLooksExtendedKey(markedResult), false, "a key with a mark in the middle is not a key");
+  assert.ok(markedResult.includes("-"), "the mark is kept for the validator to refuse");
+  // Hyphen-joined recovery words are never glued into a fake key, wrapped or not.
+  for (const first of ["track", "umbrella", "vacant", "yard", "zoo"]) {
+    const phrase = [first, ...Array(23).fill("abandon")].join("-");
+    assert.equal(hodlLooksExtendedKey(phrase), false, `${first}: not an extended key`);
+    assert.equal(hodlFilterSeed(phrase), phrase, `${first}: every hyphen kept`);
+    assert.equal(hodlFilterSeed(`[${phrase}]`), `[${phrase}]`, `${first}: wrapped, still not a key`);
+  }
+  const twelve = ["zoo", ...Array(11).fill("abandon")].join("-");
+  assert.equal(hodlFilterSeed(twelve), twelve, "12 hyphen-joined words are not glued into one");
   assert.equal(hodlFilterSeed("XpubShortMixedCase"), "xpubshortmixedcase", "short mixed-case text is not an extended key");
   assert.equal(hodlFilterSeed(null), "");
 });

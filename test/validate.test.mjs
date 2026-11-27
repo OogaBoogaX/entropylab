@@ -1056,16 +1056,16 @@ test("seed text refuses punctuation inside a word but keeps CSV and JSON separat
   const hyphenated = twelve.replace("abandon", "aban-don");
   const dotted = twelve.replace("abandon", "aban.don");
   const digit = twelve.replace("abandon", "abandon1");
-  const punctuation = (text) => `\u201C${text}\u201D has punctuation inside a word. Remove it, or put a space between the words.`;
+  const punctuation = (n) => `Word ${n} has punctuation inside it. Remove the punctuation, or replace it with a space if it joins two words.`;
   const oldDigit = "Seed words are the BIP39 English list: remove digits and non-ASCII characters.";
 
-  for (const [text, token] of [[hyphenated, "aban-don"], [dotted, "aban.don"]]) {
+  for (const [text, n] of [[hyphenated, 1], [dotted, 1]]) {
     const result = slice.hodlValidateMnemonic(text);
     assert.equal(result.ok, false);
-    assert.equal(result.error, punctuation(token));
+    assert.equal(result.error, punctuation(n));
     const target = slice.hodlValidateTargetMnemonic(text, 12);
     assert.equal(target.ok, false);
-    assert.equal(target.error, punctuation(token));
+    assert.equal(target.error, punctuation(n));
   }
 
   const comma = twelve.replace(/ /g, ",");
@@ -1075,6 +1075,33 @@ test("seed text refuses punctuation inside a word but keeps CSV and JSON separat
     assert.equal(slice.hodlValidateTargetMnemonic(text, 12).ok, true, text);
   }
 
+  const hyphenatedAll = twelve.replace(/ /g, "-");
+  const allWords = twelve.split(" ");
+  for (const validate of [() => slice.hodlValidateMnemonic(hyphenatedAll), () => slice.hodlValidateTargetMnemonic(hyphenatedAll, 12)]) {
+    const result = validate();
+    assert.equal(result.ok, false);
+    assert.equal(result.error, punctuation(1));
+    for (const word of allWords) assert.equal(result.error.includes(word), false, `the message must not quote ${word}`);
+  }
+
+  const dottedThird = twelve.split(" ");
+  dottedThird[2] = "aban.don";
+  for (const validate of [() => slice.hodlValidateMnemonic(dottedThird.join(" ")), () => slice.hodlValidateTargetMnemonic(dottedThird.join(" "), 12)]) {
+    const result = validate();
+    assert.equal(result.ok, false);
+    assert.equal(result.error, punctuation(3));
+  }
+
+  const jsonDotted = `[${twelve.split(" ").map((word, index) => `"${index === 1 ? "ab.ility" : word}"`).join(",")}]`;
+  for (const validate of [() => slice.hodlValidateMnemonic(jsonDotted), () => slice.hodlValidateTargetMnemonic(jsonDotted, 12)]) {
+    const result = validate();
+    assert.equal(result.ok, false);
+    assert.equal(result.error, punctuation(2));
+  }
+
+  const mixed = twelve.replace("abandon", "aban-don1");
+  assert.equal(slice.hodlValidateMnemonic(mixed).error, oldDigit);
+  assert.equal(slice.hodlValidateTargetMnemonic(mixed, 12).error, oldDigit);
   assert.equal(slice.hodlValidateMnemonic(digit).error, oldDigit);
   assert.equal(slice.hodlValidateTargetMnemonic(digit, 12).error, oldDigit);
 });

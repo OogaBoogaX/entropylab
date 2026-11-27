@@ -233,15 +233,18 @@ function hodlNormalizeMnemonicText(e) {
   return e.trim().toLowerCase().replace(/[^a-z\s]/g, " ").split(/\s+/).filter(Boolean).join(" ");
 }
 // A seed phrase is read through the normalizer, which turns every non-letter
-// into a separator. Digits and non-ASCII letters are refused first; ASCII
-// punctuation between two letters inside a word is refused too, except comma,
-// semicolon, pipe, double quote and square brackets, which always separate
-// words (CSV and JSON pastes).
+// into a separator. Digits and non-ASCII letters are refused first. Like
+// non-ASCII letters, punctuation must reach the validator, which refuses
+// punctuation inside a word and treats comma, semicolon, pipe, double quote
+// and square brackets as separators (CSV and JSON pastes).
 function hodlSeedTextProblem(value) {
   let text = String(value ?? "");
   if (/[0-9]|[^\x00-\x7F]/.test(text)) return hodlNote("Seed words are the BIP39 English list: remove digits and non-ASCII characters.");
+  let position = 0;
   for (let token of text.split(/[,\;|"\[\]\s]+/)) {
-    if (/[A-Za-z][^A-Za-z]+[A-Za-z]/.test(token)) return hodlNote("\u201C{text}\u201D has punctuation inside a word. Remove it, or put a space between the words.", { text: token });
+    if (!token) continue;
+    position += 1;
+    if (/[A-Za-z][^A-Za-z]+[A-Za-z]/.test(token)) return hodlNote("Word {n} has punctuation inside it. Remove the punctuation, or replace it with a space if it joins two words.", { n: position });
   }
   return null;
 }
@@ -8950,12 +8953,18 @@ function hodlFilterBin(e) {
   return e.replace(/[^01\s]/g, "");
 }
 function hodlFilterSeed(e) {
-  // Keep non-ASCII characters: deleting them rewrites the phrase before
-  // either tokenizer sees it ("armý" became "arm" and derived that wallet).
-  // The validator refuses them, so they must survive to the field.
-  let value = String(e ?? "").replace(/[\x00-\x7F]/g, (ch) => /[a-zA-Z0-9\s]/.test(ch) ? ch : "");
-  if (hodlLooksExtendedKey(value)) return value;
-  return /^[\x00-\x7F]*$/.test(value) ? value.toLowerCase() : value;
+  // Keep every character inside the text: like non-ASCII letters, punctuation
+  // must reach the validator, which refuses punctuation inside a word and
+  // treats comma, semicolon, pipe, double quote and square brackets as
+  // separators. Wrapping punctuation around a pasted extended key is not part
+  // of the key, so only the leading and trailing characters are removed to
+  // route the text; the key test only routes it, and the key's own validation
+  // still runs later, so a key with a mark in the middle is refused, not
+  // repaired.
+  let original = String(e ?? "");
+  let edges = original.replace(/^[\s\x21-\x2F\x3A-\x40\x5B-\x60\x7B-\x7E]+|[\s\x21-\x2F\x3A-\x40\x5B-\x60\x7B-\x7E]+$/g, "");
+  if (hodlLooksExtendedKey(edges)) return edges;
+  return /^[\x00-\x7F]*$/.test(original) ? original.toLowerCase() : original;
 }
 function hodlFilterKey(e, t) {
   return t === "brain" ? e : e.replace(/[^0-9A-Za-z\s]/g, "");
