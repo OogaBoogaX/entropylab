@@ -69,6 +69,7 @@ import { checkRbfReplacement as hodlCheckRbfReplacement } from "./psbt-rbf-check
 // The Lightning node key tool (its own workspace tab): aezeed deciphering
 // and the LND/LDK node identity derivations live in lightning.js/aezeed.js.
 import { hodlInitLn, hodlLnWipeMem } from "./lightning.js";
+import { initSeedXor, seedXorWipeMem } from "./seed-xor.js";
 import { hodlCompareSchnorrNonces, hodlParseSchnorr, hodlTapKeySigs, hodlTapScriptPathSigs, hodlTapScriptSigs, hodlTapSighashProblems, hodlTapWitnessShape } from "./psbt-schnorr.js";
 import {
   buildDeriveAddressesCommands,
@@ -6787,6 +6788,11 @@ function hodlAppPasteLabel(id) {
     "nonce-pass": () => hodlTText("nonce passphrase"),
     "ln-seed": () => hodlTText("Lightning seed phrase"),
     "ln-pass": () => hodlTText("Lightning passphrase"),
+    "seedxor-original": () => hodlTText("original Seed XOR phrase"),
+    "seedxor-part-a": () => hodlTText("Seed XOR part A"),
+    "seedxor-part-b": () => hodlTText("Seed XOR part B"),
+    "seedxor-part-c": () => hodlTText("Seed XOR part C"),
+    "seedxor-part-d": () => hodlTText("Seed XOR part D"),
     "core-add-text": () => hodlTText("output descriptor"),
     "journal-input": () => hodlTText("raw rolls or input"),
     "journal-phrase": () => hodlTText("BIP39 seed or passphrase"),
@@ -20223,11 +20229,15 @@ function hodlShowWorkspace(id) {
   // Preview builds only: a release build strips the Verify card.
   const verifyCard = document.getElementById("verify-card");
   if (verifyCard) verifyCard.hidden = id !== "verify";
+  const seedXorCard = document.getElementById("seedxor-card");
+  if (seedXorCard) seedXorCard.hidden = id !== "seedxor";
   // The context block sits outside its tool's card, so it is shown and hidden
   // with the card rather than by it.
   ["bip85", "sp", "msig", "calc", "vanity", "ln", "core"].forEach((tool) => {
     document.getElementById(`${tool}-tool-intro`).hidden = id !== tool;
   });
+  const seedXorIntro = document.getElementById("seedxor-tool-intro");
+  if (seedXorIntro) seedXorIntro.hidden = id !== "seedxor";
   hodlSyncPsbtTool();
   hodlSyncJournalTool();
   hodlSyncPrivacyTool();
@@ -20385,6 +20395,7 @@ async function hodlLoadTestKeys() {
 // push the nine tools past the desktop strip (owner, 2026-10-26); the full
 // name stays the accessible name and the hover title.
 var hodlWorkspaceTabs = [["calc", "Keys", "Keys"], ["msig", "Multi Signature", "MultiSig", "MultiSig"], ["psbt", "Transactions", "Txns"], ["ln", "Lightning", "LN"], ["core", "Bitcoin Core", "Core"], ["bip85", "BIP-85 Child", "BIP-85", "BIP-85"], ["sp", "Privacy", "Privacy"], ["vanity", "Vanity Address", "Vanity", "Vanity"], ["journal", "Journal", "Journal"], ["verify", "Verify", "Verify"]];
+if (__ENTROPYLAB_PREVIEW__) hodlWorkspaceTabs.splice(hodlWorkspaceTabs.findIndex(([id]) => id === "journal"), 0, ["seedxor", "Seed XOR", "XOR", "Seed XOR"]);
 // The Privacy workspace's stations: the id a station tab carries and the card
 // it shows. Later PRs add ["bip47", …] and ["check", …] rows here.
 var hodlPrivacyTools = [["sp", "sp-card"]];
@@ -23795,6 +23806,7 @@ function hodlInitWorkspace() {
   hodlInitVanity();
   hodlInitSp();
   hodlInitLn({ journalLog: hodlJournalLog, copyIcon: hodlClipboardIconMarkup, qrSvg: hodlQrSvg, pageNetwork: () => hodlInspectorNetwork() });
+  if (__ENTROPYLAB_PREVIEW__) initSeedXor({ doc: document, copyIcon: hodlClipboardIconMarkup });
 }
 var hodlKeyClearSyncQueued = false, hodlMsigClearSyncQueued = false, hodlDeriveSyncQueued = false;
 function hodlQueueKeyClearButtonSync() {
@@ -24161,6 +24173,7 @@ function hodlInitSecretFieldAutoClear() {
     try { hodlSpWipeMem(); } catch {}
     try { hodlBip47WipeMem(); } catch {}
     try { hodlLnWipeMem(); } catch {}
+    try { if (__ENTROPYLAB_PREVIEW__) seedXorWipeMem(); } catch {}
     // Every derived wallet's row key bytes, shared results included: the
     // whole session is going (#546 B2). Before the Journal wipe, which empties
     // the Key Manager's pending keys. A result can be mid-update and throw,

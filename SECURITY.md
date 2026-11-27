@@ -633,6 +633,27 @@ Clearing remains best-effort.
 Coverage counts/indexes retained in the result are transaction metadata, not
 cryptographic secrets; Clear Capture retires that result too.
 
+### Preview-only Seed XOR
+
+The preview Seed XOR tab restores checksum-valid English BIP39 parts of the same
+12-, 18-, or 24-word length by XORing their entropy bytes and calculating the
+result's new checksum. It rejects malformed phrases, bad input checksums, and
+mixed or unsupported lengths. The library accepts two or more parts, including
+duplicate and all-zero-entropy parts as Coldcard does; the tab accepts the two
+to four parts Coldcard's Split Existing menu produces. Duplicate parts are not
+deduplicated, and an all-zero result warns without being rejected. Published
+Coldcard vectors and rejection cases pin this contract in
+[`test/seed-xor.test.mjs`](test/seed-xor.test.mjs).
+
+The deterministic split uses Coldcard's double-SHA256 domain and part labels and
+is checked against published device outputs. It transforms only the phrase the
+user supplied and never generates entropy. Results stay out of the DOM until
+revealed; private copies use EntropyLab's clipboard. Editing clears a stale
+result, while Clear, End Session, and pagehide empty every phrase field and the
+retained result, with the usual best-effort limits for JavaScript strings. The
+implementation is [`src/js/seed-xor.js`](src/js/seed-xor.js), and the markup and
+navigation are stripped from release builds by the existing preview gates.
+
 ### Released PSBT camera lifecycle
 
 PSBT scanning opts into continuous acquisition on the existing camera
