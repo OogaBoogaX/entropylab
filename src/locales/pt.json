@@ -2594,5 +2594,8 @@
   "A derivation path index after the extended key is out of range (0 to 2,147,483,647).": "Um índice de caminho de derivação após a chave estendida está fora do intervalo (0 a 2.147.483.647).",
   "A BIP45 key must have plain cosigner step 0 before its branch, like /0/0/* or /0/<0;1>/*. This tool derives only cosigner 0; another cosigner step would derive a different wallet.": "Uma chave BIP45 deve ter um passo cosigner simples 0 antes de seu branch, como /0/0/* ou /0/<0;1>/*. Esta ferramenta deriva apenas o cosigner 0; outro passo cosigner derivaria uma carteira diferente.",
   "A multipath step like <0;1> must be followed by the wildcard *, as in /<0;1>/*.": "Um passo multipath como <0;1> deve ser seguido pelo curinga *, como em /<0;1>/*.",
-  "Bitcoin Core": "Bitcoin Core"
+  "Bitcoin Core": "Bitcoin Core",
+  "First receive addresses": "Primeiros endereços de recebimento",
+  "Check a SLIP-39 backup": "Verificar um backup SLIP-39",
+  "Combines SLIP-39 shares with code written from the specification and shows the wallet they restore. It can also test whether a device repeats the random values it splits a secret with. Nothing leaves this page.": "Combina compartilhamentos SLIP-39 com código escrito a partir da especificação e mostra a carteira que eles restauram. Também pode testar se um dispositivo repete os valores aleatórios com os quais divide um segredo. Nada sai desta página."
 }
