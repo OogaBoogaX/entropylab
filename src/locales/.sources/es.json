@@ -2635,5 +2635,6 @@
   "This reproduces Coldcard's deterministic split using double-SHA256. EntropyLab does not generate entropy or offer a random split.": "cf6de3b78e8b79321ba75fccc0c35e01cb161cd5851629301e335830baf174e6",
   "Split seed": "5301b2f29952b70cb5c4fdddaabd696ba474450fd0da03cae3771be922f9ade2",
   "Reveal private output": "897becbba6f87e22920ac9ff995d95ed17d203b7560d5703f8f8f7dfd6610b5d",
-  "The restored phrase and split parts are seed backups. Anyone with the restored phrase, or with every split part, controls the wallet.": "f5073eeb057295d96c47d5bd706ddbd6621f202312c8d873b61b7d63c10ce3d9"
+  "The restored phrase and split parts are seed backups. Anyone with the restored phrase, or with every split part, controls the wallet.": "f5073eeb057295d96c47d5bd706ddbd6621f202312c8d873b61b7d63c10ce3d9",
+  "Nothing is stored or sent. Clear, End Session, and leaving the page empty these fields; revealed output is concealed when you leave, print, or stay idle. Memory clearing is best-effort.": "be89c62efd5b5bda94f13bc5fca650db10330b2c22200f4d6bcf3bd8deda84c0"
 }
