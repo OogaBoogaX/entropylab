@@ -155,8 +155,8 @@ test("GitHub Pages aliases the canonical app at the site root only during deploy
   assert.equal(existsSync(join(root, "index.html")), false, "index.html should not be committed");
   assert.match(
     workflow,
-    /^\s*cp entropylab\.html _site\/index\.html\s*$/m,
-    "Pages staging must copy entropylab.html to its required index.html entry file",
+    /^\s*cp preview-build\/entropylab\.html _site\/index\.html\s*$/m,
+    "Pages staging must copy the built page to its required index.html entry file",
   );
   assert.match(workflow, /^\s*branches: \[rock\]\s*$/m, "CI must run for pushes to the default branch");
   assert.match(
