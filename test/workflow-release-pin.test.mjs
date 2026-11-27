@@ -213,6 +213,69 @@ test("the preview job publishes rock to the preview repository only", () => {
   assert.doesNotMatch(job, /actions\/deploy-pages@/, "it does not deploy production");
 });
 
+// Owner rule 11-27: every merged feature is reachable on the preview site, so
+// the preview job deploys a --preview build (Seed XOR, the SLIP-39 and SeedQR
+// checks). The tested candidate is untouched: it is built, checked and
+// uploaded exactly as before, and no other job downloads the preview build.
+test("the build job builds a separate preview variant after the tested candidate", () => {
+  const build = steps(jobBlock(cicd, "build"));
+  const at = (needle) => build.findIndex((step) => step.includes(needle));
+  const candidate = at("name: entropylab-candidate\n");
+  const variant = at("name: Build the preview variant\n");
+  const digest = at("name: Record the preview digest\n");
+  const upload = at("name: entropylab-preview\n");
+  for (const [label, index] of [["candidate upload", candidate], ["preview build", variant], ["preview digest", digest], ["preview upload", upload]]) {
+    assert.ok(index >= 0, `the build job has the ${label}`);
+  }
+  assert.ok(candidate < variant && variant < digest && digest < upload, "the preview build comes after the candidate upload");
+  assert.match(build[variant], /^ {8}run: node scripts\/build\.mjs --preview --out preview-build$/m, "the preview build goes to a directory of its own");
+  assert.match(build[digest], /^ {8}id: preview-digest$/m, "the digest step is the id the job output names");
+  assert.ok(build[digest].includes(`sha256=$(sha256sum preview-build/entropylab.html | cut -d' ' -f1)`), "the digest is of the preview page");
+  assert.match(jobBlock(cicd, "build"), /^ {6}preview_sha256: \$\{\{ steps\.preview-digest\.outputs\.sha256 \}\}$/m, "the job shares the preview digest");
+  const step = build[upload];
+  assert.match(step, /^ {8}uses: actions\/upload-artifact@[0-9a-f]{40} # v\d/m, "the preview upload is pinned like the candidate's");
+  assert.match(step, /^ {10}if-no-files-found: error$/m, "an empty preview upload fails the build");
+  assert.match(step, /^ {10}retention-days: 7$/m, "the preview build is kept as long as the candidate");
+  const paths = (step.match(/^ {10}path: \|\n((?:^ {12}[^\n]+\n)+)/m)?.[1] ?? "").trim().split("\n").map((path) => path.trim());
+  assert.deepEqual(paths, ["preview-build/entropylab.html", "preview-build/service-worker.js"], "the preview artifact carries the page and its own worker");
+});
+
+test("the preview job deploys the preview build, verified against its own digest", () => {
+  const preview = steps(jobBlock(cicd, "preview"));
+  const step = (name) => preview.find((entry) => entry.startsWith(`name: ${name}\n`)) ?? "";
+  const download = step("Download the preview build");
+  assert.match(download, /^ {8}uses: actions\/download-artifact@[0-9a-f]{40} # v\d/m, "the preview build is downloaded with the pinned action");
+  assert.match(download, /^ {10}name: entropylab-preview$/m, "the preview job downloads the preview artifact");
+  assert.match(download, /^ {10}path: preview-build$/m, "it lands in the directory the prepare step reads");
+  const verify = step("Verify the preview digest");
+  assert.ok(verify.includes('echo "${{ needs.build.outputs.preview_sha256 }}  preview-build/entropylab.html" | sha256sum -c -'), "the page is verified against the digest the build recorded");
+  const prepare = step("Prepare the preview site");
+  assert.ok(prepare.includes("cp preview-build/entropylab.html _site/"), "the site root serves the preview build");
+  assert.ok(prepare.includes("cp preview-build/entropylab.html _site/index.html"), "index.html is the preview build");
+  assert.ok(prepare.includes("cp preview-build/service-worker.js _site/"), "the worker is the preview build's own");
+  assert.doesNotMatch(jobBlock(cicd, "preview"), /entropylab-candidate/, "the preview job no longer deploys the tested candidate");
+});
+
+// Every step that downloads an artifact, named by the job that owns it. A job
+// id is a 2-space key with no value of its own; `on:` triggers look the same
+// but hold no download step.
+const downloaders = (artifact) => {
+  const jobs = [...cicd.matchAll(/^ {2}([a-z0-9_-]+):\n/gm)].map((match) => ({ name: match[1], at: match.index }));
+  const jobAt = (offset) => jobs.filter((job) => job.at < offset).pop()?.name ?? "";
+  return [...cicd.matchAll(/^ {6}- [\s\S]*?(?=^ {6}- |(?![\s\S]))/gm)]
+    .filter((match) => match[0].includes("uses: actions/download-artifact@") && match[0].includes(`          name: ${artifact}\n`))
+    .map((match) => jobAt(match.index));
+};
+
+test("only the preview job reads the preview build, and every candidate consumer still reads the candidate", () => {
+  // Named one by one: the consumers the WASM-flow guard in validate.test.mjs
+  // already requires to download the tested candidate.
+  for (const name of ["artifact", "attest", "test-browser", "test-browser-check", "test-ci", "test-invariants", "timestamp", "verify"]) {
+    assert.ok(downloaders("entropylab-candidate").includes(name), `${name} still downloads the tested candidate`);
+  }
+  assert.deepEqual(downloaders("entropylab-preview"), ["preview"], "only the preview job downloads the preview build");
+});
+
 // The preview is an unsigned -dev build, so it must stay out of search: the
 // real "Prepare the preview site" script runs here against a checkout that
 // holds every file the production site serves.
@@ -225,10 +288,14 @@ const previewPrepare = (page) => {
   const script = prepare.split(/\n +run: \|\n/)[1]?.replace(/^ {10}/gm, "");
   assert.ok(script, "the step runs a script");
   const checkout = mkdtempSync(join(tmpdir(), "preview-site-"));
-  for (const name of ["robots.txt", "sitemap.xml", "llms.txt", "manifest.webmanifest", "service-worker.js"]) {
+  for (const name of ["robots.txt", "sitemap.xml", "llms.txt", "manifest.webmanifest"]) {
     writeFileSync(join(checkout, name), `${name}\n`);
   }
-  writeFileSync(join(checkout, "entropylab.html"), page);
+  // The job copies the page and its own worker out of the downloaded preview
+  // build; the manifest and the assets still come from the checkout.
+  mkdirSync(join(checkout, "preview-build"));
+  writeFileSync(join(checkout, "preview-build/entropylab.html"), page);
+  writeFileSync(join(checkout, "preview-build/service-worker.js"), "service-worker.js\n");
   mkdirSync(join(checkout, "assets"));
   writeFileSync(join(checkout, "assets/favicon.png"), "favicon\n");
   // As the runner runs a step: bash, stopping at the first failure.
@@ -269,7 +336,7 @@ test("the preview site lets crawlers read the noindex and publishes no sitemap o
     for (const name of ["entropylab.html", "index.html", "manifest.webmanifest", "service-worker.js", ".nojekyll", "assets/favicon.png"]) {
       assert.ok(existsSync(join(site, name)), `_site/${name} is published`);
     }
-    assert.equal(readFileSync(join(site, "index.html"), "utf8"), DEV_PAGE, "the site root serves the candidate");
+    assert.equal(readFileSync(join(site, "index.html"), "utf8"), DEV_PAGE, "the site root serves the preview build");
   } finally {
     rmSync(checkout, { recursive: true, force: true });
   }
