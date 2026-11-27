@@ -9044,13 +9044,17 @@ function hodlParseKeyOrigin(raw) {
   // different wallet; BIP45 /3/<0;1> slipped past the cosigner rule the same
   // way (#1460 gate, Gemini and GLM).
   if (multipathAt >= 0 && !hadWildcard) throw hodlError("A multipath step like <0;1> must be followed by the wildcard *, as in /<0;1>/*.");
-  // Steps ahead of a multipath step are honored; the multipath step itself
-  // is the branch position. Without one, a sole step ahead of the wildcard
-  // is the branch marker and every other shape is honored as written.
-  // Only an unhardened sole step is a branch marker: a hardened one (/0h/*)
-  // stays in the path, where the unhardened-path check refuses it, instead of
-  // being dropped silently.
-  let honoredTokens = multipathAt >= 0 ? tokens.slice(0, multipathAt) : hadWildcard && tokens.length === 1 && /^\d+$/.test(tokens[0]) ? [] : tokens;
+  // A wildcard path is read exactly the way the descriptor importer reads it
+  // (hodlMsigDescriptorKeyText): the last plain step ahead of the wildcard
+  // is the branch, and the steps before it are the signer's fixed path — so
+  // xpub…/1/0/* is branch 0 below /1, not a fixed /1/0 with the form's own
+  // branch added underneath. A multipath step is the branch position itself.
+  // Only a plain unhardened last step is a branch marker: a hardened one
+  // (/0h/*) stays in the path, where the unhardened-path check refuses it,
+  // instead of being dropped silently.
+  let branch = multipathAt < 0 && hadWildcard && tokens.length > 0 && /^\d+$/.test(tokens[tokens.length - 1]) ? Number(tokens[tokens.length - 1]) : null;
+  let branches = multipathAt < 0 ? null : tokens[multipathAt].slice(1, -1).split(";").map(Number);
+  let honoredTokens = multipathAt >= 0 ? tokens.slice(0, multipathAt) : branch === null ? tokens : tokens.slice(0, -1);
   let derivationPath = honoredTokens.map((token) => {
     let step = token.match(/^(\d+)([hH']?)$/); // shape guaranteed by the validation above
     let index = Number(step[1]);
@@ -9059,7 +9063,7 @@ function hodlParseKeyOrigin(raw) {
   if (fingerprint === "00000000") throw hodlError("Key origin fingerprint 00000000 is not a real master fingerprint.");
   if (!/^(?:\d+h?)(?:\/\d+h?)*$/.test(path)) throw hodlError("Key origin path must look like 48h/0h/0h/2h.");
   if (!key) throw hodlError("Key origin is missing the extended public key.");
-  return { origin: { fingerprint, path }, key, derivationPath };
+  return { origin: { fingerprint, path }, key, derivationPath, branch, branches };
 }
 function hodlOriginPathIndexes(path) {
   return hodlNormalizeOriginPath(path).split("/").filter(Boolean).map((step) => {
@@ -9327,6 +9331,8 @@ function hodlParseMultisigCosigner(raw) {
   let parsedOrigin = hodlParseKeyOrigin(text), parsed = hodlParseExtendedKey(parsedOrigin.key);
   parsed.origin = parsedOrigin.origin;
   parsed.derivationPath = parsedOrigin.derivationPath || "";
+  parsed.branch = parsedOrigin.branch ?? null;
+  parsed.branches = parsedOrigin.branches ?? null;
   if (parsed.derivationPath) {
     if (!/^\d+(?:\/\d+)*$/.test(parsed.derivationPath)) throw new Error("The derivation path after the extended key must be unhardened (like /1); hardened steps cannot be derived from an extended public key.");
     if (parsed.derivationPath.split("/").some((step) => Number(step) > 2147483647)) throw new Error("A derivation path index after the extended key is out of range (0 to 2,147,483,647).");
@@ -11021,6 +11027,37 @@ function hodlMsigKeyParts(value) {
   if (expressions?.length === 1) text = expressions[0].expression;
   return hodlParseKeyOrigin(text);
 }
+// A co-signer key pasted with a wildcard path names one branch, exactly as
+// the descriptor importer reads the same text. The form derives one shared
+// branch window below every key, so a key whose branch is outside that
+// window would be silently re-pathed to a different wallet; it is refused
+// instead. The key field keeps only the key once the path moves into the
+// path field, so the branch a wildcard named is kept on the row too
+// (dataset.msigBranch).
+function hodlMsigDeclaredBranch(row, parsed) {
+  if (parsed?.branch != null) return parsed.branch;
+  let stored = row?.dataset?.msigBranch;
+  return stored == null || stored === "" ? null : Number(stored);
+}
+function hodlMsigDeclaredBranches(row, parsed) {
+  if (parsed?.branches != null) return parsed.branches;
+  if (parsed?.branch != null) return null;
+  let stored = row?.dataset?.msigBranches;
+  return stored == null || stored === "" ? null : String(stored).split(";").map(Number);
+}
+function hodlMsigBranchWindowError(row, parsed) {
+  let branches = hodlMsigDeclaredBranches(row, parsed);
+  if (branches != null) {
+    let window = hodlReadBranchWindow("msig-");
+    if (branches.length > 0 && branches.length === window.range && branches.every((branch, index) => Number.isSafeInteger(branch) && branch === window.start + index)) return "";
+    return hodlTText("This key's descriptor uses branches {branches} in that order; the form derives branches {from}-{to} in order. Change the branch window or import the full descriptor.", { branches: branches.join(" and "), from: window.start, to: window.start + window.range - 1 });
+  }
+  let branch = hodlMsigDeclaredBranch(row, parsed);
+  if (branch == null || !Number.isSafeInteger(branch)) return "";
+  let window = hodlReadBranchWindow("msig-");
+  if (branch >= window.start && branch < window.start + window.range) return "";
+  return hodlTText("This key's descriptor uses branch {branch}, outside the form's branch window {from}-{to}. Change the branch window or import the full descriptor.", { branch, from: window.start, to: window.start + window.range - 1 });
+}
 function hodlMsigPathComponentLabel(index, originDepth, spec) {
   // The card's spec names its steps; a Custom path's steps are only numbered.
   if (index >= originDepth) return hodlTText("Extended child {n}", { n: index - originDepth + 1 });
@@ -11107,10 +11144,16 @@ function hodlSyncMsigRowPathFromKey(row) {
     fingerprint.value = "";
     pathInput.value = hodlDefaultMsigFullPath(row);
     row.dataset.msigOriginDepth = String(hodlParseCustomDerivationPath(pathInput.value).components.length);
+    row.dataset.msigBranch = "";
+    row.dataset.msigBranches = "";
   } else {
+    row.dataset.msigBranch = "";
+    row.dataset.msigBranches = "";
     try {
       let parts = hodlMsigKeyParts(ta.value), parsed = hodlParseMultisigCosigner(ta.value);
       row.dataset.msigOriginDepth = String(parsed.node.depth);
+      row.dataset.msigBranch = parts.branch == null ? "" : String(parts.branch);
+      row.dataset.msigBranches = parts.branches == null ? "" : parts.branches.join(";");
       if (parts.origin) {
         fingerprint.value = parts.origin.fingerprint;
         pathInput.value = hodlMsigFullPath(parsed);
@@ -11531,6 +11574,8 @@ function hodlCheckXpub(ta) {
     let parsed = hodlParseMultisigCosigner(value), coinType = hodlReadCoinType(document.getElementById("msig-network")), network = hodlNetworkFromCoinType(coinType), kind = hodlScriptKind(), purpose = hodlReadMsigPurpose(), hardening = hodlReadHardening("msig-"), spec = hodlMsigRowSpec(row), specPurpose = hodlMsigSpec(spec)?.purpose ?? null;
     if (kind === "mixed") throw new Error("These keys do not define one compatible multisig policy. Use one script type.");
     if (parsed.isPrivate) throw new Error("Paste an extended public key, never an extended private key.");
+    let branchError = hodlMsigBranchWindowError(row, parsed);
+    if (branchError) throw new Error(branchError);
     if (parsed.network !== network) throw new Error(`${parsed.prefix} is for ${parsed.network}; the multisig is set to ${network}.`);
     if (!hodlMultisigPrefixCompatible(parsed, kind, specPurpose)) throw new Error(parsed.scope === "singlesig" ? "Use a generic xpub/tpub here, or a proper uppercase multisig SLIP-132 export." : `${parsed.prefix} does not match the selected multisig script type.`);
     if (!parsed.origin) throw new Error(`Paste ${hodlMultisigKeyPlaceholder(kind, network, purpose, coinType, hardening)} so a signer can recognize this key.`);
@@ -11768,6 +11813,8 @@ function hodlValidatedMsigInputs() {
     if (!raw) throw hodlError("Paste an origin and extended public key for co-signer {n}.", { n: index + 1 });
     let parsed = hodlParseMultisigCosigner(raw), spec = hodlMsigRowSpec(row), specPurpose = hodlMsigSpec(spec)?.purpose ?? null;
     if (parsed.isPrivate) throw hodlError("Co-signer {n} is an extended private key. Paste only an extended public key.", { n: index + 1 });
+    let branchError = hodlMsigBranchWindowError(row, parsed);
+    if (branchError) throw hodlError("Co-signer {n}: {reason}", { n: index + 1, reason: branchError });
     if (parsed.network !== network) throw hodlError("Co-signer {n}'s {prefix} is for {keyNetwork}, but this multisig is set to {walletNetwork}.", { n: index + 1, prefix: parsed.prefix, keyNetwork: parsed.network, walletNetwork: network });
     if (!hodlMultisigPrefixCompatible(parsed, kind, specPurpose)) {
       if (parsed.scope === "singlesig") throw hodlError("Co-signer {n} uses a singlesig {prefix}. Use a generic {xpub}, or the proper uppercase multisig export for this script type.", { n: index + 1, prefix: parsed.prefix, xpub: hodlExtendedKeyVersions[network].x.pubName });

@@ -110,6 +110,25 @@ const {
 } = await import(pathToFileURL(originPath).href);
 unlinkSync(originPath);
 
+const msigBranchPrelude = `
+let hodlTestBranchWindow = { start: 0, range: 2 };
+function hodlReadBranchWindow() { return hodlTestBranchWindow; }
+function hodlTText(key, vars) {
+  let text = key;
+  if (vars) text = text.replace(/\\{(\\w+)\\}/g, (_, n) => (vars[n] == null ? "{" + n + "}" : String(vars[n])));
+  return text;
+}
+function setHodlTestBranchWindow(start, range) { hodlTestBranchWindow = { start, range }; }
+export { hodlMsigBranchWindowError, setHodlTestBranchWindow };
+`;
+const msigBranchPath = loadSlice(
+  "function hodlMsigDeclaredBranch",
+  "function hodlMsigPathComponentLabel",
+  msigBranchPrelude,
+);
+const { hodlMsigBranchWindowError, setHodlTestBranchWindow } = await import(pathToFileURL(msigBranchPath).href);
+unlinkSync(msigBranchPath);
+
 
 const checksumPrelude = `
 const INPUT_CHARSET = ${JSON.stringify(INPUT_CHARSET)};
@@ -162,16 +181,84 @@ test("origin parse honors a trailing numeric path, with or without decoration", 
   assert.equal(hodlParseKeyOrigin(body + "/0/1/0").derivationPath, "0/1/0");
   // A trailing slash alone is decoration; the path ahead of it still applies.
   assert.equal(hodlParseKeyOrigin(body + "/0/1/0/").derivationPath, "0/1/0");
-  // A sole step ahead of the wildcard is the branch marker; two or more
-  // steps are the signer's fixed path and are preserved in full.
-  assert.equal(hodlParseKeyOrigin(body + "/1/0/*").derivationPath, "1/0");
-  assert.equal(hodlParseKeyOrigin(body + "/0/0/20/*").derivationPath, "0/0/20");
+  // A wildcard path is read the way the descriptor importer reads it: the
+  // last plain step ahead of the wildcard is the branch and the steps before
+  // it the signer's fixed path — xpub…/1/0/* is branch 0 below /1, not a
+  // fixed /1/0 with the form's own branch added underneath.
+  assert.equal(hodlParseKeyOrigin(body + "/1/0/*").derivationPath, "1");
+  assert.equal(hodlParseKeyOrigin(body + "/1/0/*").branch, 0);
+  assert.equal(hodlParseKeyOrigin(body + "/0/0/20/*").derivationPath, "0/0");
+  assert.equal(hodlParseKeyOrigin(body + "/0/0/20/*").branch, 20);
+  // A multipath step supplies the branches itself; the fixed path is what
+  // precedes it.
   assert.equal(hodlParseKeyOrigin(body + "/0/0/20/<0;1>/*").derivationPath, "0/0/20");
+  assert.equal(hodlParseKeyOrigin(body + "/0/0/20/<0;1>/*").branch, null);
+  assert.deepEqual(hodlParseKeyOrigin(body + "/0/0/20/<0;1>/*").branches, [0, 1]);
+  assert.deepEqual(hodlParseKeyOrigin(body + "/<2;3>/*").branches, [2, 3]);
+  assert.deepEqual(hodlParseKeyOrigin(body + "/<0;1>/*").branches, [0, 1]);
+  assert.equal(hodlParseKeyOrigin(body + "/5/*").branches, null);
+  // A sole step ahead of the wildcard is that branch: /5/* is branch 5 with
+  // no fixed path, /0/* and /1/* are the receive and change branches.
+  assert.equal(hodlParseKeyOrigin(body + "/5/*").derivationPath, "");
+  assert.equal(hodlParseKeyOrigin(body + "/5/*").branch, 5);
+  assert.equal(hodlParseKeyOrigin(body + "/0/*").derivationPath, "");
+  assert.equal(hodlParseKeyOrigin(body + "/0/*").branch, 0);
+  assert.equal(hodlParseKeyOrigin(body + "/1/*").branch, 1);
+  // Without a wildcard nothing is a branch: a manually appended child path
+  // is honored in full, and a hardened last step stays in the path where
+  // the unhardened-path check refuses it instead of being dropped.
+  assert.equal(hodlParseKeyOrigin(body + "/0/1/0").branch, null);
+  assert.equal(hodlParseKeyOrigin(body + "/0/1h/*").derivationPath, "0/1h");
+  assert.equal(hodlParseKeyOrigin(body + "/0/1h/*").branch, null);
+  // BIP45 keeps its cosigner step ahead of the branch: key/0/<branch>/*.
+  const bip45 = "[73c5da0a/45h]tpubDFH9dgzveyD8zTbPUFuLrGmCydNvxehyNdUXKJAQN8x4aZ4j6UZqGfnqFrD4NqyaTVGKbvEW54tsvPTK2UoSbCC1PJY8iCNiwTL3RWZEheQ";
+  assert.equal(hodlParseKeyOrigin(bip45 + "/0/0/*").derivationPath, "");
+  assert.equal(hodlParseKeyOrigin(bip45 + "/0/0/*").branch, 0);
+  assert.equal(hodlParseKeyOrigin(bip45 + "/0/1/*").branch, 1);
+  assert.throws(() => hodlParseKeyOrigin(bip45 + "/3/0/*"), /BIP45/);
   // Malformed shapes fail loudly instead of being mangled.
   assert.throws(() => hodlParseKeyOrigin(body + "/0/*/1"), /wildcard/);
   assert.throws(() => hodlParseKeyOrigin(body + "/0/foo/1"), /Trailing path steps/);
   assert.throws(() => hodlParseKeyOrigin(body + "/0/1/<0;1>/<2;3>"), /Only one multipath/);
   assert.throws(() => hodlParseKeyOrigin(body + "/0/<0;1>/2"), /must be the last trailing path step/);
+});
+
+test("co-signer branch window refuses multipath branches outside it", () => {
+  const body = "[73c5da0a/48h/1h/0h/2h]tpubDFH9dgzveyD8zTbPUFuLrGmCydNvxehyNdUXKJAQN8x4aZ4j6UZqGfnqFrD4NqyaTVGKbvEW54tsvPTK2UoSbCC1PJY8iCNiwTL3RWZEheQ";
+  const outside = hodlParseKeyOrigin(body + "/<2;3>/*");
+  assert.match(specText(hodlMsigBranchWindowError(null, outside)), /branches 2 and 3.*0-1/);
+  assert.match(specText(hodlMsigBranchWindowError({ dataset: { msigBranches: "2;3" } }, null)), /branches 2 and 3.*0-1/);
+  assert.equal(hodlMsigBranchWindowError(null, hodlParseKeyOrigin(body + "/<0;1>/*")), "");
+  setHodlTestBranchWindow(2, 2);
+  assert.equal(hodlMsigBranchWindowError(null, outside), "");
+  setHodlTestBranchWindow(0, 2);
+  assert.match(specText(hodlMsigBranchWindowError(null, hodlParseKeyOrigin(body + "/5/*"))), /branch 5/);
+});
+
+test("co-signer branch window requires multipath branches in window order", () => {
+  const row = (branches) => ({ dataset: { msigBranches: branches } });
+  setHodlTestBranchWindow(0, 2);
+  assert.equal(hodlMsigBranchWindowError(row("0;1"), null), "");
+  assert.match(specText(hodlMsigBranchWindowError(row("1;0"), null)), /branches 1 and 0 in that order/);
+  assert.match(specText(hodlMsigBranchWindowError(row("2;3"), null)), /branches 2 and 3 in that order/);
+  setHodlTestBranchWindow(2, 2);
+  assert.equal(hodlMsigBranchWindowError(row("2;3"), null), "");
+  assert.match(specText(hodlMsigBranchWindowError(row("3;2"), null)), /branches 3 and 2 in that order/);
+  setHodlTestBranchWindow(0, 3);
+  assert.match(specText(hodlMsigBranchWindowError(row("0;1"), null)), /branches 0 and 1 in that order/);
+  assert.equal(hodlMsigBranchWindowError(row("0;1;2"), null), "");
+  setHodlTestBranchWindow(0, 2);
+  assert.equal(
+    specText(hodlMsigBranchWindowError(row("1;0"), null)),
+    "This key's descriptor uses branches 1 and 0 in that order; the form derives branches 0-1 in order. Change the branch window or import the full descriptor.",
+  );
+  // A malformed list the parser never produces is refused, not waved through.
+  assert.match(specText(hodlMsigBranchWindowError(null, { branches: [] })), /in that order/);
+  assert.match(specText(hodlMsigBranchWindowError(null, { branches: [0, NaN] })), /in that order/);
+  // A plain single-branch key is unchanged: branch 1 is inside the window,
+  // branch 5 is refused with the single-branch message.
+  assert.equal(hodlMsigBranchWindowError({ dataset: { msigBranch: "1" } }, null), "");
+  assert.match(specText(hodlMsigBranchWindowError({ dataset: { msigBranch: "5" } }, null)), /branch 5, outside the form's branch window 0-1/);
 });
 
 test("placeholder fingerprint 00000000 is rejected", () => {

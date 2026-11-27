@@ -96,11 +96,17 @@ test("a path after the extended key parses and lands in the descriptor token", (
 
 test("a pasted descriptor key tail is a branch wildcard, not a co-signer path", () => {
   assert.equal(hodlParseMultisigCosigner(`${EXPORT}/0/*`).derivationPath, "");
+  assert.equal(hodlParseMultisigCosigner(`${EXPORT}/0/*`).branch, 0);
   assert.equal(hodlParseMultisigCosigner(`${EXPORT}/<0;1>/*`).derivationPath, "");
-  // Two or more steps ahead of the wildcard are the signer's fixed path and
-  // are preserved in full — only a sole branch step (/0/* above) drops.
-  assert.equal(hodlParseMultisigCosigner(`${EXPORT}/1/0/*`).derivationPath, "1/0");
-  assert.equal(hodlParseMultisigCosigner(`${EXPORT}/0/0/20/*`).derivationPath, "0/0/20");
+  assert.deepEqual(hodlParseMultisigCosigner(`${EXPORT}/<0;1>/*`).branches, [0, 1]);
+  // A wildcard path is read the way the descriptor importer reads it: the last
+  // plain step ahead of the wildcard is the branch, and only the steps before
+  // it are the signer's fixed path — so /1/0/* is branch 0 below /1, not a
+  // fixed /1/0 with the form's own branch added underneath.
+  assert.equal(hodlParseMultisigCosigner(`${EXPORT}/1/0/*`).derivationPath, "1");
+  assert.equal(hodlParseMultisigCosigner(`${EXPORT}/1/0/*`).branch, 0);
+  assert.equal(hodlParseMultisigCosigner(`${EXPORT}/0/0/20/*`).derivationPath, "0/0");
+  assert.equal(hodlParseMultisigCosigner(`${EXPORT}/0/0/20/*`).branch, 20);
 });
 
 test("hardened or out-of-range path steps are rejected with a clear error", () => {
@@ -142,7 +148,10 @@ test("a sole hardened step before the wildcard is refused, not dropped as the br
 
 test("a trailing path is capped at 16 steps", () => {
   const steps = (n) => Array(n).fill("0").join("/");
-  assert.equal(hodlParseMultisigCosigner(`${EXPORT}/${steps(16)}/*`).derivationPath, steps(16));
+  // With 16 steps ahead of the wildcard the 16th is the branch, so the fixed
+  // path keeps the 15 steps before it; the cap itself is unchanged.
+  assert.equal(hodlParseMultisigCosigner(`${EXPORT}/${steps(16)}/*`).derivationPath, steps(15));
+  assert.equal(hodlParseMultisigCosigner(`${EXPORT}/${steps(16)}/*`).branch, 0);
   assert.throws(() => hodlParseMultisigCosigner(`${EXPORT}/${steps(17)}/*`), /at most 16 steps/);
 });
 
