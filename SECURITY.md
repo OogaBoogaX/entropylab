@@ -534,6 +534,30 @@ material. Its security posture rests on the following model:
   to overwrite spilled frame temporaries. The Node suite asserts the derived
   key and the scrypt buffers are absent from linear memory after a decode;
   closing the tab remains the only guaranteed erasure.
+- The Codex32 tab (held back from release navigation) is a BIP-93 MS1
+  calculator: checksum completion, secret recovery and share derivation are
+  checksum math and Lagrange interpolation over exactly the strings the user
+  supplies, so it never splits a fresh seed or reads randomness. Only 16-,
+  32- and 64-byte master seeds are accepted, which keeps their complete and
+  checksum-free string lengths disjoint: a mistyped complete 16-, 32- or
+  64-byte string is refused instead of being completed into a different
+  seed, and a failed checksum is never repaired by substituting characters.
+  Completing a missing checksum requires the user to choose the expected
+  seed size from their source records; a missing or mismatched size is
+  refused. A 61-character input is ambiguous between a complete 24-byte
+  string and a 32-byte header and payload. Valid 24-byte strings are refused;
+  a mistyped one can still complete into a different seed if the user
+  incorrectly chooses 32 bytes. The size must not be guessed from the input
+  length. Editing the strings, expected size or target index clears the
+  previous result and error. Derive
+  refuses index `s`, which would reveal the secret; CW1 and CX1 strings are
+  refused. Codex32 results start concealed. Revealed results cannot be
+  selected and copy only to EntropyLab's clipboard. Conceal removes their
+  text from the page and clears that clipboard; End Session and pagehide
+  clear the inputs and overwrite the result bytes held by the calculator.
+  As elsewhere, this cannot erase browser-managed copies. See
+  [Codex32 regression tests](test/codex32.test.mjs) and
+  [browser checks](test/browser-suite.html).
 - The single-file design inlines all scripts (`script-src 'unsafe-inline'`),
   and the secp256k1 WebAssembly module adds `wasm-unsafe-eval` to the
   content security policy: Chromium and WebKit engines refuse to compile a
