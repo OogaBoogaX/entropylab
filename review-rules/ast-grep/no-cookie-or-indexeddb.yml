@@ -1,7 +1,7 @@
 id: no-cookie-or-indexeddb
 language: JavaScript
 severity: error
-files: ["src/js/**/*.js"]
+files: ["src/js/**/*.js", "src/service-worker.js"]
 ignores: ["src/js/{entropylab,psbt,vanity,qr}-wasm-b64.js"]
 message: "Cookies and IndexedDB are not used: secrets must never be persisted."
 note: "Advisory: CodeRabbit comments only; nothing blocks a merge. Names outside this regex are left to the path instructions."
@@ -9,6 +9,8 @@ rule:
   any:
     - pattern: document.cookie = $X
     - pattern: $G.document.cookie = $X
+    - pattern: document.cookie += $X
+    - pattern: $G.document.cookie += $X
     - pattern: indexedDB.open($$$ARGS)
     - pattern: $G.indexedDB.open($$$ARGS)
 constraints:

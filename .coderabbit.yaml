@@ -34,6 +34,7 @@ reviews:
   enable_prompt_for_ai_agents: false
   slop_detection: { enabled: false }
   pre_merge_checks:
+    docstrings: { mode: "off" }
     title: { mode: "off" }
     description: { mode: "off" }
     issue_assessment: { mode: "off" }

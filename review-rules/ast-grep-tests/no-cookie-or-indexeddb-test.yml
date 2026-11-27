@@ -9,6 +9,8 @@ valid:
   - |
     indexedDB.deleteDatabase("x");
     const name = "indexedDB.open";
+  - |
+    const c = document.cookie + "";
 invalid:
   - |
     document.cookie = secret;
@@ -26,3 +28,7 @@ invalid:
     globalThis.indexedDB.open("db");
   - |
     window.indexedDB.open("db", 1);
+  - |
+    document.cookie += x;
+  - |
+    window.document.cookie += x;

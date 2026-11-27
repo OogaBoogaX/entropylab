@@ -11,6 +11,8 @@ rule:
     - pattern: $NAV.clipboard.$METHOD
     - pattern: document.execCommand($OP, $$$REST)
     - pattern: document.execCommand($OP)
+    - pattern: document.execCommand?.($OP, $$$REST)
+    - pattern: document.execCommand?.($OP)
 constraints:
   OP: { regex: "(?i)^['\"](copy|cut)['\"]$" }
   NAV: { regex: '^(navigator|(window|globalThis|self)\.navigator)$' }

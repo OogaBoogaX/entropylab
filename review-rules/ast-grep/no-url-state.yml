@@ -1,7 +1,7 @@
 id: no-url-state
 language: JavaScript
 severity: error
-files: ["src/js/**/*.js"]
+files: ["src/js/**/*.js", "src/service-worker.js"]
 ignores: ["src/js/{entropylab,psbt,vanity,qr}-wasm-b64.js"]
 message: "secrets must never reach the URL or history."
 note: "Advisory: CodeRabbit comments only; nothing blocks a merge. Names outside this regex are left to the path instructions."

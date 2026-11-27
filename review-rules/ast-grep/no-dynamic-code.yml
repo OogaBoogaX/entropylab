@@ -1,7 +1,7 @@
 id: no-dynamic-code
 language: JavaScript
 severity: error
-files: ["src/js/**/*.js"]
+files: ["src/js/**/*.js", "src/service-worker.js"]
 ignores: ["src/js/{entropylab,psbt,vanity,qr}-wasm-b64.js"]
 message: "Dynamic code and string timers are forbidden: they can turn data into executable code."
 note: "Advisory: CodeRabbit comments only; nothing blocks a merge. Names outside this regex are left to the path instructions."

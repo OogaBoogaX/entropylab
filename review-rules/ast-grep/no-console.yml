@@ -1,7 +1,7 @@
 id: no-console
 language: JavaScript
 severity: error
-files: ["src/js/**/*.js"]
+files: ["src/js/**/*.js", "src/service-worker.js"]
 ignores: ["src/js/{entropylab,psbt,vanity,qr}-wasm-b64.js"]
 message: "src/js has no console calls; secrets must never reach logs."
 note: "Advisory: CodeRabbit comments only; nothing blocks a merge. Names outside this regex are left to the path instructions."
