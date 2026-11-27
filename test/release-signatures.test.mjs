@@ -94,7 +94,7 @@ test("a KEYS asset with an extra key cannot add a signer", { skip: !tools && "ne
       mkdirSync(join(workspace, ".github"), { recursive: true });
       mkdirSync(join(runnerTemp, "release"), { recursive: true });
       writeFileSync(join(workspace, ".github/release-signers.txt"), `min-signers ${min}\n${listed.map(([fpr, who]) => `${fpr} ${who} active`).join("\n")}\n`);
-      for (const [fpr, who] of committed) writeFileSync(join(workspace, "keys", `${who}.asc`), exportKey(fpr));
+      for (const [index, [fpr, who]] of committed.entries()) writeFileSync(join(workspace, "keys", `${who}-${index}.asc`), exportKey(fpr));
       writeFileSync(join(runnerTemp, "release/SHA256SUMS.txt"), sums);
       writeFileSync(join(runnerTemp, "release/SHA256SUMS.asc"), Buffer.concat(sigs));
       writeFileSync(join(runnerTemp, "release/KEYS"), keysAsset.map(exportKey).join("\n"));
@@ -126,6 +126,18 @@ test("a KEYS asset with an extra key cannot add a signer", { skip: !tools && "ne
     const subkey = run("subkey", { listed: [A, C], committed: [A, C], keysAsset: [], min: 2, sigs: [sigA, sigC] });
     assert.equal(subkey.status, 0, subkey.log);
     assert.match(subkey.log, /Good signature from C/);
+
+    // Two keys, one person: the release rule counts distinct people, so two
+    // signatures from keys listed under the same name are one signer.
+    const sameName = run("same-name", { listed: [[fprA, "A"], [fprB, "A"]], committed: [[fprA, "A"], [fprB, "A"]], keysAsset: [], min: 2, sigs: [sigA, sigB] });
+    assert.notEqual(sameName.status, 0, "two keys under one name are one signer");
+    assert.match(sameName.log, /title=Too few signers::.*distinct active signer/);
+
+    // The same two keys under one name plus a third person: two distinct
+    // people, so min 2 is met and C's good signature is still listed.
+    const twoPeople = run("two-people", { listed: [[fprA, "A"], [fprB, "A"], [fprC, "C"]], committed: [[fprA, "A"], [fprB, "A"], [fprC, "C"]], keysAsset: [], min: 2, sigs: [sigA, sigB, sigC] });
+    assert.equal(twoPeople.status, 0, twoPeople.log);
+    assert.match(twoPeople.log, /Good signature from C/);
   } finally {
     rmSync(temp, { recursive: true, force: true });
   }

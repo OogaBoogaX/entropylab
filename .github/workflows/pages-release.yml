@@ -205,15 +205,16 @@ jobs:
               echo "Not counting a signature from revoked or expired key $primary"
               continue
             fi
-            echo "$primary" >> "$RUNNER_TEMP/counted.txt"
+            # Count distinct people, not keys: a signer with several active keys is still one signer.
+            name=$(awk -v f="$primary" '$1 == f { print $2; exit }' "$SIGNERS")
+            echo "$name $primary" >> "$RUNNER_TEMP/counted.txt"
           done < "$RUNNER_TEMP/validsigs.txt"
-          COUNT=$(sort -u "$RUNNER_TEMP/counted.txt" | wc -l)
+          COUNT=$(awk '{ print $1 }' "$RUNNER_TEMP/counted.txt" | sort -u | wc -l)
           if [ "$COUNT" -lt "$MIN" ]; then
             echo "::error title=Too few signers::SHA256SUMS.asc has $COUNT distinct active signer(s); the release requires $MIN"
             exit 1
           fi
-          sort -u "$RUNNER_TEMP/counted.txt" | while read -r fpr; do
-            name=$(awk -v f="$fpr" '$1 == f { print $2 }' "$SIGNERS")
+          sort -u "$RUNNER_TEMP/counted.txt" | while read -r name fpr; do
             echo "Good signature from ${name:-$fpr} ($fpr)"
           done
       - name: Check the footer names this release
