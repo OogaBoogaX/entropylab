@@ -32,14 +32,32 @@ for name in ("allowBackup", "fullBackupContent"):
     if attribute(name) != "(type 0x12)0x0":
         raise SystemExit(f"Merged manifest does not set android:{name}=false")
 rules_ref = attribute("dataExtractionRules")
-if not rules_ref.startswith("@0x"):
+if not re.fullmatch(r"@0x[0-9a-f]{8}", rules_ref):
     raise SystemExit("Merged manifest has no android:dataExtractionRules resource")
-# Only res/xml/data_extraction_rules.xml is inspected below, so the manifest must name that resource.
-resources = subprocess.check_output([sys.argv[2], "dump", "resources", sys.argv[1]], text=True)
-named = set(re.findall(rf"resource {re.escape(rules_ref[1:])} [^\s:]+:([^\s:]+/[^\s:]+):", resources))
-if named != {"xml/data_extraction_rules"}:
-    raise SystemExit(f"Merged manifest android:dataExtractionRules {rules_ref} names {sorted(named)}, not xml/data_extraction_rules")
-rules = subprocess.check_output([sys.argv[2], "dump", "xmltree", sys.argv[1], "res/xml/data_extraction_rules.xml"], text=True)
+# Release optimization can rename a ZIP member without changing its resource
+# ID or name. Resolve the actual compiled XML from the APK's resource table.
+resources = subprocess.check_output(
+    [sys.argv[2], "dump", "--values", "resources", sys.argv[1]], text=True
+)
+entries = re.findall(
+    rf'^ +resource {re.escape(rules_ref[1:])} [^\s:]+:([^\s:]+): ([^\n]*)'
+    r'(?:\n +\(string(?:8|16)\) "([^"\r\n]+)")?',
+    resources, re.M,
+)
+if len(entries) != 1 or entries[0][0] != "xml/data_extraction_rules":
+    raise SystemExit(
+        f"Merged manifest android:dataExtractionRules {rules_ref} must name one packaged "
+        f"xml/data_extraction_rules configuration; found {[name for name, _, _ in entries]}"
+    )
+_, metadata, rules_path = entries[0]
+if not metadata.startswith("t=0x03 ") or not re.fullmatch(
+    r"res/(?:[A-Za-z0-9_-]+/)*[A-Za-z0-9_.-]+\.xml", rules_path
+):
+    raise SystemExit("Data extraction rules do not reference packaged XML")
+with zipfile.ZipFile(sys.argv[1]) as apk:
+    if apk.namelist().count(rules_path) != 1:
+        raise SystemExit("Expected exactly one data extraction rules XML in APK")
+rules = subprocess.check_output([sys.argv[2], "dump", "xmltree", sys.argv[1], rules_path], text=True)
 elements = []
 for line in rules.splitlines():
     element = re.match(r"\s*E: (\S+)", line)

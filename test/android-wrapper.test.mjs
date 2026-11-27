@@ -73,7 +73,7 @@ ${debuggable === undefined ? "" : `      A: android:debuggable(0x0101000f)=(type
 
 // aapt dump resources: two xml resources, so a manifest can name the one
 // verify-apk.py does not inspect.
-const resourcesDump = `Package Groups (1)
+const resourcesDump = (rulesPath) => `Package Groups (1)
 Package Group 0 id=0x7f packageCount=1 name=online.entropylab.android
   Package 0 id=0x7f name=online.entropylab.android
     type 3 configCount=1 entryCount=2
@@ -81,7 +81,9 @@ Package Group 0 id=0x7f packageCount=1 name=online.entropylab.android
       spec resource 0x7f040001 online.entropylab.android:xml/backup_rules: flags=0x00000000
       config (default):
         resource 0x7f040000 online.entropylab.android:xml/data_extraction_rules: t=0x03 d=0x00000003 (s=0x0008 r=0x00)
+          (string8) "${rulesPath}"
         resource 0x7f040001 online.entropylab.android:xml/backup_rules: t=0x03 d=0x00000004 (s=0x0008 r=0x00)
+          (string8) "res/xml/backup_rules.xml"
 `;
 
 const DOMAINS = ["root", "file", "database", "sharedpref", "external"];
@@ -105,23 +107,24 @@ const STAND_IN_AAPT = `#!/bin/sh
 dir=$(dirname "$0")
 case "$1 $2 $4" in
   "dump permissions ") cat "$dir/permissions.txt" ;;
-  "dump resources ") cat "$dir/resources.txt" ;;
+  "dump --values "*) [ "$3" = resources ] && cat "$dir/resources.txt" ;;
   "dump xmltree AndroidManifest.xml") cat "$dir/manifest.txt" ;;
-  "dump xmltree res/xml/data_extraction_rules.xml") cat "$dir/rules.txt" ;;
+  "dump xmltree "*) [ "$4" = "$(cat "$dir/rules-path.txt")" ] && cat "$dir/rules.txt" ;;
   *) echo "ERROR: no such file or command: $*" >&2; exit 1 ;;
 esac
 `;
 
 // Runs android/verify-apk.py on an APK holding the pinned HTML, with the
 // stand-in aapt answering from these dumps.
-const verifyApk = ({ rulesRef = "@0x7f040000", rules = rulesDump(), debuggable } = {}) => {
+const verifyApk = ({ rulesRef = "@0x7f040000", rules = rulesDump(), debuggable, rulesPath = "res/4j.xml", packagedPath = rulesPath } = {}) => {
   const dir = mkdtempSync(join(tmpdir(), "entropylab-verify-apk-"));
   try {
     const apk = join(dir, "app-release-unsigned.apk");
-    const zip = spawnSync("python3", ["-c", "import sys, zipfile\nwith zipfile.ZipFile(sys.argv[1], 'w') as z: z.write(sys.argv[2], 'assets/entropylab.html')", apk, join(root, "android/app/src/main/assets/entropylab.html")], { encoding: "utf8" });
+    const zip = spawnSync("python3", ["-c", "import sys, zipfile\nwith zipfile.ZipFile(sys.argv[1], 'w') as z: z.write(sys.argv[2], 'assets/entropylab.html'); z.writestr(sys.argv[3], b'fixture')", apk, join(root, "android/app/src/main/assets/entropylab.html"), packagedPath], { encoding: "utf8" });
     assert.equal(zip.status, 0, zip.stderr);
     writeFileSync(join(dir, "permissions.txt"), "package: online.entropylab.android\n");
-    writeFileSync(join(dir, "resources.txt"), resourcesDump);
+    writeFileSync(join(dir, "resources.txt"), resourcesDump(rulesPath));
+    writeFileSync(join(dir, "rules-path.txt"), rulesPath);
     writeFileSync(join(dir, "manifest.txt"), manifestDump(rulesRef, debuggable));
     writeFileSync(join(dir, "rules.txt"), rules);
     writeFileSync(join(dir, "aapt"), STAND_IN_AAPT);
@@ -148,6 +151,12 @@ test("verify-apk.py inspects only the rules resource the merged manifest names",
   accepted(verifyApk());
   refused(verifyApk({ rulesRef: "@0x7f040001" }), /xml\/backup_rules/);
   refused(verifyApk({ rulesRef: "@0x7f0400ff" }), /dataExtractionRules/);
+});
+
+test("verify-apk.py uses the optimized XML path from the resource table", { skip: skipApk }, () => {
+  accepted(verifyApk({ rulesPath: "res/4j.xml" }));
+  accepted(verifyApk({ rulesPath: "res/xml/data_extraction_rules.xml" }));
+  refused(verifyApk({ packagedPath: "res/xml/data_extraction_rules.xml" }), /exactly one data extraction rules XML/);
 });
 
 // An exclusion covers the whole domain only with no path (Android reads a
