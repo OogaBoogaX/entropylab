@@ -3504,10 +3504,10 @@ function hodlSeedQrExport(mnemonic, options = {}) {
   let compact = "";
   try {
     let bytes = hodlCompactSeedQrBytes(options.entropyHex);
-    if (bytes) compact = `<div class="watch-only-qr seed-qr"><div class="qr qr-seed" aria-label="CompactSeedQR">${hodlUqrRenderSvg(bytes, { ecc: "L", border: 4, pixelSize: 4, blackColor: "#111111", whiteColor: "#ffffff" })}</div><p class="muted">${hodlT("CompactSeedQR. Same seed, smaller binary code.")}</p><p class="muted">${hodlT("Compatible with: SeedSigner, Krux, Jade, Passport.")}</p></div>`;
+    if (bytes) compact = `<div class="watch-only-qr seed-qr"><div class="qr qr-seed" aria-label="CompactSeedQR">${hodlUqrRenderSvg(bytes, { ecc: "L", border: 4, pixelSize: 4, blackColor: "#111111", whiteColor: "#ffffff" })}</div><p class="muted">${hodlT("CompactSeedQR. Same seed, smaller binary code.")}</p><p class="muted">${hodlT("Compatible with: SeedSigner, Krux, Jade, Passport.")}</p>${hodlSeedQrCopyGrid("compact-seedqr", words)}</div>`;
   } catch {
   }
-  return `<details class="wallet-advanced seed-qr-export"><summary>${hodlT("SeedQR")}</summary>${passNote ? `<p class="muted">${passNote}</p>` : ""}<div class="seed-qr-pair"><div class="watch-only-qr seed-qr"><div class="qr qr-seed" aria-label="SeedQR">${hodlUqrRenderSvg(digits, { ecc: "L", border: 4, pixelSize: 4, blackColor: "#111111", whiteColor: "#ffffff" })}</div><p class="muted">${hodlT("SeedQR. Numeric.")}</p><p class="muted">${hodlT("Compatible with: SeedSigner, Krux, Jade, Passport, Coldcard Q.")}</p>${hodlPrivateFieldHtml("SeedQR digits", digits)}</div>${compact}</div></details>`;
+  return `<details class="wallet-advanced seed-qr-export"><summary>${hodlT("SeedQR")}</summary>${passNote ? `<p class="muted">${passNote}</p>` : ""}<div class="seed-qr-pair"><div class="watch-only-qr seed-qr"><div class="qr qr-seed" aria-label="SeedQR">${hodlUqrRenderSvg(digits, { ecc: "L", border: 4, pixelSize: 4, blackColor: "#111111", whiteColor: "#ffffff" })}</div><p class="muted">${hodlT("SeedQR. Numeric.")}</p><p class="muted">${hodlT("Compatible with: SeedSigner, Krux, Jade, Passport, Coldcard Q.")}</p>${hodlPrivateFieldHtml("SeedQR digits", digits)}${hodlSeedQrCopyGrid("standard-seedqr", words)}</div>${compact}</div></details>`;
 }
 var hodlSeedLengths = Object.freeze({
   12: Object.freeze({ words: 12, bits: 128, bytes: 16, hexChars: 32, hashRolls: 50, partialWords: 11, candidates: 128 }),
@@ -7149,6 +7149,36 @@ function hodlBindSlip39Check() {
         addressTableHtml: (rows) => hodlAddressTable(rows, hodlTText("First receive addresses"), false, "slip39-receive"),
       });
     }).catch(() => {});
+  }
+}
+// Check a SeedQR copy (Verify tab) is preview-only the same way: release
+// builds fold the flag, so the module is never imported and there is no host.
+var hodlSeedQrCheck = null, hodlSeedQrModule = null;
+function hodlBindSeedQrCheck() {
+  if (typeof __ENTROPYLAB_PREVIEW__ !== "undefined" && __ENTROPYLAB_PREVIEW__) {
+    import("./seedqr-check.js").then((module) => {
+      hodlSeedQrModule = module;
+      let host = document.getElementById("seedqr-check-host");
+      if (!host || hodlSeedQrCheck) return;
+      hodlSeedQrCheck = module.mountSeedQrCheck(host, {
+        translate: hodlTText,
+        privateValue: (value, revealed) => hodlPrivateValue(value, "secret private-field-value", revealed),
+        network: () => hodlNetworkChoice,
+      });
+    }).catch(() => {});
+  }
+}
+// The SeedQR export's numbered copy grid and mask (preview builds, once the
+// module above has loaded); "" otherwise.
+function hodlSeedQrCopyGrid(format, words) {
+  if (typeof __ENTROPYLAB_PREVIEW__ === "undefined" || !__ENTROPYLAB_PREVIEW__ || !hodlSeedQrModule) return "";
+  let indices = Uint16Array.from(words, (word) => hodlBip39Wordlist.indexOf(word));
+  try {
+    return hodlSeedQrModule.seedQrCopyGridMarkup(format, indices, hodlTText);
+  } catch {
+    return "";
+  } finally {
+    indices.fill(0);
   }
 }
 function hodlKeyScanHostMarkup() {
@@ -24128,6 +24158,7 @@ var hodlRevealIdleMs = 5 * 60 * 1000;
 function hodlConcealPrivateValues(options) {
   if (typeof hodlBip47Conceal === "function") hodlBip47Conceal();
   try { hodlSlip39Check?.conceal(); } catch {}
+  try { hodlSeedQrCheck?.conceal(); } catch {}
   // Plain blur permits copying the opening/PSBT from another window. Other
   // conceal triggers retire the pasted host reveal, which remains sensitive.
   if (options?.reason !== "blur") {
@@ -24382,6 +24413,7 @@ function hodlInitSecretFieldAutoClear() {
       try { hodlPsbtScanModule?.retireQrDecoders(); } catch {}
       try { hodlTextScanModule?.retireQrDecoders(); } catch {}
       try { hodlSlip39Check?.clear(); } catch {}
+      try { hodlSeedQrCheck?.clear(); } catch {}
       // The form outlives the wipe: give it a fresh, closed panel.
       try { hodlBindKeyScan(); } catch {}
       try { hodlBindSeedScan(); } catch {}
@@ -24488,6 +24520,8 @@ function hodlApplyLocale() {
   });
   // Check a SLIP-39 backup relabels in place: re-mounting would drop the shares.
   try { hodlSlip39Check?.retranslate(); } catch {}
+  // Check a SeedQR copy relabels in place: re-mounting would drop the copy.
+  try { hodlSeedQrCheck?.retranslate(); } catch {}
   try { hodlDestroyTextScans(); } catch {}
   try { hodlBindTextScans(); } catch {}
   // These three hosts are static, so a language switch re-mounts the panels
@@ -24501,6 +24535,7 @@ async function hodlBoot() {
   hodlInitWorkspace();
   initOtsVerifier(document);
   hodlBindSlip39Check();
+  hodlBindSeedQrCheck();
   hodlInitAddressQr(hodlQrSvg, { copy: hodlClipboardIconMarkup, copied: hodlCopiedIconMarkup }, { frames: hodlPsbtQrFrames });
   hodlLowEntropyConfirm = initLowEntropyConfirm();
   hodlFingerprintCollisionConfirm = initFingerprintCollisionConfirm();
