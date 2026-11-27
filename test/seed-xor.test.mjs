@@ -136,7 +136,8 @@ test("preview blocks hide every Seed XOR control from release markup", () => {
   assert.equal(preview.includes('id="seedxor-card"'), true);
   assert.equal(preview.includes('aria-controls="seedxor-card"'), true);
   const app = read("src/js/app.js");
-  assert.match(app, /if \(__ENTROPYLAB_PREVIEW__\) hodlWorkspaceTabs\.splice\(hodlWorkspaceTabs\.findIndex\(\(\[id\]\) => id === "journal"\), 0, \["seedxor"/, "the preview-only tab is inserted immediately before Journal");
+  assert.doesNotMatch(app, /\["seedxor", "Seed XOR"/, "Seed XOR is a Seed tools station, not a workspace tab");
+  assert.match(app, /var hodlSeedTools = \[\["bip85", "bip85-card", "bip85-tool-intro", "bip85-manager"\], \["seedxor", "seedxor-card", "seedxor-tool-intro"\]\];/, "the Seed XOR station is the second Seed tools station");
 });
 
 const withSeedXorDocument = (body) => {

@@ -20234,6 +20234,7 @@ function hodlShowWorkspace(id) {
   // invalidate the run, and lifecycle/session clearing own cancellation.
   // Leaving the Privacy workspace hides a revealed BIP-47 spending key.
   if (hodlWorkspace === "sp" && typeof hodlBip47Conceal === "function") hodlBip47Conceal();
+  if (hodlWorkspace === "bip85" && typeof hodlSeedXorConceal === "function") hodlSeedXorConceal();
   // Leaving the Transactions workspace closes an open scan panel.
   if (hodlWorkspace === "psbt" && typeof hodlResetPsbtScans === "function") hodlResetPsbtScans();
   if (typeof hodlResetTextScans === "function") hodlResetTextScans();
@@ -20259,15 +20260,11 @@ function hodlShowWorkspace(id) {
   // Preview builds only: a release build strips the Verify card.
   const verifyCard = document.getElementById("verify-card");
   if (verifyCard) verifyCard.hidden = id !== "verify";
-  const seedXorCard = document.getElementById("seedxor-card");
-  if (seedXorCard) seedXorCard.hidden = id !== "seedxor";
   // The context block sits outside its tool's card, so it is shown and hidden
   // with the card rather than by it.
   ["bip85", "sp", "msig", "calc", "vanity", "ln", "core"].forEach((tool) => {
     document.getElementById(`${tool}-tool-intro`).hidden = id !== tool;
   });
-  const seedXorIntro = document.getElementById("seedxor-tool-intro");
-  if (seedXorIntro) seedXorIntro.hidden = id !== "seedxor";
   hodlSyncPsbtTool();
   hodlSyncJournalTool();
   hodlSyncPrivacyTool();
@@ -20426,7 +20423,6 @@ async function hodlLoadTestKeys() {
 // push the nine tools past the desktop strip (owner, 2026-10-26); the full
 // name stays the accessible name and the hover title.
 var hodlWorkspaceTabs = [["calc", "Keys", "Keys"], ["msig", "Multi Signature", "MultiSig", "MultiSig"], ["psbt", "Transactions", "Txns"], ["ln", "Lightning", "LN"], ["core", "Bitcoin Core", "Core"], ["bip85", "BIP-85 Child", "BIP-85", "BIP-85"], ["sp", "Privacy", "Privacy"], ["vanity", "Vanity Address", "Vanity", "Vanity"], ["journal", "Journal", "Journal"], ["verify", "Verify", "Verify"]];
-if (__ENTROPYLAB_PREVIEW__) hodlWorkspaceTabs.splice(hodlWorkspaceTabs.findIndex(([id]) => id === "journal"), 0, ["seedxor", "Seed XOR", "XOR", "Seed XOR"]);
 if (PREVIEW) {
   let bip85Tab = hodlWorkspaceTabs.find(([id]) => id === "bip85");
   if (bip85Tab) {
@@ -20554,7 +20550,7 @@ function hodlInitPrivacyToolTabs() {
   hodlInitTabDrag(strip);
   hodlSyncPrivacyTool();
 }
-var hodlSeedTools = [["bip85", "bip85-card"]];
+var hodlSeedTools = [["bip85", "bip85-card", "bip85-tool-intro", "bip85-manager"], ["seedxor", "seedxor-card", "seedxor-tool-intro"]];
 var hodlSeedTool = "bip85";
 
 function hodlSyncSeedTool() {
@@ -20571,10 +20567,23 @@ function hodlSyncSeedTool() {
     button.setAttribute("aria-selected", String(active));
     button.tabIndex = active ? 0 : -1;
   });
-  for (let [tool, card] of hodlSeedTools) {
-    let node = document.getElementById(card);
-    if (node) node.hidden = !(visible && hodlSeedTool === tool);
+  for (let [tool, ...ids] of hodlSeedTools) {
+    let shown = visible && hodlSeedTool === tool;
+    for (let id of ids) {
+      let node = id ? document.getElementById(id) : null;
+      if (node) node.hidden = !shown;
+    }
   }
+}
+
+// A revealed Seed XOR result never outlives the station it was shown on.
+// seed-xor.js re-renders the masked result on this change event, the same
+// way hodlConcealPrivateValues unchecks a reveal switch.
+function hodlSeedXorConceal() {
+  let reveal = document.getElementById("seedxor-reveal");
+  if (!reveal || !reveal.checked) return;
+  reveal.checked = false;
+  reveal.dispatchEvent(new Event("change", { bubbles: true }));
 }
 
 function hodlShowSeedTool(id, focus = false) {
@@ -20582,6 +20591,7 @@ function hodlShowSeedTool(id, focus = false) {
   let next = hodlSeedTools.some(([tool]) => tool === id) ? id : "bip85",
       changed = next !== hodlSeedTool;
   if (changed && typeof hodlResetTextScans === "function") hodlResetTextScans();
+  if (hodlSeedTool === "seedxor" && next !== "seedxor" && typeof hodlSeedXorConceal === "function") hodlSeedXorConceal();
   hodlSeedTool = next;
   hodlSyncSeedTool();
   if (changed) hodlJournalLog("tool-tab", hodlSeedTool, "bip85");
