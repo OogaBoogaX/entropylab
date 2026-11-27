@@ -24368,6 +24368,7 @@ function hodlInitSecretFieldAutoClear() {
       try { hodlKeyScanModule?.retireQrDecoders(); } catch {}
       try { hodlPsbtScanModule?.retireQrDecoders(); } catch {}
       try { hodlTextScanModule?.retireQrDecoders(); } catch {}
+      try { hodlSlip39Check?.clear(); } catch {}
       // The form outlives the wipe: give it a fresh, closed panel.
       try { hodlBindKeyScan(); } catch {}
       try { hodlBindSeedScan(); } catch {}
