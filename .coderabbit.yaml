@@ -10,6 +10,7 @@ early_access: false
 inheritance: false
 reviews:
   profile: chill
+  request_changes_workflow: false
   auto_approvals: { enabled: false, allow_author_approval: false }
   review_progress: false
   commit_status: false
@@ -256,7 +257,7 @@ reviews:
     checkov: { enabled: false }
     circleci: { enabled: false }
     clang: { enabled: false }
-    clippy: { enabled: false }
+    clippy: { enabled: true }
     cppcheck: { enabled: false }
     detekt: { enabled: false }
     dotenvLint: { enabled: false }
@@ -273,7 +274,7 @@ reviews:
     luacheck: { enabled: false }
     markdownlint: { enabled: false }
     oasdiff: { enabled: false }
-    osvScanner: { enabled: false }
+    osvScanner: { enabled: true }
     oxc: { enabled: false }
     phpcs: { enabled: false }
     phpmd: { enabled: false }
@@ -300,7 +301,7 @@ reviews:
     trufflehog: { enabled: false }
     vale: { enabled: false }
     verilator: { enabled: false }
-    yamllint: { enabled: false }
+    yamllint: { enabled: true }
 chat:
   art: false
   auto_reply: false
