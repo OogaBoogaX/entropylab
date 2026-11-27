@@ -224,6 +224,9 @@ fn wipe_key_map(secrets: KeyMap) {
 fn derive_miniscript(body: &str, index: u32, network: Network) -> Result<Derived, String> {
     let (descriptor, secrets) = Descriptor::parse_descriptor(ctx(), body).map_err(|e| format!("invalid descriptor: {}", e))?;
     wipe_key_map(secrets); // parsed xprv/WIF keys; only their public halves are used
+    // miniscript 13 only sanity-checks tr() at parse; refuse non-sane
+    // descriptors the way Bitcoin Core does.
+    descriptor.sanity_check().map_err(|e| format!("invalid descriptor: {}", e))?;
     if descriptor.is_multipath() {
         return Err("a multipath descriptor denotes several wallets; derive one branch at a time".into());
     }
@@ -422,5 +425,21 @@ mod tests {
             derived.address.as_deref(),
             Some("bc1p5cyxnuxmeuwuvkwfem96lqzszd02n6xdcjrs20cac6yqjjwudpxqkedrcr")
         );
+    }
+
+    /// miniscript 13 sanity-checks only tr() at parse; Bitcoin Core refuses a
+    /// descriptor whose script needs no signature or repeats a key, so the
+    /// derivation must too.
+    #[test]
+    fn non_sane_miniscript_descriptors_are_refused() {
+        let err = derive_descriptor("wsh(older(10))", 0, NET)
+            .err()
+            .expect("a descriptor needing no signature must be refused");
+        assert!(err.starts_with("invalid descriptor"), "{err}");
+        let key = VK[0].to_lowercase();
+        let err = derive_descriptor(&format!("wsh(and_v(v:pk({key}),pk({key})))"), 0, NET)
+            .err()
+            .expect("a descriptor repeating a key must be refused");
+        assert!(err.starts_with("invalid descriptor"), "{err}");
     }
 }
