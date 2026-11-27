@@ -58,6 +58,9 @@
         <button type="button" class="workspace-tab" role="tab" aria-selected="false" aria-controls="bip85-card" aria-label="BIP-85 Child" title="BIP-85 Child"><span class="workspace-tab-full">BIP-85</span><span class="workspace-tab-short">BIP-85</span></button>
         <button type="button" class="workspace-tab" role="tab" aria-selected="false" aria-controls="sp-card bip47-card" aria-label="Privacy"><span class="workspace-tab-full">Privacy</span><span class="workspace-tab-short">Privacy</span></button>
         <button type="button" class="workspace-tab" role="tab" aria-selected="false" aria-controls="vanity-card" aria-label="Vanity Address" title="Vanity Address"><span class="workspace-tab-full">Vanity</span><span class="workspace-tab-short">Vanity</span></button>
+        <!-- preview -->
+        <button type="button" class="workspace-tab" role="tab" aria-selected="false" aria-controls="seedxor-card" aria-label="Seed XOR" title="Seed XOR"><span class="workspace-tab-full">Seed XOR</span><span class="workspace-tab-short">XOR</span></button>
+        <!-- /preview -->
         <button type="button" class="workspace-tab" role="tab" aria-selected="false" aria-controls="verify-card" aria-label="Verify"><span class="workspace-tab-full">Verify</span><span class="workspace-tab-short">Verify</span></button>
       </div>
     </nav>
@@ -992,6 +995,20 @@ words, pick one of the checksum words.</span></span>
           </div>
           <div id="ots-result" aria-live="polite"></div>
         </section>
+        <!-- preview -->
+        <hr class="result-divider">
+        <section class="tool-section" id="slip39-check" aria-labelledby="slip39-check-heading">
+          <h3 class="label" id="slip39-check-heading">Check a SLIP-39 backup</h3>
+          <p class="muted label-description">Combines SLIP-39 shares with code written from the specification and shows the wallet they restore. It can also test whether a device repeats the random values it splits a secret with. Nothing leaves this page.</p>
+          <div id="slip39-check-host"></div>
+        </section>
+        <hr class="result-divider">
+        <section class="tool-section" id="seedqr-check" aria-labelledby="seedqr-check-heading">
+          <h3 class="label" id="seedqr-check-heading">Check a SeedQR copy</h3>
+          <p class="label-description">Checks a SeedQR you copied by hand, square by square, with a QR reader that shares no code with the wallet that made it. It lists every wrong square, even ones a scanner would silently correct. Nothing leaves this page.</p>
+          <div id="seedqr-check-host"></div>
+        </section>
+        <!-- /preview -->
       </section>
       <div class="tool-intro edge-note is-info" id="ln-tool-intro" hidden>
         <h2>Lightning tools</h2>
@@ -1044,6 +1061,73 @@ words, pick one of the checksum words.</span></span>
         <div id="ln-out" aria-live="polite"></div>
         <p class="muted">Seeds and derived keys remain in this page only and are never stored or sent. Memory clearing is best-effort because browsers may retain internal copies; close the page before reconnecting the computer.</p>
       </div>
+    <!-- preview -->
+    <div class="tool-intro edge-note is-info" id="seedxor-tool-intro" hidden>
+      <h2>Restore or split a seed with Seed XOR</h2>
+      <p class="muted tool-intro-note">Combine parts made on a Coldcard, or deterministically split a phrase you already hold. Each part is an ordinary BIP39 seed phrase; you need every part to restore the original. A BIP39 passphrase is separate and is never included in the XOR.</p>
+    </div>
+    <section class="card no-print tool-card" id="seedxor-card" role="tabpanel" aria-label="Seed XOR" hidden>
+      <p class="label" id="seedxor-mode-label">Action</p>
+      <div class="row segmented-control is-wide is-half" id="seedxor-modes" role="group" aria-labelledby="seedxor-mode-label">
+        <button type="button" class="tab active" id="seedxor-mode-restore" data-seedxor-mode="restore" aria-pressed="true" aria-controls="seedxor-restore-panel">Restore</button>
+        <button type="button" class="tab" id="seedxor-mode-split" data-seedxor-mode="split" aria-pressed="false" aria-controls="seedxor-split-panel">Deterministic split</button>
+      </div>
+      <section class="tool-section" id="seedxor-restore-panel" aria-label="Restore Seed XOR">
+        <p class="edge-note is-info">Enter two to four complete parts of the same length. Their order does not matter. Every part must be entered; a missing or changed part restores a different wallet without warning.</p>
+        <label class="field">Number of parts
+          <select id="seedxor-parts" aria-describedby="seedxor-parts-help">
+            <option value="2" selected>2 parts</option>
+            <option value="3">3 parts</option>
+            <option value="4">4 parts</option>
+          </select>
+          <span class="field-note" id="seedxor-parts-help">Coldcard can restore any number of parts. This tool accepts the two to four parts its Split Existing menu creates.</span>
+        </label>
+        <div id="seedxor-part-a-field"><label class="field">Part A
+          <textarea id="seedxor-part-a" data-seedxor-part rows="3" spellcheck="false" autocomplete="off" autocapitalize="off" placeholder="12, 18, or 24 BIP39 words"></textarea>
+        </label></div>
+        <div id="seedxor-part-b-field"><label class="field">Part B
+          <textarea id="seedxor-part-b" data-seedxor-part rows="3" spellcheck="false" autocomplete="off" autocapitalize="off" placeholder="12, 18, or 24 BIP39 words"></textarea>
+        </label></div>
+        <div id="seedxor-part-c-field" hidden><label class="field">Part C
+          <textarea id="seedxor-part-c" data-seedxor-part rows="3" spellcheck="false" autocomplete="off" autocapitalize="off" placeholder="12, 18, or 24 BIP39 words"></textarea>
+        </label></div>
+        <div id="seedxor-part-d-field" hidden><label class="field">Part D
+          <textarea id="seedxor-part-d" data-seedxor-part rows="3" spellcheck="false" autocomplete="off" autocapitalize="off" placeholder="12, 18, or 24 BIP39 words"></textarea>
+        </label></div>
+        <div class="row tool-actions">
+          <button class="btn primary" id="seedxor-restore" type="button">Restore seed</button>
+        </div>
+      </section>
+      <section class="tool-section" id="seedxor-split-panel" aria-label="Split a seed deterministically" hidden>
+        <p class="edge-note is-private">Every generated part is secret. Record all parts and the original phrase's final word, then verify a restore before using this backup. Losing any one part loses the original seed.</p>
+        <label class="field">Original seed phrase
+          <textarea id="seedxor-original" rows="3" spellcheck="false" autocomplete="off" autocapitalize="off" placeholder="12, 18, or 24 BIP39 words" aria-describedby="seedxor-split-help"></textarea>
+          <span class="field-note" id="seedxor-split-help">This reproduces Coldcard's deterministic split using double-SHA256. EntropyLab does not generate entropy or offer a random split.</span>
+        </label>
+        <label class="field">Number of parts
+          <select id="seedxor-split-count">
+            <option value="2" selected>2 parts</option>
+            <option value="3">3 parts</option>
+            <option value="4">4 parts</option>
+          </select>
+        </label>
+        <div class="row tool-actions">
+          <button class="btn primary" id="seedxor-split" type="button">Split seed</button>
+        </div>
+      </section>
+      <div class="row tool-actions">
+        <button class="btn red clear-current-action" id="seedxor-wipe" type="button">Clear</button>
+      </div>
+      <p class="err" id="seedxor-error" role="alert"></p>
+      <p class="edge-note is-private" id="seedxor-warning" role="alert" hidden></p>
+      <label class="choice" id="seedxor-reveal-field" hidden><input type="checkbox" id="seedxor-reveal" data-private-reveal>
+        <span><strong class="private-heading">Reveal private output</strong>
+        <span class="desc">The restored phrase and split parts are seed backups. Anyone with the restored phrase, or with every split part, controls the wallet.</span></span>
+      </label>
+      <div class="tool-section" id="seedxor-result" hidden></div>
+      <p class="field-note">Nothing is stored or sent. Clear, End Session, and leaving the page empty these fields; revealed output is concealed when you leave, print, or stay idle. Memory clearing is best-effort.</p>
+    </section>
+    <!-- /preview -->
     <div class="tool-intro edge-note is-info" id="journal-tool-intro" hidden>
         <h2>Entropy Journal</h2>
         <p class="muted tool-intro-note">Keep notes, reusable key inputs, and session history together. Download a complete backup, including private key inputs and recovery material, to keep your work before closing this page. A password protects your files; without one, anyone with the file can open them.</p>

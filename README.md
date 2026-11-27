@@ -367,6 +367,13 @@ an explicit error before those pairs are allocated.
   wallet birthday are shown alongside the node key; the decoded entropy and
   salt and the BIP32 root xprv (what `chantools showrootkey` prints) sit
   behind a reveal toggle. Decoding only: the tab never creates seeds.
+- A preview-only **Seed XOR** tab restores the two to four parts produced by
+  Coldcard's Split Existing menu, in any order. It validates every 12-, 18-,
+  or 24-word English BIP39 part, XORs the entropy bytes rather than the input
+  checksum bits, and computes the restored phrase's fresh BIP39 checksum. The
+  deterministic split reproduces Coldcard's double-SHA256 construction; no
+  random split or new entropy is offered. Results stay concealed until
+  explicitly revealed, and Clear and session teardown empty the phrases.
 - A session **Journal** has three working areas: **Notes**, **Keys**, and
   **Session**. Notes opens first; Keys holds recoverable key inputs, and
   Session shows the current report first, saved historical snapshots in their
