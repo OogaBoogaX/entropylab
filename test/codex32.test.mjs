@@ -177,6 +177,17 @@ test("Calculate Checksum does not substitute a character to repair a bad payload
   assert.throws(() => completeCodex32Checksum(bad), /checksum/i);
 });
 
+test("BIP-93 recovery accepts a validated share set that includes its secret", () => {
+  const expected = { codex32: secret2, masterSeedHex: "d1808e096b35b209ca12132b264662a5" };
+  assert.deepEqual(recoverCodex32Secret([shareA, secret2]), expected);
+  assert.deepEqual(recoverCodex32Secret([secret2.toUpperCase(), shareA]), expected);
+  assert.deepEqual(recoverCodex32Secret([shareA, shareC]), expected);
+  assert.throws(() => recoverCodex32Secret([secret2]), /exactly 2/);
+  assert.throws(() => recoverCodex32Secret([secret2, secret2]), /index s is repeated/);
+  assert.throws(() => deriveCodex32Share([shareA, secret2], "a"), /already in the set/);
+  assert.equal(deriveCodex32Share([shareA, secret2], "d").codex32, shareD);
+});
+
 test("the same shares always recover the same secret and derive the same share", () => {
   assert.equal(recoverCodex32Secret([shareA, shareC]).codex32, secret2);
   assert.equal(recoverCodex32Secret([shareC, shareA]).codex32, secret2);

@@ -199,6 +199,9 @@ function bech32Lagrange(indices, target) {
 }
 
 function interpolate(rows, target) {
+  // Interpolation at a known point returns that point without dividing by zero.
+  const existing = rows.find((row) => row[5] === target);
+  if (existing) return existing.slice();
   const weights = bech32Lagrange(rows.map((row) => row[5]), target);
   const result = [];
   for (let column = 0; column < rows[0].length; column++) {
