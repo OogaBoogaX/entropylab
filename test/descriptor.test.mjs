@@ -27,6 +27,17 @@ function extract(startNeedle, endNeedle) {
   return app.slice(start, end);
 }
 
+function loadFunction(name) {
+  const start = app.indexOf(`function ${name}(`);
+  if (start < 0) throw new Error(`missing ${name}`);
+  let depth = 0;
+  for (let i = app.indexOf("{", start); i < app.length; i++) {
+    if (app[i] === "{") depth++;
+    else if (app[i] === "}" && --depth === 0) return app.slice(start, i + 1);
+  }
+  throw new Error(`unterminated ${name}`);
+}
+
 const INPUT_CHARSET =
   "0123456789()[],'/*abcdefgh@:$%{}IJKLMNOPQRSTUVWXYZ&+-.;<=>?!^_|~ijklmnopqrstuvwxyzABCDEFGH`JKLMNOPQRSTUVWXYZ";
 const CHECKSUM_CHARSET = "qpzry9x8gf2tvdw0s3jn54khce6mua7l";
@@ -119,10 +130,11 @@ function hodlTText(key, vars) {
   return text;
 }
 function setHodlTestBranchWindow(start, range) { hodlTestBranchWindow = { start, range }; }
+function hodlMsigKeyParts() { return {}; }
 export { hodlMsigBranchWindowError, setHodlTestBranchWindow };
 `;
 const msigBranchPath = loadSlice(
-  "function hodlMsigDeclaredBranch",
+  "function hodlMsigBranchWindowError",
   "function hodlMsigPathComponentLabel",
   msigBranchPrelude,
 );
@@ -227,7 +239,6 @@ test("co-signer branch window refuses multipath branches outside it", () => {
   const body = "[73c5da0a/48h/1h/0h/2h]tpubDFH9dgzveyD8zTbPUFuLrGmCydNvxehyNdUXKJAQN8x4aZ4j6UZqGfnqFrD4NqyaTVGKbvEW54tsvPTK2UoSbCC1PJY8iCNiwTL3RWZEheQ";
   const outside = hodlParseKeyOrigin(body + "/<2;3>/*");
   assert.match(specText(hodlMsigBranchWindowError(null, outside)), /branches 2 and 3.*0-1/);
-  assert.match(specText(hodlMsigBranchWindowError({ dataset: { msigBranches: "2;3" } }, null)), /branches 2 and 3.*0-1/);
   assert.equal(hodlMsigBranchWindowError(null, hodlParseKeyOrigin(body + "/<0;1>/*")), "");
   setHodlTestBranchWindow(2, 2);
   assert.equal(hodlMsigBranchWindowError(null, outside), "");
@@ -236,20 +247,21 @@ test("co-signer branch window refuses multipath branches outside it", () => {
 });
 
 test("co-signer branch window requires multipath branches in window order", () => {
-  const row = (branches) => ({ dataset: { msigBranches: branches } });
+  const parsed = (branches) => ({ branches });
+  const single = (branch) => ({ branch });
   setHodlTestBranchWindow(0, 2);
-  assert.equal(hodlMsigBranchWindowError(row("0;1"), null), "");
-  assert.match(specText(hodlMsigBranchWindowError(row("1;0"), null)), /branches 1 and 0 in that order/);
-  assert.match(specText(hodlMsigBranchWindowError(row("2;3"), null)), /branches 2 and 3 in that order/);
+  assert.equal(hodlMsigBranchWindowError(null, parsed([0, 1])), "");
+  assert.match(specText(hodlMsigBranchWindowError(null, parsed([1, 0]))), /branches 1 and 0 in that order/);
+  assert.match(specText(hodlMsigBranchWindowError(null, parsed([2, 3]))), /branches 2 and 3 in that order/);
   setHodlTestBranchWindow(2, 2);
-  assert.equal(hodlMsigBranchWindowError(row("2;3"), null), "");
-  assert.match(specText(hodlMsigBranchWindowError(row("3;2"), null)), /branches 3 and 2 in that order/);
+  assert.equal(hodlMsigBranchWindowError(null, parsed([2, 3])), "");
+  assert.match(specText(hodlMsigBranchWindowError(null, parsed([3, 2]))), /branches 3 and 2 in that order/);
   setHodlTestBranchWindow(0, 3);
-  assert.match(specText(hodlMsigBranchWindowError(row("0;1"), null)), /branches 0 and 1 in that order/);
-  assert.equal(hodlMsigBranchWindowError(row("0;1;2"), null), "");
+  assert.match(specText(hodlMsigBranchWindowError(null, parsed([0, 1]))), /branches 0 and 1 in that order/);
+  assert.equal(hodlMsigBranchWindowError(null, parsed([0, 1, 2])), "");
   setHodlTestBranchWindow(0, 2);
   assert.equal(
-    specText(hodlMsigBranchWindowError(row("1;0"), null)),
+    specText(hodlMsigBranchWindowError(null, parsed([1, 0]))),
     "This key's descriptor uses branches 1 and 0 in that order; the form derives branches 0-1 in order. Change the branch window or import the full descriptor.",
   );
   // A malformed list the parser never produces is refused, not waved through.
@@ -257,8 +269,294 @@ test("co-signer branch window requires multipath branches in window order", () =
   assert.match(specText(hodlMsigBranchWindowError(null, { branches: [0, NaN] })), /in that order/);
   // A plain single-branch key is unchanged: branch 1 is inside the window,
   // branch 5 is refused with the single-branch message.
-  assert.equal(hodlMsigBranchWindowError({ dataset: { msigBranch: "1" } }, null), "");
-  assert.match(specText(hodlMsigBranchWindowError({ dataset: { msigBranch: "5" } }, null)), /branch 5, outside the form's branch window 0-1/);
+  assert.equal(hodlMsigBranchWindowError(null, single(1)), "");
+  assert.match(specText(hodlMsigBranchWindowError(null, single(5))), /branch 5, outside the form's branch window 0-1/);
+});
+
+// The wildcard tail a pasted key declares stays in the key field, so the
+// declaration is read from the row's own parse on every sync, rebuild and
+// restore; a key with no wildcard keeps its bare key.
+const msigSyncPrelude = `
+${loadFunction("hodlNormalizeOriginPath")}
+${loadFunction("hodlParseKeyTail")}
+${loadFunction("hodlParseKeyOrigin")}
+${loadFunction("hodlMsigKeyParts")}
+${loadFunction("hodlMsigWildcardTail")}
+${loadFunction("hodlMsigBranchWindowError")}
+${loadFunction("hodlMsigRowValue")}
+function hodlError(key, vars) { return new Error(typeof key === "string" ? key : key.key); }
+function hodlDescriptorKeyExpressions() { return null; }
+let hodlTestBranchWindow = { start: 0, range: 2 };
+function hodlReadBranchWindow() { return hodlTestBranchWindow; }
+function setHodlTestBranchWindow(start, range) { hodlTestBranchWindow = { start, range }; }
+function hodlTText(key, vars) {
+  let text = key;
+  if (vars) text = text.replace(/\\{(\\w+)\\}/g, (_, n) => (vars[n] == null ? "{" + n + "}" : String(vars[n])));
+  return text;
+}
+function hodlDefaultMsigFullPath() { return "48h/0h/0h/2h"; }
+function hodlParseCustomDerivationPath(value) {
+  return { components: String(value ?? "").split("/").filter((step) => step !== "").map((step) => {
+    let match = step.match(/^(\\d+)([hH']?)$/);
+    return match ? { index: Number(match[1]), hardened: Boolean(match[2]) } : { index: step, hardened: false };
+  }) };
+}
+function hodlOriginPathComponent(index, hardened) { return String(index) + (hardened ? "h" : ""); }
+function hodlMsigFullPath(parsed) { return parsed.derivationPath ? parsed.origin.path + "/" + parsed.derivationPath : parsed.origin.path; }
+function hodlRenderMsigPathComponents() {}
+// The fixture tpub is a BIP48 account key at depth 4; the real parser reads
+// that depth from the key itself, so a bare key's depth is set per test. A
+// key with a tail fails exactly where the real decoder fails: base58check
+// has no "/" or "*".
+let hodlTestBareKeyDepth = 4;
+function setHodlTestBareKeyDepth(depth) { hodlTestBareKeyDepth = depth; }
+function hodlParseMultisigCosigner(raw) {
+  let parts = hodlParseKeyOrigin(raw);
+  if (parts.key.includes("/") || parts.key.includes("*")) throw new Error("Invalid extended key.");
+  return { origin: parts.origin, key: parts.key, derivationPath: parts.derivationPath, branch: parts.branch, branches: parts.branches, bareWildcard: parts.bareWildcard, node: { depth: parts.origin ? parts.origin.path.split("/").length : hodlTestBareKeyDepth } };
+}
+export { hodlSyncMsigRowPathFromKey, hodlMsigRowValue, hodlMsigKeyParts, hodlMsigBranchWindowError, setHodlTestBranchWindow, setHodlTestBareKeyDepth };
+`;
+const msigSyncPath = loadSlice("function hodlSyncMsigRowPathFromKey", "function hodlApplyMsigRowPath", msigSyncPrelude);
+const {
+  hodlSyncMsigRowPathFromKey,
+  hodlMsigRowValue,
+  hodlMsigKeyParts,
+  hodlMsigBranchWindowError: hodlMsigSyncBranchWindowError,
+  setHodlTestBranchWindow: setHodlTestSyncBranchWindow,
+  setHodlTestBareKeyDepth: setHodlTestSyncBareKeyDepth,
+} = await import(pathToFileURL(msigSyncPath).href);
+unlinkSync(msigSyncPath);
+
+function msigSyncRow(value) {
+  const field = (initial) => ({ value: initial ?? "", classList: { add() {}, remove() {}, toggle() {} }, setAttribute() {} });
+  const row = {
+    dataset: {},
+    key: field(value),
+    fingerprint: field(""),
+    path: field(""),
+    help: { textContent: "" },
+    querySelector(selector) {
+      if (selector === "textarea") return row.key;
+      if (selector === ".msig-master-fingerprint") return row.fingerprint;
+      if (selector === ".msig-full-path") return row.path;
+      if (selector === ".msig-full-path-help") return row.help;
+      return null;
+    },
+  };
+  return row;
+}
+const MSIG_SYNC_ORIGIN = "[73c5da0a/48h/1h/0h/2h]";
+const MSIG_SYNC_KEY = `${MSIG_SYNC_ORIGIN}tpubDFH9dgzveyD8zTbPUFuLrGmCydNvxehyNdUXKJAQN8x4aZ4j6UZqGfnqFrD4NqyaTVGKbvEW54tsvPTK2UoSbCC1PJY8iCNiwTL3RWZEheQ`;
+const MSIG_SYNC_BARE = MSIG_SYNC_KEY.slice(MSIG_SYNC_ORIGIN.length);
+
+test("a pasted branch stays in the key field and the row value through every sync", () => {
+  setHodlTestSyncBranchWindow(0, 2);
+  const row = msigSyncRow(`${MSIG_SYNC_KEY}/0/*`);
+  hodlSyncMsigRowPathFromKey(row);
+  assert.equal(row.key.value, `${MSIG_SYNC_BARE}/0/*`, "the key field keeps the declared branch");
+  assert.equal(row.fingerprint.value, "73c5da0a", "the origin moved to the fingerprint field");
+  assert.equal(row.path.value, "48h/1h/0h/2h", "the origin moved to the path field");
+  assert.equal(hodlMsigSyncBranchWindowError(row, hodlMsigKeyParts(row.key.value)), "", "branch 0 is inside the window");
+  assert.ok(hodlMsigRowValue(row).endsWith(`${MSIG_SYNC_BARE}/0/*`), "the row value carries the branch");
+  // A no-op edit, a fingerprint edit or a rebuild runs the same sync again.
+  hodlSyncMsigRowPathFromKey(row);
+  assert.equal(row.key.value, `${MSIG_SYNC_BARE}/0/*`, "the second sync writes the same text back");
+  assert.equal(row.fingerprint.value, "73c5da0a", "the second sync leaves the fingerprint alone");
+  assert.equal(row.path.value, "48h/1h/0h/2h", "the second sync leaves the path alone");
+  assert.equal(hodlMsigSyncBranchWindowError(row, hodlMsigKeyParts(row.key.value)), "");
+});
+
+test("a branch outside the window stays refused after the next sync", () => {
+  setHodlTestSyncBranchWindow(0, 2);
+  const row = msigSyncRow(`${MSIG_SYNC_KEY}/0/*`);
+  hodlSyncMsigRowPathFromKey(row);
+  assert.equal(hodlMsigSyncBranchWindowError(row, hodlMsigKeyParts(row.key.value)), "");
+  setHodlTestSyncBranchWindow(5, 2);
+  assert.match(specText(hodlMsigSyncBranchWindowError(row, hodlMsigKeyParts(row.key.value))), /branch 0, outside the form's branch window 5-6/);
+  // The declaration lives in the key field, so the next sync cannot lose it.
+  hodlSyncMsigRowPathFromKey(row);
+  assert.equal(row.key.value, `${MSIG_SYNC_BARE}/0/*`);
+  assert.match(specText(hodlMsigSyncBranchWindowError(row, hodlMsigKeyParts(row.key.value))), /branch 0, outside the form's branch window 5-6/);
+  setHodlTestSyncBranchWindow(0, 2);
+  assert.equal(hodlMsigSyncBranchWindowError(row, hodlMsigKeyParts(row.key.value)), "");
+});
+
+test("fixed child steps stay in the full-path field and the row value", () => {
+  setHodlTestSyncBranchWindow(0, 2);
+  const row = msigSyncRow(`${MSIG_SYNC_KEY}/1/0/*`);
+  hodlSyncMsigRowPathFromKey(row);
+  assert.equal(row.key.value, `${MSIG_SYNC_BARE}/0/*`, "the branch stays in the key field");
+  assert.equal(row.path.value, "48h/1h/0h/2h/1", "the fixed step before the branch stays in the path field");
+  assert.ok(hodlMsigRowValue(row).endsWith(`${MSIG_SYNC_BARE}/1/0/*`), "the row value carries the fixed step and the branch");
+});
+
+test("a multipath branch stays in the key field and is refused outside the window", () => {
+  setHodlTestSyncBranchWindow(0, 2);
+  const row = msigSyncRow(`${MSIG_SYNC_KEY}/<0;1>/*`);
+  hodlSyncMsigRowPathFromKey(row);
+  assert.equal(row.key.value, `${MSIG_SYNC_BARE}/<0;1>/*`);
+  assert.equal(hodlMsigSyncBranchWindowError(row, hodlMsigKeyParts(row.key.value)), "");
+  assert.ok(hodlMsigRowValue(row).endsWith(`${MSIG_SYNC_BARE}/<0;1>/*`));
+  setHodlTestSyncBranchWindow(2, 2);
+  assert.match(specText(hodlMsigSyncBranchWindowError(row, hodlMsigKeyParts(row.key.value))), /branches 0 and 1 in that order/);
+});
+
+test("a bare wildcard stays in the key field and is refused with directions", () => {
+  assert.equal(hodlParseKeyOrigin(`${MSIG_SYNC_KEY}/*`).bareWildcard, true);
+  assert.equal(hodlParseKeyOrigin(`${MSIG_SYNC_KEY}/0/*`).bareWildcard, false);
+  assert.equal(hodlParseKeyOrigin(`${MSIG_SYNC_KEY}/<0;1>/*`).bareWildcard, false);
+  assert.equal(hodlParseKeyOrigin(MSIG_SYNC_KEY).bareWildcard, false);
+  setHodlTestSyncBranchWindow(0, 2);
+  const row = msigSyncRow(`${MSIG_SYNC_KEY}/*`);
+  hodlSyncMsigRowPathFromKey(row);
+  assert.equal(row.key.value, `${MSIG_SYNC_BARE}/*`);
+  const message = "This key's descriptor derives addresses directly below the key (/*), with no branch step; the form always adds a branch. Import the full descriptor instead.";
+  assert.equal(specText(hodlMsigSyncBranchWindowError(row, hodlMsigKeyParts(row.key.value))), message);
+  // A tolerated double slash reads as branch 0, exactly like the parser.
+  const doubled = msigSyncRow(`${MSIG_SYNC_KEY}/0//*`);
+  hodlSyncMsigRowPathFromKey(doubled);
+  assert.equal(doubled.key.value, `${MSIG_SYNC_BARE}/0/*`);
+  assert.equal(hodlMsigSyncBranchWindowError(doubled, hodlMsigKeyParts(doubled.key.value)), "");
+});
+
+test("a key with no wildcard keeps its bare key", () => {
+  setHodlTestSyncBranchWindow(0, 2);
+  for (const [pasted, path] of [[MSIG_SYNC_KEY, "48h/1h/0h/2h"], [`${MSIG_SYNC_KEY}/0/2`, "48h/1h/0h/2h/0/2"]]) {
+    const row = msigSyncRow(pasted);
+    hodlSyncMsigRowPathFromKey(row);
+    assert.equal(row.key.value, MSIG_SYNC_BARE, pasted);
+    assert.equal(row.path.value, path, pasted);
+    assert.equal(hodlMsigSyncBranchWindowError(row, hodlMsigKeyParts(row.key.value)), "", pasted);
+  }
+});
+
+test("a synced wildcard row round-trips through the co-signer parse on every sync", () => {
+  setHodlTestSyncBranchWindow(0, 2);
+  for (const tail of ["/0/*", "/<0;1>/*"]) {
+    const row = msigSyncRow(`${MSIG_SYNC_KEY}${tail}`);
+    hodlSyncMsigRowPathFromKey(row);
+    assert.equal(row.key.value, `${MSIG_SYNC_BARE}${tail}`, "the first sync keeps the declared branch");
+    const fingerprint = row.fingerprint.value, path = row.path.value;
+    hodlSyncMsigRowPathFromKey(row);
+    assert.equal(row.key.value, `${MSIG_SYNC_BARE}${tail}`, "the second sync writes the same text back");
+    assert.equal(row.fingerprint.value, fingerprint, "the second sync leaves the fingerprint alone");
+    assert.equal(row.path.value, path, "the second sync leaves the path alone");
+    assert.equal(hodlMsigRowValue(row, true), `${MSIG_SYNC_KEY}${tail}`, "the row value rebuilds the origin-bearing key");
+  }
+});
+
+test("a BIP45 row keeps its cosigner step through the sync and the rebuild", () => {
+  setHodlTestSyncBranchWindow(0, 2);
+  setHodlTestSyncBareKeyDepth(1);
+  try {
+    for (const [tail, stripped, rebuilt, declaration] of [
+      ["/0/0/*", "/0/*", "/0/0/*", { branch: 0 }],
+      ["/0/<0;1>/*", "/<0;1>/*", "/0/<0;1>/*", { branches: [0, 1] }],
+    ]) {
+      const row = msigSyncRow(`[73c5da0a/45h]${MSIG_SYNC_BARE}${tail}`);
+      hodlSyncMsigRowPathFromKey(row);
+      assert.equal(row.key.value, `${MSIG_SYNC_BARE}${tail}`, "the sync keeps the cosigner step in the key field");
+      assert.equal(row.path.value, "45h", "the 45h origin moved to the path field");
+      // The stripped text alone is not a BIP45 key the parser accepts.
+      assert.throws(() => hodlParseKeyOrigin(`[73c5da0a/45h]${MSIG_SYNC_BARE}${stripped}`), /BIP45/, tail);
+      const value = hodlMsigRowValue(row, true);
+      assert.equal(value, `[73c5da0a/45h]${MSIG_SYNC_BARE}${rebuilt}`, "the rebuilt value re-adds cosigner step 0");
+      // A second sync writes the same text back.
+      hodlSyncMsigRowPathFromKey(row);
+      assert.equal(row.key.value, `${MSIG_SYNC_BARE}${tail}`, "the second sync writes the same text back");
+      assert.equal(row.path.value, "45h", "the second sync leaves the path alone");
+      // The app's own parser reads the rebuilt value back to the same
+      // declaration: cosigner 0, then the branch (or the branch multipath).
+      const reparsed = hodlParseKeyOrigin(value);
+      assert.equal(reparsed.origin.path, "45h", tail);
+      assert.equal(reparsed.derivationPath, "", tail);
+      if (declaration.branch != null) assert.equal(reparsed.branch, declaration.branch, tail);
+      else assert.deepEqual(reparsed.branches, declaration.branches, tail);
+    }
+  } finally {
+    setHodlTestSyncBareKeyDepth(4);
+  }
+});
+
+test("an originless key with fixed steps is refused, not silently re-pathed", () => {
+  setHodlTestSyncBranchWindow(0, 2);
+  const row = msigSyncRow(`${MSIG_SYNC_BARE}/1/0/*`);
+  row.fingerprint.value = "73c5da0a";
+  row.path.value = "48h/1h/0h/2h";
+  assert.throws(() => hodlMsigRowValue(row, true), /An extended key without an origin cannot include fixed steps/);
+  hodlSyncMsigRowPathFromKey(row);
+  assert.equal(row.key.value, `${MSIG_SYNC_BARE}/1/0/*`, "the sync leaves the key field untouched");
+  assert.equal(row.path.value, "48h/1h/0h/2h", "the sync leaves the path field untouched");
+});
+
+test("a typed bare tail on a BIP45 row is refused, not promoted to cosigner 0", () => {
+  setHodlTestSyncBranchWindow(0, 2);
+  setHodlTestSyncBareKeyDepth(1);
+  try {
+    for (const tail of ["/0/*", "/<0;1>/*", "/2147483647/0/*"]) {
+      const row = msigSyncRow(`${MSIG_SYNC_BARE}${tail}`);
+      row.fingerprint.value = "73c5da0a";
+      row.path.value = "45h";
+      assert.throws(() => hodlMsigRowValue(row, true), /BIP45/, tail);
+    }
+  } finally {
+    setHodlTestSyncBareKeyDepth(4);
+  }
+});
+
+test("editing the path field after a paste cannot change which wallet the key text names", () => {
+  setHodlTestSyncBranchWindow(0, 2);
+  setHodlTestSyncBareKeyDepth(1);
+  try {
+    const toBip45 = msigSyncRow(`${MSIG_SYNC_KEY}/0/*`);
+    hodlSyncMsigRowPathFromKey(toBip45);
+    assert.equal(toBip45.key.value, `${MSIG_SYNC_BARE}/0/*`);
+    toBip45.path.value = "45h";
+    assert.throws(() => hodlMsigRowValue(toBip45, true), /BIP45/);
+    const toFixed = msigSyncRow(`[73c5da0a/45h]${MSIG_SYNC_BARE}/0/0/*`);
+    hodlSyncMsigRowPathFromKey(toFixed);
+    assert.equal(toFixed.key.value, `${MSIG_SYNC_BARE}/0/0/*`);
+    toFixed.path.value = "44h";
+    assert.throws(() => hodlMsigRowValue(toFixed, true), /An extended key without an origin cannot include fixed steps/);
+  } finally {
+    setHodlTestSyncBareKeyDepth(4);
+  }
+});
+
+test("hodlMsigKeyParts reads a BIP45 tail with the parser's own rule", () => {
+  assert.equal(hodlMsigKeyParts("KEY/0/0/*", true).key, "KEY");
+  assert.equal(hodlMsigKeyParts("KEY/0/0/*", true).derivationPath, "");
+  assert.equal(hodlMsigKeyParts("KEY/0/0/*", true).branch, 0);
+  assert.deepEqual(hodlMsigKeyParts("KEY/0/<0;1>/*", true).branches, [0, 1]);
+  for (const tail of ["/0/*", "/<0;1>/*", "/3/0/*", "/2147483647/0/*"]) {
+    assert.throws(() => hodlMsigKeyParts(`KEY${tail}`, true), /BIP45/, tail);
+  }
+  // Without the flag the tail is read as a plain branch, as before.
+  assert.equal(hodlMsigKeyParts("KEY/0/*").branch, 0);
+  assert.equal(hodlMsigKeyParts("KEY/1/0/*").derivationPath, "1");
+});
+
+test("hodlMsigKeyParts reads a wildcard tail from key text with no origin", () => {
+  assert.equal(hodlMsigKeyParts("KEY").key, "KEY");
+  assert.equal(hodlMsigKeyParts("KEY").branch, null);
+  assert.equal(hodlMsigKeyParts("KEY/0/*").key, "KEY");
+  assert.equal(hodlMsigKeyParts("KEY/0/*").branch, 0);
+  assert.deepEqual(hodlMsigKeyParts("KEY/<0;1>/*").branches, [0, 1]);
+  assert.equal(hodlMsigKeyParts("KEY/*").bareWildcard, true);
+  assert.equal(hodlMsigKeyParts("KEY/1/0/*").derivationPath, "1");
+  assert.equal(hodlMsigKeyParts("KEY/1/0/*").branch, 0);
+});
+
+test("hodlParseKeyOrigin still splits an origin and leaves an originless tail alone", () => {
+  const origin = { fingerprint: "73c5da0a", path: "48h/1h/0h/2h" };
+  const body = "[73c5da0a/48h/1h/0h/2h]KEY";
+  assert.deepEqual(hodlParseKeyOrigin(body), { origin, key: "KEY", derivationPath: "", branch: null, branches: null, bareWildcard: false });
+  assert.deepEqual(hodlParseKeyOrigin(`${body}/0/*`), { origin, key: "KEY", derivationPath: "", branch: 0, branches: null, bareWildcard: false });
+  assert.deepEqual(hodlParseKeyOrigin(`${body}/<0;1>/*`), { origin, key: "KEY", derivationPath: "", branch: null, branches: [0, 1], bareWildcard: false });
+  assert.deepEqual(hodlParseKeyOrigin(`${body}/*`), { origin, key: "KEY", derivationPath: "", branch: null, branches: null, bareWildcard: true });
+  assert.deepEqual(hodlParseKeyOrigin(`${body}/1/0/*`), { origin, key: "KEY", derivationPath: "1", branch: 0, branches: null, bareWildcard: false });
+  assert.deepEqual(hodlParseKeyOrigin("KEY/0/*"), { origin: null, key: "KEY/0/*" });
 });
 
 test("placeholder fingerprint 00000000 is rejected", () => {

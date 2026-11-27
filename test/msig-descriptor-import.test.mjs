@@ -48,6 +48,7 @@ const source = [
   loadSlice("hodlStripDescriptorChecksum"),
   loadSlice("hodlNormalizeOriginPath"),
   loadSlice("hodlParseKeyOrigin"),
+  loadSlice("hodlParseKeyTail"),
   loadSlice("hodlDescriptorKeyExpressions"),
   loadSlice("hodlParseMultisigCosigner"),
   loadSlice("hodlSplitDescriptorArgs"),

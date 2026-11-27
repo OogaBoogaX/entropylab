@@ -9054,6 +9054,11 @@ function hodlParseKeyOrigin(raw) {
   // instead of being dropped silently.
   let branch = multipathAt < 0 && hadWildcard && tokens.length > 0 && /^\d+$/.test(tokens[tokens.length - 1]) ? Number(tokens[tokens.length - 1]) : null;
   let branches = multipathAt < 0 ? null : tokens[multipathAt].slice(1, -1).split(";").map(Number);
+  // A bare wildcard (xpub…/*) names the addresses directly below the key,
+  // with no branch step; the form always adds a branch level below every key,
+  // so it would derive a different wallet. Reported so the row refuses it
+  // instead of silently re-pathing it (#1518 r4 gate, Kimi K3).
+  let bareWildcard = hadWildcard && tokens.length === 0;
   let honoredTokens = multipathAt >= 0 ? tokens.slice(0, multipathAt) : branch === null ? tokens : tokens.slice(0, -1);
   let derivationPath = honoredTokens.map((token) => {
     let step = token.match(/^(\d+)([hH']?)$/); // shape guaranteed by the validation above
@@ -9063,7 +9068,11 @@ function hodlParseKeyOrigin(raw) {
   if (fingerprint === "00000000") throw hodlError("Key origin fingerprint 00000000 is not a real master fingerprint.");
   if (!/^(?:\d+h?)(?:\/\d+h?)*$/.test(path)) throw hodlError("Key origin path must look like 48h/0h/0h/2h.");
   if (!key) throw hodlError("Key origin is missing the extended public key.");
-  return { origin: { fingerprint, path }, key, derivationPath, branch, branches };
+  return { origin: { fingerprint, path }, key, derivationPath, branch, branches, bareWildcard };
+}
+function hodlParseKeyTail(rest) {
+  let parsed = hodlParseKeyOrigin(`[73c5da0a/0h]${String(rest ?? "")}`);
+  return { key: parsed.key, derivationPath: parsed.derivationPath, branch: parsed.branch, branches: parsed.branches, bareWildcard: parsed.bareWildcard };
 }
 function hodlOriginPathIndexes(path) {
   return hodlNormalizeOriginPath(path).split("/").filter(Boolean).map((step) => {
@@ -9745,16 +9754,24 @@ function hodlMsigRowValue(row, strict = false) {
   let ta = row?.querySelector("textarea"), raw = ta?.value.trim() || "";
   if (!raw) return "";
   try {
-    let parts = hodlMsigKeyParts(raw);
+    let full = hodlParseCustomDerivationPath(row.querySelector(".msig-full-path")?.value || ""),
+      bip45 = Boolean(full.components[0]?.hardened) && Number(full.components[0]?.index) === 45,
+      parts = hodlMsigKeyParts(raw, bip45);
     if (parts.origin) return raw;
-    let parsed = hodlParseMultisigCosigner(raw), fingerprint = row.querySelector(".msig-master-fingerprint")?.value.trim().toLowerCase() || "",
-      full = hodlParseCustomDerivationPath(row.querySelector(".msig-full-path")?.value || ""), originDepth = parsed.node.depth;
+    // The form cannot tell where fixed steps typed after a key without an
+    // origin belong, so it refuses them instead of dropping them (#1518 r8).
+    if (parts.derivationPath) throw new Error("An extended key without an origin cannot include fixed steps before the branch. Paste it with [fingerprint/path] in front, or move those steps into the derivation path field and keep only the branch (like /0/*) after the key.");
+    let parsed = hodlParseMultisigCosigner(parts.key), fingerprint = row.querySelector(".msig-master-fingerprint")?.value.trim().toLowerCase() || "",
+      originDepth = parsed.node.depth;
     if (!/^[0-9a-f]{8}$/.test(fingerprint)) throw new Error("Master fingerprint must be exactly 8 hexadecimal characters.");
     if (fingerprint === "00000000") throw new Error("Master fingerprint 00000000 is not valid.");
     if (full.components.length < originDepth) throw new Error(`This depth-${originDepth} extended key needs at least ${originDepth} path steps.`);
     let originComponents = full.components.slice(0, originDepth), children = full.components.slice(originDepth);
     if (children.some((component) => component.hardened)) throw new Error("Steps after an extended public key must be unhardened.");
-    return `[${fingerprint}/${originComponents.map((component) => hodlOriginPathComponent(component.index, component.hardened)).join("/")}]${parts.key}${children.length ? "/" + children.map((component) => component.index).join("/") : ""}`;
+    let tail = hodlMsigWildcardTail(parts);
+    // The parser strips BIP45's cosigner step 0, so the rebuilt value re-adds it, as the BIP45 compose does.
+    if (tail && bip45) tail = "/0" + tail;
+    return `[${fingerprint}/${originComponents.map((component) => hodlOriginPathComponent(component.index, component.hardened)).join("/")}]${parts.key}${children.length ? "/" + children.map((component) => component.index).join("/") : ""}${tail}`;
   } catch (error) {
     if (strict) throw error;
     return raw;
@@ -11022,37 +11039,57 @@ function hodlMsigFullPath(parsed) {
   let origin = hodlParseCustomDerivationPath("m/" + parsed.origin.path.replace(/h/g, "'")), suffix = parsed.derivationPath ? "/" + parsed.derivationPath : "";
   return origin.path + suffix;
 }
-function hodlMsigKeyParts(value) {
+function hodlMsigKeyParts(value, bip45 = false) {
   let text = String(value ?? "").trim(), expressions = hodlDescriptorKeyExpressions(text);
   if (expressions?.length === 1) text = expressions[0].expression;
-  return hodlParseKeyOrigin(text);
+  let parsed = hodlParseKeyOrigin(text);
+  if (parsed.origin) return parsed;
+  // A row whose path field names BIP45 reads its tail with the parser's own
+  // BIP45 rule, so a bare /0/*, /<0;1>/* or /3/0/* is refused exactly as the
+  // origin-bearing form is, instead of being promoted to cosigner 0 (#1518 r8).
+  if (bip45) {
+    let bip45Parsed = hodlParseKeyOrigin(`[73c5da0a/45h]${text}`);
+    return { origin: null, key: bip45Parsed.key, derivationPath: bip45Parsed.derivationPath, branch: bip45Parsed.branch, branches: bip45Parsed.branches, bareWildcard: bip45Parsed.bareWildcard };
+  }
+  return { origin: null, ...hodlParseKeyTail(text) };
 }
 // A co-signer key pasted with a wildcard path names one branch, exactly as
 // the descriptor importer reads the same text. The form derives one shared
 // branch window below every key, so a key whose branch is outside that
 // window would be silently re-pathed to a different wallet; it is refused
-// instead. The key field keeps only the key once the path moves into the
-// path field, so the branch a wildcard named is kept on the row too
-// (dataset.msigBranch).
-function hodlMsigDeclaredBranch(row, parsed) {
-  if (parsed?.branch != null) return parsed.branch;
-  let stored = row?.dataset?.msigBranch;
-  return stored == null || stored === "" ? null : Number(stored);
-}
-function hodlMsigDeclaredBranches(row, parsed) {
-  if (parsed?.branches != null) return parsed.branches;
-  if (parsed?.branch != null) return null;
-  let stored = row?.dataset?.msigBranches;
-  return stored == null || stored === "" ? null : String(stored).split(";").map(Number);
+// instead. The wildcard tail stays in the key field, so the declaration is
+// read from the row's own parse on every sync, rebuild and restore (#1518 r5).
+function hodlMsigWildcardTail(parsed) {
+  if (parsed?.branch != null) return `/${parsed.branch}/*`;
+  if (parsed?.branches != null) return `/<${parsed.branches.join(";")}>/*`;
+  if (parsed?.bareWildcard === true) return "/*";
+  return "";
 }
 function hodlMsigBranchWindowError(row, parsed) {
-  let branches = hodlMsigDeclaredBranches(row, parsed);
+  // A key pasted as xpub…/* (a bare wildcard) names the addresses directly
+  // below the key, with no branch step; the form always adds a branch level
+  // below every key, so it would derive a different wallet. The key field
+  // keeps the tail, so the row's own parse reads the shape on every sync
+  // (#1518 r5).
+  let bareWildcard = parsed?.bareWildcard;
+  if (bareWildcard === undefined) {
+    let ta = row?.querySelector?.("textarea");
+    if (ta) {
+      try {
+        bareWildcard = hodlMsigKeyParts(String(ta.value ?? "")).bareWildcard;
+      } catch {
+        bareWildcard = false;
+      }
+    }
+  }
+  if (bareWildcard === true) return hodlTText("This key's descriptor derives addresses directly below the key (/*), with no branch step; the form always adds a branch. Import the full descriptor instead.");
+  let branches = parsed?.branches ?? null;
   if (branches != null) {
     let window = hodlReadBranchWindow("msig-");
     if (branches.length > 0 && branches.length === window.range && branches.every((branch, index) => Number.isSafeInteger(branch) && branch === window.start + index)) return "";
     return hodlTText("This key's descriptor uses branches {branches} in that order; the form derives branches {from}-{to} in order. Change the branch window or import the full descriptor.", { branches: branches.join(" and "), from: window.start, to: window.start + window.range - 1 });
   }
-  let branch = hodlMsigDeclaredBranch(row, parsed);
+  let branch = parsed?.branch ?? null;
   if (branch == null || !Number.isSafeInteger(branch)) return "";
   let window = hodlReadBranchWindow("msig-");
   if (branch >= window.start && branch < window.start + window.range) return "";
@@ -11144,21 +11181,28 @@ function hodlSyncMsigRowPathFromKey(row) {
     fingerprint.value = "";
     pathInput.value = hodlDefaultMsigFullPath(row);
     row.dataset.msigOriginDepth = String(hodlParseCustomDerivationPath(pathInput.value).components.length);
-    row.dataset.msigBranch = "";
-    row.dataset.msigBranches = "";
   } else {
-    row.dataset.msigBranch = "";
-    row.dataset.msigBranches = "";
     try {
-      let parts = hodlMsigKeyParts(ta.value), parsed = hodlParseMultisigCosigner(ta.value);
+      let parts = hodlMsigKeyParts(ta.value), bip45 = false;
+      if (!parts.origin) {
+        let first = hodlParseCustomDerivationPath(pathInput.value).components[0];
+        bip45 = Boolean(first?.hardened) && Number(first?.index) === 45;
+        if (bip45) parts = hodlMsigKeyParts(ta.value, true);
+      }
+      let parsed = hodlParseMultisigCosigner(parts.origin ? ta.value : parts.key);
       row.dataset.msigOriginDepth = String(parsed.node.depth);
-      row.dataset.msigBranch = parts.branch == null ? "" : String(parts.branch);
-      row.dataset.msigBranches = parts.branches == null ? "" : parts.branches.join(";");
       if (parts.origin) {
         fingerprint.value = parts.origin.fingerprint;
         pathInput.value = hodlMsigFullPath(parsed);
       }
-      ta.value = parts.key;
+      // Fixed steps typed after a key without an origin have no field of
+      // their own; the validator refuses them, so leave the text alone (#1518 r8).
+      if (!parts.origin && parts.derivationPath) return;
+      // The wildcard tail stays in the key field: the branch a pasted key
+      // declares has no field of its own, so it travels with the key text
+      // through every later sync, rebuild and restore (#1518 r5).
+      let tail = hodlMsigWildcardTail(parts), bip45Row = parts.origin ? /^45h?$/.test(parts.origin.path.split("/")[0] || "") : bip45;
+      ta.value = parts.key + (tail && bip45Row ? "/0" + tail : tail);
     } catch {
       return;
     }
@@ -11717,6 +11761,9 @@ function hodlInitMsig() {
   ["msig-branch-start", "msig-branch-range"].forEach((id) => document.getElementById(id)?.addEventListener("input", () => {
     hodlSyncBranchRangeLimit("msig-");
     hodlInvalidateMsig();
+    // A new window can accept or refuse a key that names a branch, so every
+    // row is re-checked instead of waiting for its key field to be touched.
+    document.querySelectorAll("#msig-keys textarea").forEach((ta) => hodlCheckXpub(ta));
   }));
   ["msig-address-start", "msig-address-range"].forEach((id) => document.getElementById(id)?.addEventListener("input", () => {
     hodlSyncAddressRangeLimit("msig-");
