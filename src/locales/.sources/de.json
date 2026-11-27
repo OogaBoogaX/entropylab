@@ -2594,5 +2594,8 @@
   "A derivation path index after the extended key is out of range (0 to 2,147,483,647).": "aec325a341e1625420a088f28f3404f50dbd28e15a0e785ac2237c1cfe7a28f8",
   "A BIP45 key must have plain cosigner step 0 before its branch, like /0/0/* or /0/<0;1>/*. This tool derives only cosigner 0; another cosigner step would derive a different wallet.": "ec6d67da9025f013ad1f6c6203a32d8df30f6e8e19ff51b9bec389d6f79f9b00",
   "A multipath step like <0;1> must be followed by the wildcard *, as in /<0;1>/*.": "87055e7fd48686df838c8c435e366d15b4d5474a06ea531b14d3cc84cb16e4ed",
-  "Bitcoin Core": "f7cf2bcf911db9ade743128b7f2df251fe9227f1daa59f95976e7dc42c728f64"
+  "Bitcoin Core": "f7cf2bcf911db9ade743128b7f2df251fe9227f1daa59f95976e7dc42c728f64",
+  "First receive addresses": "04e9ccdc8dc2422dbedc946b7c6c0fb90131dd0e138e5fdd0a3ba4a91106269f",
+  "Check a SLIP-39 backup": "8267b2661426123af1881621daddb1bfa9315c01df7d4dbde5683f85a1a9bf36",
+  "Combines SLIP-39 shares with code written from the specification and shows the wallet they restore. It can also test whether a device repeats the random values it splits a secret with. Nothing leaves this page.": "dac00113570f1da7794c0d4d8498336d97e57421f9489fa591a1e64ec77f29df"
 }
