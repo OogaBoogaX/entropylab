@@ -1,0 +1,19 @@
+id: clipboard-writer
+language: JavaScript
+severity: warning
+files: ["src/**/*.js"]
+ignores: ["src/js/clipboard.js", "src/js/{entropylab,psbt,vanity,qr}-wasm-b64.js"]
+message: "This bypasses clipboard.js. Verify the public-copy classification and the End Session generation check."
+note: "Advisory: CodeRabbit comments only; nothing blocks a merge. Names outside this regex are left to the path instructions."
+rule:
+  any:
+    - pattern: $NAV.clipboard?.$METHOD
+    - pattern: $NAV.clipboard.$METHOD
+    - pattern: document.execCommand($OP, $$$REST)
+    - pattern: document.execCommand($OP)
+    - pattern: document.execCommand?.($OP, $$$REST)
+    - pattern: document.execCommand?.($OP)
+constraints:
+  OP: { regex: "(?i)^['\"](copy|cut)['\"]$" }
+  NAV: { regex: '^(navigator|(window|globalThis|self)\.navigator)$' }
+  METHOD: { regex: '^(write|writeText)$' }

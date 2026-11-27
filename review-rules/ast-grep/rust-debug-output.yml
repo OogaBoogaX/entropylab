@@ -1,0 +1,11 @@
+id: rust-debug-output
+language: Rust
+severity: warning
+files: ["{entropylab,psbt,vanity,qr}-wasm/src/**/*.rs"]
+message: "dbg! emits its argument and value. Remove it from wallet runtime paths and keep secret bytes out of diagnostics."
+note: "Advisory: CodeRabbit comments only; nothing blocks a merge. Names outside this regex are left to the path instructions. An aliased import of dbg (for example `use std::dbg as d;`) is not caught; the *-wasm/** path instruction asks reviewers to trace diagnostics."
+rule:
+  kind: macro_invocation
+  has:
+    field: macro
+    regex: '^(std::)?dbg$'

@@ -1,0 +1,29 @@
+id: wallet-network
+language: JavaScript
+severity: warning
+files: ["src/**/*.js"]
+# src/service-worker.js is handled by wallet-network-service-worker: its one
+# install-time precache fetch is allowed there, every other network call fires.
+ignores: ["src/service-worker.js", "src/js/{entropylab,psbt,vanity,qr}-wasm-b64.js"]
+message: "Check the destination. The offline wallet must not start a network request."
+note: "Advisory: CodeRabbit comments only; nothing blocks a merge. Names outside this regex are left to the path instructions."
+rule:
+  any:
+    - pattern: fetch($$$ARGS)
+    - pattern: $GLOBAL.fetch($$$ARGS)
+    - pattern: $NAV.sendBeacon($$$ARGS)
+    - pattern: $G.navigator.sendBeacon($$$ARGS)
+    - pattern: import($SPEC)
+    - pattern: new $GLOBAL.$CTOR($$$ARGS)
+    - pattern: new $CTOR($$$ARGS)
+constraints:
+  G: { regex: '^(window|globalThis|self)$' }
+  GLOBAL: { regex: '^(window|globalThis|self)$' }
+  NAV: { regex: '^(navigator|(window|globalThis|self)\.navigator)$' }
+  CTOR: { regex: '^(XMLHttpRequest|WebSocket|EventSource|WebTransport|RTCPeerConnection)$' }
+  # Only a plain relative string literal ("./x.js", '../y.js') stays quiet; a remote, computed or interpolated one does not.
+  SPEC:
+    not:
+      all:
+        - kind: string
+        - regex: '^["'']\.\.?/'

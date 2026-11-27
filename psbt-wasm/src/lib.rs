@@ -401,6 +401,40 @@ fn reject_bip370_singleton_keydata(
     Ok(())
 }
 
+/// Refuses every BIP-370 v2-only field in a v0 PSBT. BIP-370 says these
+/// fields "must not be included" in a v0 PSBT; the v0 builder and inspector
+/// share this check so an exported file cannot carry a field the inspector
+/// would refuse.
+fn reject_bip370_fields_in_v0(
+    globals: &[RawPair],
+    inputs: &[Vec<RawPair>],
+    outputs: &[Vec<RawPair>],
+) -> Result<(), String> {
+    let reject = |kind: &str, type_byte: u8| -> String {
+        format!("{} is a PSBT v2 field and must not appear in a PSBT v0", pair_type_name(kind, type_byte))
+    };
+    for pair in globals {
+        if BIP370_SINGLETON_GLOBAL.contains(&pair.key[0]) {
+            return Err(reject("global", pair.key[0]));
+        }
+    }
+    for map in inputs {
+        for pair in map {
+            if BIP370_SINGLETON_INPUT.contains(&pair.key[0]) {
+                return Err(reject("input", pair.key[0]));
+            }
+        }
+    }
+    for map in outputs {
+        for pair in map {
+            if BIP370_SINGLETON_OUTPUT.contains(&pair.key[0]) {
+                return Err(reject("output", pair.key[0]));
+            }
+        }
+    }
+    Ok(())
+}
+
 /// Refuses every keyless typed field that carries key data, not just BIP-370's.
 /// `is_singleton` names the fields whose key is the type byte alone; a longer
 /// key is a lookalike (`decode_pair` reports it as "this field must not carry
@@ -672,28 +706,7 @@ fn parse_raw(bytes: &[u8]) -> Result<RawPsbt, String> {
     // unsigned tx; nothing rejected a v0 file that also carries these v2
     // fields, so it decoded — and rebuilt — as if it were valid.
     if v0_tx.is_some() {
-        let reject = |kind: &str, type_byte: u8| -> String {
-            format!("{} is a PSBT v2 field and must not appear in a PSBT v0", pair_type_name(kind, type_byte))
-        };
-        for pair in &globals {
-            if BIP370_SINGLETON_GLOBAL.contains(&pair.key[0]) {
-                return Err(reject("global", pair.key[0]));
-            }
-        }
-        for map in &inputs {
-            for pair in map {
-                if BIP370_SINGLETON_INPUT.contains(&pair.key[0]) {
-                    return Err(reject("input", pair.key[0]));
-                }
-            }
-        }
-        for map in &outputs {
-            for pair in map {
-                if BIP370_SINGLETON_OUTPUT.contains(&pair.key[0]) {
-                    return Err(reject("output", pair.key[0]));
-                }
-            }
-        }
+        reject_bip370_fields_in_v0(&globals, &inputs, &outputs)?;
     }
     let unsigned_tx = match v0_tx {
         Some(tx) => tx,
@@ -1633,6 +1646,11 @@ fn build(json_bytes: &[u8]) -> Result<Vec<u8>, String> {
         ));
     }
 
+    // BIP-370's v2-only fields must not appear in a v0 PSBT. The final
+    // Psbt::deserialize below accepts them as unknown pairs, so without this
+    // check the editor would emit a file its own inspector refuses.
+    reject_bip370_fields_in_v0(&global_pairs, &inputs, &outputs)?;
+
     // Export gate: the edited document must describe a transaction a Bitcoin
     // node would at least consider and a PSBT whose signing claims hold —
     // not merely one PSBT deserialization accepts (issues #322, #361). A
@@ -2055,6 +2073,56 @@ mod tests {
         // Keyed fields that legitimately carry key data are not singleton.
         let pair = RawPair { key: vec![0x02, 0x02], value: vec![0x01] };
         assert!(reject_lookalike_keydata("input", &[pair]).is_ok());
+    }
+
+    #[test]
+    fn build_refuses_bip370_fields_in_v0() {
+        let base = serde_json::json!({
+            "insane": true,
+            "tx": {
+                "version": 2,
+                "locktime": 0,
+                "inputs": [{
+                    "txid": "0000000000000000000000000000000000000000000000000000000000000001",
+                    "vout": 0,
+                    "sequence": 4294967295u32,
+                    "scriptSig": ""
+                }],
+                "outputs": [{
+                    "value": "1000",
+                    "scriptPubKey": "51"
+                }]
+            },
+            "globals": [],
+            "inputs": [[]],
+            "outputs": [[]]
+        });
+        let cases = vec![
+            ("global", "globals", "02", "02000000".to_string(), "PSBT_GLOBAL_TX_VERSION"),
+            ("input", "inputs", "0e", "11".repeat(32), "PSBT_IN_PREVIOUS_TXID"),
+            ("output", "outputs", "03", "0000000000000000".to_string(), "PSBT_OUT_AMOUNT"),
+        ];
+        for (kind, field, key, value, name) in cases {
+            let mut doc = base.clone();
+            let map = if field == "globals" {
+                &mut doc["globals"]
+            } else if field == "inputs" {
+                &mut doc["inputs"][0]
+            } else {
+                &mut doc["outputs"][0]
+            };
+            map.as_array_mut().unwrap().push(serde_json::json!({
+                "key": key,
+                "value": value,
+            }));
+            let json = doc.to_string();
+            let err = build(json.as_bytes()).expect_err(kind);
+            assert_eq!(
+                err,
+                format!("{name} is a PSBT v2 field and must not appear in a PSBT v0"),
+                "{kind}"
+            );
+        }
     }
 
 }

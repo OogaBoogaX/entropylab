@@ -923,6 +923,97 @@ test("typing that leaves the original as inspected keeps the verdict; a real edi
   assert.equal(retireWith(field("ORIGINAL"), { rbf: null }).removed, 1);
 });
 
+// --- the card's input listener: keep while the stamp matches, clear once it differs ---
+
+test("an Inspector edit that leaves the fields as inspected clears nothing", () => {
+  const output = { childElementCount: 2, replaced: 0, replaceChildren() { this.replaced += 1; } };
+  let cleared = 0, synced = 0;
+  const context = vm.createContext({
+    document: { getElementById: (id) => (id === "psbt-out" ? output : null) },
+    hodlPsbtInspected: { "psbt-go": "STAMP" },
+    hodlPsbtLast: { audit: { report: { verdict: "fail" } } },
+    hodlPsbtCards: [{ go: "psbt-go" }],
+    hodlPsbtRunStamp: () => "STAMP",
+    hodlPsbtClearSignerAudit: () => { cleared += 1; },
+    hodlSyncPsbtControls: () => { synced += 1; },
+  });
+  vm.runInContext(extract("hodlPsbtCardEdited"), context);
+  context.hodlPsbtCardEdited();
+  assert.equal(cleared, 0, "the verdicts stay");
+  assert.equal(output.replaced, 0, "the result stays on screen");
+  assert.notEqual(context.hodlPsbtLast, null, "the cached run stays");
+  assert.equal(context.hodlPsbtInspected["psbt-go"], "STAMP", "the run stamp stays");
+  assert.equal(synced, 0, "the controls are not synced: nothing changed");
+});
+
+test("an Inspector edit that changes the fields clears the whole result", () => {
+  const output = { childElementCount: 2, replaced: 0, replaceChildren() { this.replaced += 1; } };
+  let cleared = 0, synced = 0;
+  const context = vm.createContext({
+    document: { getElementById: (id) => (id === "psbt-out" ? output : null) },
+    hodlPsbtInspected: { "psbt-go": "STAMP", "nonce-go": "OTHER" },
+    hodlPsbtLast: { audit: { report: { verdict: "fail" } } },
+    hodlPsbtCards: [{ go: "psbt-go" }],
+    hodlPsbtRunStamp: () => "DIFFERENT",
+    hodlPsbtClearSignerAudit: () => { cleared += 1; },
+    hodlSyncPsbtControls: () => { synced += 1; },
+  });
+  vm.runInContext(extract("hodlPsbtCardEdited"), context);
+  context.hodlPsbtCardEdited();
+  assert.equal(cleared, 1, "the audit and fee-bump verdicts are retired");
+  assert.equal(output.replaced, 1, "the whole result is emptied");
+  assert.equal(context.hodlPsbtLast, null, "the cached run is dropped");
+  assert.equal("psbt-go" in context.hodlPsbtInspected, false, "the run stamp is forgotten");
+  assert.equal(context.hodlPsbtInspected["nonce-go"], "OTHER", "the other card's stamp is untouched");
+  assert.equal(synced, 1, "the controls are synced once");
+});
+
+test("a result on screen with no run stamp is cleared too", () => {
+  for (const shown of [{ childElementCount: 3 }, { childElementCount: 0, last: { audit: {} } }]) {
+    const output = { childElementCount: shown.childElementCount, replaced: 0, replaceChildren() { this.replaced += 1; } };
+    let cleared = 0, synced = 0;
+    const context = vm.createContext({
+      document: { getElementById: (id) => (id === "psbt-out" ? output : null) },
+      hodlPsbtInspected: {},
+      hodlPsbtLast: shown.last ?? null,
+      hodlPsbtCards: [{ go: "psbt-go" }],
+      hodlPsbtRunStamp: () => { throw new Error("nothing was inspected: the stamp must not be read"); },
+      hodlPsbtClearSignerAudit: () => { cleared += 1; },
+      hodlSyncPsbtControls: () => { synced += 1; },
+    });
+    vm.runInContext(extract("hodlPsbtCardEdited"), context);
+    context.hodlPsbtCardEdited();
+    assert.equal(cleared, 1, "the verdicts are retired");
+    assert.equal(output.replaced, 1, "the result is emptied");
+    assert.equal(context.hodlPsbtLast, null, "the cached run is dropped");
+    assert.equal(synced, 1, "the controls are synced once");
+  }
+});
+
+test("an edit with nothing inspected and nothing on screen does nothing", () => {
+  const output = { childElementCount: 0, replaced: 0, replaceChildren() { this.replaced += 1; } };
+  let cleared = 0, synced = 0;
+  const context = vm.createContext({
+    document: { getElementById: (id) => (id === "psbt-out" ? output : null) },
+    hodlPsbtInspected: {},
+    hodlPsbtLast: null,
+    hodlPsbtCards: [{ go: "psbt-go" }],
+    hodlPsbtRunStamp: () => { throw new Error("nothing was inspected: the stamp must not be read"); },
+    hodlPsbtClearSignerAudit: () => { cleared += 1; },
+    hodlSyncPsbtControls: () => { synced += 1; },
+  });
+  vm.runInContext(extract("hodlPsbtCardEdited"), context);
+  context.hodlPsbtCardEdited();
+  assert.equal(cleared, 0, "nothing is retired");
+  assert.equal(output.replaced, 0, "nothing is emptied");
+  assert.equal(synced, 0, "the controls are not synced");
+});
+
+test("the Inspector card's input listener clears the result only once the fields differ", () => {
+  assert.match(app, /document\.getElementById\("psbt-card"\)\.addEventListener\("input", hodlPsbtCardEdited\);/);
+  assert.doesNotMatch(app, /document\.getElementById\("psbt-card"\)\.addEventListener\("input", hodlPsbtClearSignerAudit\);/);
+});
+
 test("the note's address lookup uses the function app.js imports", () => {
   const start = app.indexOf("function hodlPsbtRbfShowScript(");
   const body = app.slice(start, app.indexOf("\nfunction ", start));

@@ -73,7 +73,7 @@ PSBTs, transactions, descriptors and wallet files can be crafted to crash the pa
 ### The build and release pipeline
 
 - Dependencies are pinned to exact versions with integrity hashes.
-- The page and its WebAssembly modules rebuild to identical bytes in the pinned build image. Three people have reproduced the 1.0.0 release on three different machines.
+- The page and its WebAssembly modules rebuild to identical bytes in the pinned build image. Three people rebuilt the 1.0.0 merge (`cb55bd9`) on three different machines; the v1.0.0 release page has been rebuilt only by its author; see `docs/Reproductions.md`.
 - WebAssembly digests are published in `WASM-SHA256SUMS.txt`. Releases carry `SHA256SUMS.txt`, maintainer signatures and an OpenTimestamps proof.
 - The compilers inside the build image are prebuilt binaries, trusted as a seed. This is not a full-source bootstrap.
 

@@ -657,25 +657,7 @@ test("allocation refuses at the safe-integer boundary before mutating the docume
 });
 
 // no observable effect: Regex at src/js/journal.js:48 /[\r\n]+/g -> /[\r\n]/g (collapsed by later /\s+/g)
-// no observable effect: CallExpression at src/js/journal.js:467 wipeBytes(salt) in finally
-// no observable effect: CallExpression at src/js/journal.js:470 wipeBytes(ikm) in finally
-// no observable effect: CallExpression at src/js/journal.js:471 wipeBytes(saltInput) in finally
-// no observable effect: CallExpression at src/js/journal.js:489 wipeBytes(master) in finally
-// no observable effect: CallExpression at src/js/journal.js:793 wipeBytes(tag) in finally
-// no observable effect: CallExpression at src/js/journal.js:796 wipeBytes(plain) in finally
-// no observable effect: CallExpression at src/js/journal.js:852 wipeBytes(plainBytes) in finally
-// no observable effect: CallExpression at src/js/journal.js:853 wipeBytes(parsed.iv) in finally
-// no observable effect: CallExpression at src/js/journal.js:854 wipeBytes(parsed.ciphertext) in finally
-// no observable effect: CallExpression at src/js/journal.js:871 wipeBytes(plainBytes) in finally
-// no observable effect: CallExpression at src/js/journal.js:872 wipeBytes(parsed.iv) in finally
-// no observable effect: CallExpression at src/js/journal.js:873 wipeBytes(parsed.ciphertext) in finally
-// no observable effect: BlockStatement at src/js/journal.js:466 } finally {} -> {} (wipe only)
-// no observable effect: BlockStatement at src/js/journal.js:469 } finally {} -> {} (wipe only)
-// no observable effect: BlockStatement at src/js/journal.js:488 } finally {} -> {} (wipe only)
-// no observable effect: BlockStatement at src/js/journal.js:792 } finally {} -> {} (wipe only)
-// no observable effect: BlockStatement at src/js/journal.js:795 } finally {} -> {} (wipe only)
-// no observable effect: BlockStatement at src/js/journal.js:851 } finally {} -> {} (wipe only)
-// no observable effect: BlockStatement at src/js/journal.js:870 } finally {} -> {} (wipe only)
+// The Journal wipe calls are covered behaviorally by test/journal-residue-fuzz.test.mjs.
 
 test("mutant kill: exported constants and labels", () => {
   assert.equal(NOTEBOOK_FORMAT, "entropylab-notebook");
