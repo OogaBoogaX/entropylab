@@ -87,3 +87,27 @@ test("an agreed non-ALL policy still flags both sides of the request", () => {
   assert.equal(problems.length, 2);
   assert.ok(problems.every((problem) => problem.includes("SIGHASH_SINGLE")), problems.join(" "));
 });
+
+// The per-input label and policy-warning condition are inline in the PSBT
+// Inspector's render loop; extract them so the Taproot SIGHASH_DEFAULT case
+// can be checked without a DOM (red-team part07 #1).
+const declaredLabelOf = (() => {
+  const match = app.match(/let declaredLabel = (.+);\n/);
+  assert.ok(match, "declaredLabel is missing");
+  return new Function("declaredSighashError", "declaredSighash", "taprootish", "hodlTText", "hodlSighashLabel", `return ${match[1]};`);
+})();
+const policyWarns = (() => {
+  const match = app.match(/else if \((declaredSighash !== null && declaredSighash !== 1 && !\(taprootish && declaredSighash === 0\))\)/);
+  assert.ok(match, "the policy-warning condition is missing");
+  return new Function("declaredSighash", "taprootish", `return ${match[1]};`);
+})();
+
+test("SIGHASH_DEFAULT is named for Taproot inputs and stays unknown for others", () => {
+  // BIP-341: SIGHASH_DEFAULT (0) commits to all inputs and outputs, like
+  // SIGHASH_ALL, so a Taproot input declaring it is not an unknown policy.
+  assert.equal(declaredLabelOf("", 0, true, hodlT, hodlSighashLabel), "SIGHASH_DEFAULT (0x0)");
+  assert.equal(policyWarns(0, true), false);
+  // A non-Taproot input has no SIGHASH_DEFAULT: 0 stays undefined and warned.
+  assert.equal(declaredLabelOf("", 0, false, hodlT, hodlSighashLabel), "unknown 0x0 (0x0)");
+  assert.equal(policyWarns(0, false), true);
+});

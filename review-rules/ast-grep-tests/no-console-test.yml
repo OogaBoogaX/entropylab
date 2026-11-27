@@ -1,0 +1,26 @@
+id: no-console
+valid:
+  - |
+    // console.log(secret) is forbidden
+    const s = "console.log";
+  - |
+    const consoleLike = { log() {} };
+    consoleLike.log("x");
+  - |
+    logger.log("x");
+    const message = "console.error";
+invalid:
+  - |
+    console.log("x");
+  - |
+    console.error(secret);
+  - |
+    console.debug();
+  - |
+    window.console.log("x");
+  - |
+    globalThis.console.error(secret);
+  - |
+    self.console.debug("x");
+  - |
+    console?.warn("x");

@@ -1,0 +1,18 @@
+id: rust-debug-output
+valid:
+  - |
+    // dbg!(secret);
+    let s = "dbg!";
+  - |
+    println!("{}", value);
+    log::debug!("{}", value);
+  - |
+    let message = "dbg!";
+    eprintln!("{}", message);
+invalid:
+  - |
+    dbg!(secret);
+  - |
+    std::dbg!(secret);
+  - |
+    dbg!(&private_key);

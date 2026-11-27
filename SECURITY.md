@@ -652,6 +652,27 @@ Clearing remains best-effort.
 Coverage counts/indexes retained in the result are transaction metadata, not
 cryptographic secrets; Clear Capture retires that result too.
 
+### Preview-only Seed XOR
+
+The preview Seed XOR tab restores checksum-valid English BIP39 parts of the same
+12-, 18-, or 24-word length by XORing their entropy bytes and calculating the
+result's new checksum. It rejects malformed phrases, bad input checksums, and
+mixed or unsupported lengths. The library accepts two or more parts, including
+duplicate and all-zero-entropy parts as Coldcard does; the tab accepts the two
+to four parts Coldcard's Split Existing menu produces. Duplicate parts are not
+deduplicated, and an all-zero result warns without being rejected. Published
+Coldcard vectors and rejection cases pin this contract in
+[`test/seed-xor.test.mjs`](test/seed-xor.test.mjs).
+
+The deterministic split uses Coldcard's double-SHA256 domain and part labels and
+is checked against published device outputs. It transforms only the phrase the
+user supplied and never generates entropy. Results stay out of the DOM until
+revealed; private copies use EntropyLab's clipboard. Editing clears a stale
+result, while Clear, End Session, and pagehide empty every phrase field and the
+retained result, with the usual best-effort limits for JavaScript strings. The
+implementation is [`src/js/seed-xor.js`](src/js/seed-xor.js), and the markup and
+navigation are stripped from release builds by the existing preview gates.
+
 ### Released PSBT camera lifecycle
 
 PSBT scanning opts into continuous acquisition on the existing camera
@@ -670,6 +691,78 @@ capture. The ordinary private-value conceal sweep is not bypassed by the
 permission-prompt exception. Supersession and destruction leave the capture
 stopped, and activation callbacks that stop it cannot allocate a stale timer.
 Browser/OS copies and camera buffers remain outside reliable erasure.
+
+### Preview-only SLIP-39 backup check
+
+Check a SLIP-39 backup (Verify tab, `src/js/slip39-check.js`) reads the
+SLIP-39 shares a user types, one per field, and combines them with
+`src/js/slip39.js`, written from the SLIP-0039 specification. It shares no
+code with any wallet and never splits a secret or makes a random value. A
+share is read only with a valid RS1024 checksum, a valid length and zero
+padding. A set is combined only when every share agrees on identifier,
+extendable flag, iteration exponent, group threshold, group count and
+length, each group has exactly its threshold of distinct members, there are
+exactly the group threshold of groups, and the digest verifies at the member
+and the group level; anything else is refused with a reason and shows no
+wallet (`test/slip39.test.mjs`, all 45 official SLIP-0039 vectors including
+the invalid ones). The passphrase must be printable ASCII and is held in a
+`PassphraseVault` field. The decrypted master secret is the BIP32 seed: it
+is used once to derive the master fingerprint and first receive addresses
+for every network, then zeroed, so a network change redraws stored public
+addresses. Decryption runs PBKDF2-HMAC-SHA256 on the page's thread, so the
+panel refuses iteration exponents above 6 instead of freezing the page.
+
+Its randomness test compares two threshold sets from two throwaway wallets.
+It reconstructs each set's random values (the random part R of each digest
+share and, where 3 or more shares are needed, the shares drawn at random)
+and reports runs of 8 or more bytes repeated between or within the sets,
+a repeated identifier or encrypted secret, and trivial values (all zero,
+one byte repeated, a short block repeated, a counter). It decrypts nothing
+and needs no passphrase, and a share entered in both sets is compared, not
+refused: a generator restarted from the same state gives two wallets the
+same random share word for word. The rebuilt values are checked against the
+draws of the SLIP-0039 reference implementation
+(`test/slip39-reference.test.mjs`). It is a tripwire for generators that
+repeat or are broken, not a measure of randomness: a generator that never repeats can
+still be predictable. The panel tells the user to enter throwaway wallets
+only.
+
+Typed shares, the passphrase and everything combined from them live in page
+memory and the panel's DOM only; there are no storage, clipboard or console
+writes (`test/slip39-check.test.mjs`). The master fingerprint and addresses
+are public readouts and copy like the Key Station's. Every conceal trigger takes the typed
+shares off the page until the user asks for them again, and Clear, Clear
+Fields, End Session and page exit empty the panel. This is best effort, as
+below: the fields' own text and the strings handed to the parser cannot be
+zeroed.
+
+### Preview-only SeedQR copy check
+
+Check a SeedQR copy (Verify tab) reads a hand-copied Standard or Compact
+SeedQR from squares the user taps, or from pasted digits. It has no camera or
+photo path. Its reader (`src/js/seedqr-grid.js`) is written from ISO/IEC 18004
+and shares no code with the encoder it compares against (uqr) or with any
+wallet: format information (BCH), masks, module placement, Reed-Solomon over
+GF(256), numeric and byte modes, for 21, 25 and 29 squares at level L. A copy
+shows a seed only when the format information decodes unambiguously, at most
+2, 4 or 7 codewords need correcting (the limit that keeps the specification's
+misdecode-protection codewords), and the payload is a SeedQR with a valid
+BIP39 checksum. Past that limit nothing is shown. The reader then re-encodes
+what it decoded with the copy's own mask and lists every square that
+differs, including squares a scanner would correct silently. A copy that
+decodes is still not proof that it is the wallet's seed: a 12-word checksum
+is 4 bits, so the panel asks the user to compare the master fingerprint and
+first address with the wallet. The entered squares, pasted text, passphrase
+and decoded words live in page memory and the panel's DOM only. There are no
+storage, clipboard or console writes. Words show only after Show words and
+are hidden again by every conceal trigger, which also takes the entered
+squares, the pasted digits, the picture, the list of wrong squares and the
+mask note off the page until the user asks for them again. The passphrase
+field shows bullets only, like the Key Station's (see "What the page can and
+cannot erase" below). The addresses follow the page's network. Clear, Clear
+Fields, End Session and page exit empty the panel and zero its buffers, best
+effort as above: the digit string handed to the encoder and the DOM's own
+copies cannot be zeroed.
 
 ## What the page can and cannot erase
 

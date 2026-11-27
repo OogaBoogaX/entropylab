@@ -530,7 +530,7 @@ test("Silent Payments private-bearing inputs and revealed output are cleared", (
   assert.match(lifecycle, /getElementById\("sp-out"\)/);
   assert.match(lifecycle, /spOut\.innerHTML\s*=\s*""/);
   assert.match(lifecycle, /spError\.textContent\s*=\s*""/);
-  assert.match(lifecycle, /if \(spSession\) hodlPaintSpSession\(hodlSpNote\)/);
+  assert.match(lifecycle, /if \(spSession\) (?:try \{ )?hodlPaintSpSession\(hodlSpNote\)/);
 });
 
 test("Silent Payments recipient, verify, and label fields are explicitly cleared", () => {

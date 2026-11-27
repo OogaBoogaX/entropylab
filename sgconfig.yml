@@ -1,0 +1,4 @@
+ruleDirs:
+  - review-rules/ast-grep
+testConfigs:
+  - testDir: review-rules/ast-grep-tests
