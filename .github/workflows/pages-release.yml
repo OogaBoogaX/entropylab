@@ -206,7 +206,8 @@ jobs:
               continue
             fi
             # Count distinct people, not keys: a signer with several active keys is still one signer.
-            name=$(awk -v f="$primary" '$1 == f { print $2; exit }' "$SIGNERS")
+            # The name comes from the key's active line, the record that made it count.
+            name=$(awk -v f="$primary" '$1 == f && $3 == "active" { print $2; exit }' "$SIGNERS")
             echo "$name $primary" >> "$RUNNER_TEMP/counted.txt"
           done < "$RUNNER_TEMP/validsigs.txt"
           COUNT=$(awk '{ print $1 }' "$RUNNER_TEMP/counted.txt" | sort -u | wc -l)

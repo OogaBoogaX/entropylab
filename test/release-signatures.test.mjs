@@ -86,14 +86,17 @@ test("a KEYS asset with an extra key cannot add a signer", { skip: !tools && "ne
     const sigC = execFileSync("gpg", ["--batch", "--homedir", keyHome, "--pinentry-mode", "loopback", "--passphrase", "", "--local-user", fprC, "--detach-sign", "--output", "-", sumsPath]);
 
     const script = stepScript(".github/workflows/pages-release.yml", "Check the release signatures");
-    const run = (name, { listed, committed, keysAsset, min, sigs = [sigA, sigB] }) => {
+    const run = (name, { listed, committed, keysAsset, min, sigs = [sigA, sigB], extraLines = [] }) => {
       const dir = join(temp, name);
       const workspace = join(dir, "workspace");
       const runnerTemp = join(dir, "runner");
       mkdirSync(join(workspace, "keys"), { recursive: true });
       mkdirSync(join(workspace, ".github"), { recursive: true });
       mkdirSync(join(runnerTemp, "release"), { recursive: true });
-      writeFileSync(join(workspace, ".github/release-signers.txt"), `min-signers ${min}\n${listed.map(([fpr, who]) => `${fpr} ${who} active`).join("\n")}\n`);
+      // A listed entry is [fingerprint, name] (written as an active line) or a
+      // raw line, so a test can add a malformed or duplicate record.
+      const signerLine = (entry) => (typeof entry === "string" ? entry : `${entry[0]} ${entry[1]} active`);
+      writeFileSync(join(workspace, ".github/release-signers.txt"), `min-signers ${min}\n${[...listed, ...extraLines].map(signerLine).join("\n")}\n`);
       for (const [index, [fpr, who]] of committed.entries()) writeFileSync(join(workspace, "keys", `${who}-${index}.asc`), exportKey(fpr));
       writeFileSync(join(runnerTemp, "release/SHA256SUMS.txt"), sums);
       writeFileSync(join(runnerTemp, "release/SHA256SUMS.asc"), Buffer.concat(sigs));
@@ -138,6 +141,29 @@ test("a KEYS asset with an extra key cannot add a signer", { skip: !tools && "ne
     const twoPeople = run("two-people", { listed: [[fprA, "A"], [fprB, "A"], [fprC, "C"]], committed: [[fprA, "A"], [fprB, "A"], [fprC, "C"]], keysAsset: [], min: 2, sigs: [sigA, sigB, sigC] });
     assert.equal(twoPeople.status, 0, twoPeople.log);
     assert.match(twoPeople.log, /Good signature from C/);
+
+    // A stray two-field line must not lend its name to a key: the name comes
+    // from the key's active line, so fprB and fprC are one person (B) and the
+    // release is under-signed. This is the case that distinguishes the
+    // active-line lookup from a first-match lookup.
+    const stray = run("stray-line", { listed: [`${fprB} A`, [fprB, "B"], [fprC, "B"]], committed: [[fprB, "B"], [fprC, "B"]], keysAsset: [], min: 2, sigs: [sigB, sigC] });
+    assert.notEqual(stray.status, 0, "a stray two-field line must not lend fprB the name A");
+    assert.match(stray.log, /title=Too few signers::/);
+
+    // A listed line with no name is refused, not guessed at.
+    const noName = run("no-name", { listed: [A], committed: [A, B], keysAsset: [], min: 2, sigs: [sigA, sigB], extraLines: [`${fprB} active`] });
+    assert.notEqual(noName.status, 0, "a listed line with no name must be refused");
+    assert.match(noName.log, /title=Unknown signer/);
+
+    // The same key listed active and revoked: the revoked record wins, so A
+    // does not count and only C's signature remains.
+    const activeAndRevoked = run("active-and-revoked", { listed: [A, C], committed: [A, C], keysAsset: [], min: 2, sigs: [sigA, sigC], extraLines: [`${fprA} A revoked`] });
+    assert.notEqual(activeAndRevoked.status, 0, "a key listed active and revoked must not count");
+    assert.match(activeAndRevoked.log, /title=Too few signers::/);
+    const revokedAlone = run("active-and-revoked-min1", { listed: [A, C], committed: [A, C], keysAsset: [], min: 1, sigs: [sigA, sigC], extraLines: [`${fprA} A revoked`] });
+    assert.equal(revokedAlone.status, 0, revokedAlone.log);
+    assert.match(revokedAlone.log, /Good signature from C/);
+    assert.doesNotMatch(revokedAlone.log, /Good signature from A/);
   } finally {
     rmSync(temp, { recursive: true, force: true });
   }
