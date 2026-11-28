@@ -1,0 +1,90 @@
+"""Inspect the built APK, not the source manifest or staging assets."""
+import hashlib
+from pathlib import Path
+import re
+import subprocess
+import sys
+import zipfile
+
+root = Path(__file__).resolve().parent
+expected = (root / "ENTROPYLAB_HTML.sha256").read_text().split()[0]
+with zipfile.ZipFile(sys.argv[1]) as apk:
+    actual = hashlib.sha256(apk.read("assets/entropylab.html")).hexdigest()
+if actual != expected:
+    raise SystemExit(f"Packaged HTML digest {actual} differs from pin {expected}")
+permissions = subprocess.check_output([sys.argv[2], "dump", "permissions", sys.argv[1]], text=True)
+if "uses-permission:" in permissions or "uses-permission-sdk-" in permissions:
+    raise SystemExit(f"APK requests permissions:\n{permissions}")
+
+# The merged manifest is what Android enforces, so check it rather than the source XML.
+manifest = subprocess.check_output([sys.argv[2], "dump", "xmltree", sys.argv[1], "AndroidManifest.xml"], text=True)
+def attribute(name):
+    found = re.findall(rf"android:{name}\(0x[0-9a-f]+\)=(.*)$", manifest, re.M)
+    if len(found) != 1:
+        raise SystemExit(f"Merged manifest has {len(found)} android:{name} attributes, expected 1")
+    return found[0].strip()
+# With no attribute Android defaults to false. Reject an explicit true, a
+# malformed value, or multiple declarations rather than assuming a release build.
+debuggable = re.findall(r"android:debuggable\(0x[0-9a-f]+\)=(.*)$", manifest, re.M)
+if debuggable and (len(debuggable) != 1 or debuggable[0].strip() != "(type 0x12)0x0"):
+    raise SystemExit("Merged manifest does not keep android:debuggable off")
+for name in ("allowBackup", "fullBackupContent"):
+    if attribute(name) != "(type 0x12)0x0":
+        raise SystemExit(f"Merged manifest does not set android:{name}=false")
+rules_ref = attribute("dataExtractionRules")
+if not re.fullmatch(r"@0x[0-9a-f]{8}", rules_ref):
+    raise SystemExit("Merged manifest has no android:dataExtractionRules resource")
+# Release optimization can rename a ZIP member without changing its resource
+# ID or name. Resolve the actual compiled XML from the APK's resource table.
+resources = subprocess.check_output(
+    [sys.argv[2], "dump", "--values", "resources", sys.argv[1]], text=True
+)
+entries = re.findall(
+    rf'^ +resource {re.escape(rules_ref[1:])} [^\s:]+:([^\s:]+): ([^\n]*)'
+    r'(?:\n +\(string(?:8|16)\) "([^"\r\n]+)")?',
+    resources, re.M,
+)
+if len(entries) != 1 or entries[0][0] != "xml/data_extraction_rules":
+    raise SystemExit(
+        f"Merged manifest android:dataExtractionRules {rules_ref} must name one packaged "
+        f"xml/data_extraction_rules configuration; found {[name for name, _, _ in entries]}"
+    )
+_, metadata, rules_path = entries[0]
+if not metadata.startswith("t=0x03 ") or not re.fullmatch(
+    r"res/(?:[A-Za-z0-9_-]+/)*[A-Za-z0-9_.-]+\.xml", rules_path
+):
+    raise SystemExit("Data extraction rules do not reference packaged XML")
+with zipfile.ZipFile(sys.argv[1]) as apk:
+    if apk.namelist().count(rules_path) != 1:
+        raise SystemExit("Expected exactly one data extraction rules XML in APK")
+rules = subprocess.check_output([sys.argv[2], "dump", "xmltree", sys.argv[1], rules_path], text=True)
+elements = []
+for line in rules.splitlines():
+    element = re.match(r"\s*E: (\S+)", line)
+    if element:
+        elements.append((element.group(1), {}))
+    attr = re.match(r'\s*A: (\w+)="([^"]*)"', line)
+    if attr and elements:
+        elements[-1][1][attr.group(1)] = attr.group(2)
+excluded, section = {"cloud-backup": set(), "device-transfer": set()}, None
+for name, attrs in elements:
+    if name == "include":
+        raise SystemExit("Data extraction rules include a domain")
+    if name in excluded:
+        section = name
+    # Android reads a missing path as the whole domain (FullBackup.extractCanonicalFile);
+    # any other path excludes only that file or folder.
+    elif name == "exclude" and section and attrs.get("path", ".") in ("", "."):
+        excluded[section].add(attrs.get("domain"))
+for section, domains in excluded.items():
+    missing = {"root", "file", "database", "sharedpref", "external"} - domains
+    if missing:
+        raise SystemExit(f"Data extraction rules do not exclude {sorted(missing)} from {section}")
+# ActivityInfo.CONFIG_* values for the six changes the live WebView must survive.
+handled = {"keyboard": 0x10, "keyboardHidden": 0x20, "orientation": 0x80,
+           "screenLayout": 0x100, "screenSize": 0x400, "smallestScreenSize": 0x800}
+mask = int(attribute("configChanges").rsplit(")", 1)[-1], 16)
+missing = [name for name, bit in handled.items() if not mask & bit]
+if missing:
+    raise SystemExit(f"Merged MainActivity configChanges {mask:#x} is missing {missing}")
+print(f"Packaged HTML OK {actual}; APK is not debuggable and requests no permissions; backup and device transfer off; configChanges {mask:#x}")

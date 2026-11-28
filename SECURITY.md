@@ -567,6 +567,27 @@ material. Its security posture rests on the following model:
 - Material involving loss of funds (incorrect derivations, exfiltration of
   secret data, injected script execution in the generated HTML, unexpected
   network egress) is treated as a security issue.
+- The Android wrapper in `android/` embeds the pinned v1.1.0 release
+  `entropylab.html` (vendored bytes, SHA-256
+  `8461363a3e238a117246a78d03ad8e0655e7ae126b38aafd0955a1d00b9a93f6`).
+  The [pin procedure](android/README.md#updating-to-a-future-release)
+  verifies the signed checksum against keys and fingerprints from a trusted
+  upstream checkout rather than the release's own `KEYS`. Its offline
+  guarantee is enforced by the platform: the manifest requests no permissions
+  (including `INTERNET`), the WebView blocks network loads and refuses any
+  load that is not the bundled asset, backups and device transfer are
+  excluded, and a SHA-256 pin check fails closed at build time and again
+  before the calculator opens. The wrapper adds the Android WebView
+  (Chromium) to the trusted computing base — a WebView or WebView-update
+  compromise is a risk the plain HTML path does not carry. It is a
+  non-debuggable, unsigned release build with WebView debugging explicitly
+  disabled. It has not been tested on a physical device.
+  Declared rotation/size/keyboard changes redraw the live WebView without
+  persisting its calculator session. Saved-state bundles contain no view or
+  calculator state. Genuine backgrounding still removes the task and kills
+  the process; destruction detaches and destroys the WebView. Process death
+  or unhandled recreation starts at the launch screen. Callback tests use
+  Android test doubles; real device lifecycle and erasure remain unproven.
 
 ### Released PSBT QR transport
 

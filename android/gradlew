@@ -1,0 +1,6 @@
+#!/bin/sh
+APP_HOME=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+# As Gradle's own launcher: JAVA_HOME's java when set (an invalid one fails), else PATH's.
+JAVACMD=java
+if [ -n "$JAVA_HOME" ]; then JAVACMD=$JAVA_HOME/bin/java; fi
+exec "$JAVACMD" -classpath "$APP_HOME/gradle/wrapper/gradle-wrapper.jar" org.gradle.wrapper.GradleWrapperMain "$@"
