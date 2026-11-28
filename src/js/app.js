@@ -4877,8 +4877,19 @@ function hodlComputeTargetLastWords(words, targetWords = hodlTargetWordCount) {
   hodlLastWordCache.set(cacheKey, result);
   return result;
 }
+function hodlSeedInputTokens(value) {
+  let text = String(value ?? ""), tokens = [];
+  for (let match of text.matchAll(/[^\s,;|"\[\]]+/g)) {
+    let start = match.index, end = start + match[0].length;
+    while (start < end && /[\x21-\x2F\x3A-\x40\x5B-\x60\x7B-\x7E]/.test(text[start])) start += 1;
+    while (end > start && /[\x21-\x2F\x3A-\x40\x5B-\x60\x7B-\x7E]/.test(text[end - 1])) end -= 1;
+    if (start === end) continue;
+    tokens.push({ word: text.slice(start, end).toLowerCase(), start, end });
+  }
+  return tokens;
+}
 function hodlSeedFinalWordContext(value, targetWords = hodlTargetWordCount) {
-  let config = hodlSeedConfig(targetWords), tokens = [...String(value ?? "").matchAll(/\S+/g)].map((match) => ({ word: match[0].toLowerCase(), start: match.index, end: match.index + match[0].length }));
+  let config = hodlSeedConfig(targetWords), tokens = hodlSeedInputTokens(value);
   if (tokens.length < config.partialWords || tokens.length > config.words) return null;
   let baseTokens = tokens.slice(0, config.partialWords);
   if (baseTokens.some((token) => !hodlBip39WordSet.has(token.word))) return null;
@@ -4890,7 +4901,7 @@ function hodlSeedFinalWordContext(value, targetWords = hodlTargetWordCount) {
 function hodlAnalyzeSeedInput(input, targetWords = hodlTargetWordCount) {
   let value = input.value, config = hodlSeedConfig(targetWords);
   if (hodlLooksExtendedKey(value)) return { tokens: [], invalidRanges: [], invalidWords: [], excessCount: 0, checksumInvalid: false, extendedKey: true, finalContext: null };
-  let tokens = [...value.matchAll(/\S+/g)].map((match) => ({ word: match[0].toLowerCase(), start: match.index, end: match.index + match[0].length })), invalidRanges = [], invalidWords = [], excessCount = 0, lastIndex = tokens.length - 1, last = tokens[lastIndex], activePrefix = Boolean(last && document.activeElement === input && !/\s$/.test(value) && input.selectionStart === input.selectionEnd && input.selectionStart === last.end);
+  let tokens = hodlSeedInputTokens(value), invalidRanges = [], invalidWords = [], excessCount = 0, lastIndex = tokens.length - 1, last = tokens[lastIndex], activePrefix = Boolean(last && document.activeElement === input && !/\s$/.test(value) && input.selectionStart === input.selectionEnd && input.selectionStart === last.end);
   let finalContext = hodlSeedFinalWordContext(value, config.words);
   tokens.forEach((token, index) => {
     let listed = hodlBip39WordSet.has(token.word), options = index === config.partialWords && finalContext ? finalContext.candidates : hodlBip39Wordlist, viablePrefix = activePrefix && index === lastIndex && token.word.length > 0 && options.some((word) => word.startsWith(token.word));
@@ -7509,6 +7520,14 @@ function hodlRenderKeyForm() {
         meta.textContent = status.message;
         meta.className = "muted " + (status.ok ? status.warning ? "err" : "ok" : "err");
         return;
+      }
+      if (!/[0-9]/.test(value) && !/[^\x00-\x7F]/.test(value)) {
+        let problem = hodlSeedTextProblem(value);
+        if (problem) {
+          picker.innerHTML = "";
+          hodlRenderSeedProgress("seed-meta", "words", analysis.tokens.length, config.words, hodlMetaCue(hodlTText(problem.key, problem.vars), "error"));
+          return;
+        }
       }
       let finalContext = analysis.finalContext, validation = hodlValidateTargetMnemonic(value, config.words), entered = analysis.tokens.length, progress = (cue) => hodlRenderSeedProgress("seed-meta", "words", entered, config.words, cue);
       if (finalContext) {
