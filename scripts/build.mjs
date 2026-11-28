@@ -20,6 +20,7 @@ import { fileURLToPath } from "node:url";
 import { build } from "esbuild";
 import { buildCommit } from "./build-commit.mjs";
 import { applyPreviewBlocks, previewHtmlPlugin } from "./preview-blocks.mjs";
+import { checkPreviewWarning } from "./preview-warning-check.mjs";
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
 const SRC = join(root, "src");
@@ -346,6 +347,9 @@ if (outDir === root) {
   mkdirSync(outDir, { recursive: true });
 }
 
+// The preview build's warning must reach the artifact, and the release build
+// must carry none of it. Checked on the final HTML, after every transform.
+checkPreviewWarning(html, preview);
 writeFileSync(join(outDir, appFile), html);
 writeFileSync(join(outDir, workerFile), worker);
 

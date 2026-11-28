@@ -71,6 +71,7 @@ import { checkRbfReplacement as hodlCheckRbfReplacement } from "./psbt-rbf-check
 import { hodlInitLn, hodlLnWipeMem } from "./lightning.js";
 import { hodlInitCodex32, hodlCodex32Wipe } from "./codex32.js";
 import { initSeedXor, seedXorWipeMem } from "./seed-xor.js";
+import { initPreviewGate } from "./preview-gate.js";
 import { hodlCompareSchnorrNonces, hodlParseSchnorr, hodlTapKeySigs, hodlTapScriptPathSigs, hodlTapScriptSigs, hodlTapSighashProblems, hodlTapWitnessShape } from "./psbt-schnorr.js";
 import {
   buildDeriveAddressesCommands,
@@ -23827,6 +23828,7 @@ function hodlInitWorkspace() {
   hodlInitPsbtToolTabs();
   // The station switcher ships in release builds since 2026-10-28.
   hodlInitPrivacyToolTabs();
+  if (__ENTROPYLAB_PREVIEW__) initPreviewGate({ doc: document, storage: () => window.sessionStorage });
   if (typeof hodlInitBip47 === "function") hodlInitBip47();
   hodlInitJournalToolTabs();
   hodlInitJournalNotebook();

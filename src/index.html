@@ -16,6 +16,16 @@
     <div class="disclaimer-proof-row"><input class="disclaimer-proof" id="beta-disclaimer-proof" type="text" inputmode="numeric" maxlength="1" autocomplete="off" spellcheck="false" aria-labelledby="beta-disclaimer-proof-label"><button class="btn primary" id="beta-disclaimer-confirm" type="button" disabled>I Understand</button></div>
   </div>
 </div>
+<!-- preview -->
+<div class="modal-overlay disclaimer-overlay is-visible no-print" id="preview-notice" role="alertdialog" aria-modal="true" aria-labelledby="preview-notice-title" aria-describedby="preview-notice-text">
+  <div class="modal-card is-warning disclaimer-card">
+    <svg class="modal-warning-icon disclaimer-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3 2.5 20h19L12 3z"/><path d="M12 10v4M12 17.5h.01"/></svg>
+    <p class="modal-warning-title disclaimer-title" id="preview-notice-title">This is a preview build</p>
+    <div class="disclaimer-text" id="preview-notice-text"><p>This build is still being tested and is not approved for real use. Use test seeds only: never enter a real seed or key, and never send funds to anything made here.</p></div>
+    <button class="btn primary" id="preview-notice-accept" type="button">I understand: test seeds only</button>
+  </div>
+</div>
+<!-- /preview -->
 <script>/*@@JS_BROWSER_CHECK@@*/</script><script id="btc-calc-script">/*@@JS_MAIN@@*/</script>
 <script>/*@@JS_SQLITE_WRITER@@*/</script>
 <script>/*@@JS_SQLITE_READER@@*/</script>

@@ -26,6 +26,7 @@ export const BUILD_INPUTS = [
   "scripts/ln-worker-source.mjs",
   "scripts/ots-worker-source.mjs",
   "scripts/preview-blocks.mjs",
+  "scripts/preview-warning-check.mjs",
   "scripts/qr-worker-source.mjs",
   "entropylab-wasm",
   "psbt-wasm",
