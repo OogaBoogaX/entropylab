@@ -2656,5 +2656,6 @@
   "Recover secret": "Recuperar segredo",
   "Derive share": "Derivar parte",
   "Reveal private result": "Revelar resultado privado",
-  "Codex32 result": "Resultado Codex32"
+  "Codex32 result": "Resultado Codex32",
+  "Word {n} has punctuation inside it. Remove the punctuation, or replace it with a space if it joins two words.": "A palavra {n} tem pontuação dentro dela. Remova a pontuação ou substitua-a por um espaço se ela unir duas palavras."
 }
