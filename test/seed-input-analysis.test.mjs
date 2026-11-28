@@ -61,6 +61,7 @@ const source = [
     "hodlSeedConfig",
     "hodlLooksExtendedKey",
     "hodlComputeTargetLastWords",
+    "hodlSeedInputTokens",
     "hodlSeedFinalWordContext",
     "hodlAnalyzeSeedInput",
     "hodlAnalyzeBip39Passphrase",
@@ -69,7 +70,7 @@ const source = [
     "hodlPassphraseBip39CanEnterCharacter",
     "hodlPassphraseBip39CanEnterSpace",
   ].map(slice),
-  "export { hodlComputeTargetLastWords, hodlSeedFinalWordContext, hodlAnalyzeSeedInput, hodlAnalyzeBip39Passphrase, hodlSeedKeyboardCanEnterCharacter, hodlSeedKeyboardCanEnterSpace, hodlPassphraseBip39CanEnterCharacter, hodlPassphraseBip39CanEnterSpace };",
+  "export { hodlComputeTargetLastWords, hodlSeedInputTokens, hodlSeedFinalWordContext, hodlAnalyzeSeedInput, hodlAnalyzeBip39Passphrase, hodlSeedKeyboardCanEnterCharacter, hodlSeedKeyboardCanEnterSpace, hodlPassphraseBip39CanEnterCharacter, hodlPassphraseBip39CanEnterSpace };",
 ].join("\n");
 
 const modulePath = join(root, "test", `.seed-input-analysis-${process.pid}.mjs`);
@@ -81,6 +82,7 @@ try {
   unlinkSync(modulePath);
 }
 const {
+  hodlSeedInputTokens,
   hodlSeedFinalWordContext,
   hodlAnalyzeSeedInput,
   hodlAnalyzeBip39Passphrase,
@@ -97,6 +99,7 @@ const bruteForceLastWords = (baseWords, targetWords) =>
 // entropy 7f…7f is "legal winner …" ×23 + "title".
 const BASE_11 = Array(11).fill("abandon");
 const BASE_23 = "legal winner thank year wave sausage worth useful legal winner thank year wave sausage worth useful legal winner thank year wave sausage worth".split(" ");
+const PHRASE = [...BASE_11, "about"];
 
 const inputOf = (value, caret = null) => {
   const at = caret ?? value.length;
@@ -141,6 +144,48 @@ test("seed analysis bypasses extended keys and flags excess and unknown words", 
   assert.deepEqual(excess.invalidRanges.length, 1, "only the 25th word is excess");
   const unknown = hodlAnalyzeSeedInput(inputOf([...BASE_23, "zzzz"].join(" ")), 24);
   assert.deepEqual(unknown.invalidWords, [{ index: 23, word: "zzzz" }]);
+});
+
+test("the last-word picker reads the same separators as the validator", () => {
+  const context = hodlSeedFinalWordContext(PHRASE.join(", "), 12);
+  assert.ok(context);
+  assert.equal(context.selected, "about");
+  assert.ok(context.candidates.includes("about"));
+});
+
+test("the seed analyzer splits the same separators as the validator", () => {
+  for (const value of [PHRASE.join(", "), PHRASE.join(","), JSON.stringify(PHRASE), PHRASE.join(" ") + "."]) {
+    const analysis = hodlAnalyzeSeedInput(inputOf(value), 12);
+    assert.equal(analysis.tokens.length, 12, value);
+    assert.deepEqual(analysis.tokens.map((token) => token.word), PHRASE, value);
+    assert.deepEqual(analysis.invalidRanges, [], value);
+    assert.deepEqual(analysis.invalidWords, [], value);
+    assert.equal(analysis.checksumInvalid, false, value);
+  }
+});
+
+test("seed input tokens keep core offsets and skip empty edge-punctuation matches", () => {
+  assert.deepEqual(hodlSeedInputTokens("abandon, ability"), [
+    { word: "abandon", start: 0, end: 7 },
+    { word: "ability", start: 9, end: 16 },
+  ]);
+  assert.deepEqual(hodlSeedInputTokens("abandon . ability").map((token) => token.word), ["abandon", "ability"]);
+  assert.deepEqual(hodlSeedInputTokens("abandon - ability").map((token) => token.word), ["abandon", "ability"]);
+});
+
+test("punctuation inside a word and digits stay in the token for the validator", () => {
+  const dotted = hodlAnalyzeSeedInput(inputOf("aban.don"), 12);
+  assert.deepEqual(dotted.tokens.map((token) => token.word), ["aban.don"]);
+  assert.deepEqual(dotted.invalidWords, [{ index: 0, word: "aban.don" }]);
+
+  const digit = hodlAnalyzeSeedInput(inputOf("abandon1"), 12);
+  assert.deepEqual(digit.tokens.map((token) => token.word), ["abandon1"]);
+  assert.deepEqual(digit.invalidWords, [{ index: 0, word: "abandon1" }]);
+
+  const hyphenated = hodlAnalyzeSeedInput(inputOf(PHRASE.join("-")), 12);
+  assert.equal(hyphenated.tokens.length, 1);
+  assert.equal(hyphenated.tokens[0].word, PHRASE.join("-"));
+  assert.equal(hyphenated.invalidWords.length, 1);
 });
 
 test("seed analysis treats the word under the caret as a viable prefix", () => {

@@ -1125,7 +1125,7 @@ test("the key Wipe clears the partial-phrase cache after the form restore refill
   // The slice's load-time form-element lookups need a document to call into.
   Object.assign(globalThis, { __ENTROPYLAB_TEST_HOOKS__: false, document: inert, window: inert });
   try {
-    slice = await loadAppFunctions(["hodlWipeActiveKey", "hodlSeedFinalWordContext", "hodlLastWordCache"], {
+    slice = await loadAppFunctions(["hodlWipeActiveKey", "hodlSeedInputTokens", "hodlSeedFinalWordContext", "hodlLastWordCache"], {
       stubs: {
         hodlInvalidateDerivation() {},
         hodlNewKeyState: (name, id, number) => ({ name, id, number, fields: {}, result: null }),

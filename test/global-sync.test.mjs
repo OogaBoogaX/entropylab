@@ -187,6 +187,30 @@ test("an over-long seed phrase goes invalid in sync instead of being truncated",
   });
 });
 
+test("a seed phrase with punctuation inside a word publishes nothing in sync", async () => {
+  await withDocument(async () => {
+    const { loadAppFunctions } = await import("./app-slice-harness.mjs");
+    const twelve = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about";
+    let value = "";
+    const slice = await loadAppFunctions(["hodlGlobalSyncCurrentBits"], {
+      stubs: { hodlGlobalSyncCurrentValue: () => value },
+      settable: ["hodlKeyMode", "hodlSeedMethod", "hodlSeedZeroIndexed"],
+    });
+    slice.__set.hodlKeyMode("seed");
+    slice.__set.hodlSeedMethod("words");
+    // The typed phrase has 11 tokens; the hyphen would split it into the
+    // valid 12-word vector, so the old code published 128 bits.
+    value = "abandon-abandon" + " abandon".repeat(9) + " about";
+    assert.equal(slice.hodlGlobalSyncCurrentBits(12), null, "inner hyphen");
+    // A digit glued to a word is the same silent split.
+    value = "abandon1abandon" + " abandon".repeat(9) + " about";
+    assert.equal(slice.hodlGlobalSyncCurrentBits(12), null, "digit glued to a word");
+    // The clean vector still publishes its whole 128-bit entropy.
+    value = twelve;
+    assert.equal(slice.hodlGlobalSyncCurrentBits(12), "0".repeat(128), "the clean 12-word vector");
+  });
+});
+
 test("a hex key with a non-hex character goes invalid in sync instead of being cut off", () => {
   // Stopping at the first non-hex character published the digits before it:
   // a shorter key the private-key field rejects (the bitcoinjs/bip39

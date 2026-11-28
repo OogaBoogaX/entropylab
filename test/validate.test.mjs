@@ -1043,3 +1043,97 @@ test("GitHub Actions are pinned to commit SHAs", () => {
   }
   assert.match(read(".github/dependabot.yml"), /package-ecosystem:\s*github-actions/);
 });
+
+// A seed phrase is read through the normalizer, which turns every non-letter
+// into a separator. Punctuation between two letters would silently split a
+// word and derive a different phrase; refuse it, while CSV/JSON separators
+// still work. The expected messages are the owner-approved wording.
+test("seed text refuses punctuation inside a word but keeps CSV and JSON separators", async () => {
+  const { loadAppFunctions } = await import("./app-slice-harness.mjs");
+  const note = (message, values = {}) => message.replace(/\{(\w+)\}/g, (_, key) => String(values[key] ?? `{${key}}`));
+  const slice = await loadAppFunctions(["hodlValidateMnemonic", "hodlValidateTargetMnemonic"], { stubs: { hodlNote: note } });
+  const twelve = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about";
+  const hyphenated = twelve.replace("abandon", "aban-don");
+  const dotted = twelve.replace("abandon", "aban.don");
+  const digit = twelve.replace("abandon", "abandon1");
+  const punctuation = (n) => `Word ${n} has punctuation inside it. Remove the punctuation, or replace it with a space if it joins two words.`;
+  const oldDigit = "Seed words are the BIP39 English list: remove digits and non-ASCII characters.";
+
+  for (const [text, n] of [[hyphenated, 1], [dotted, 1]]) {
+    const result = slice.hodlValidateMnemonic(text);
+    assert.equal(result.ok, false);
+    assert.equal(result.error, punctuation(n));
+    const target = slice.hodlValidateTargetMnemonic(text, 12);
+    assert.equal(target.ok, false);
+    assert.equal(target.error, punctuation(n));
+  }
+
+  const comma = twelve.replace(/ /g, ",");
+  const json = `[${twelve.split(" ").map((word) => `"${word}"`).join(",")}]`;
+  for (const text of [comma, json, `${twelve}.`]) {
+    assert.equal(slice.hodlValidateMnemonic(text).ok, true, text);
+    assert.equal(slice.hodlValidateTargetMnemonic(text, 12).ok, true, text);
+  }
+
+  const hyphenatedAll = twelve.replace(/ /g, "-");
+  const allWords = twelve.split(" ");
+  for (const validate of [() => slice.hodlValidateMnemonic(hyphenatedAll), () => slice.hodlValidateTargetMnemonic(hyphenatedAll, 12)]) {
+    const result = validate();
+    assert.equal(result.ok, false);
+    assert.equal(result.error, punctuation(1));
+    for (const word of allWords) assert.equal(result.error.includes(word), false, `the message must not quote ${word}`);
+  }
+
+  const dottedThird = twelve.split(" ");
+  dottedThird[2] = "aban.don";
+  for (const validate of [() => slice.hodlValidateMnemonic(dottedThird.join(" ")), () => slice.hodlValidateTargetMnemonic(dottedThird.join(" "), 12)]) {
+    const result = validate();
+    assert.equal(result.ok, false);
+    assert.equal(result.error, punctuation(3));
+  }
+
+  const jsonDotted = `[${twelve.split(" ").map((word, index) => `"${index === 1 ? "ab.ility" : word}"`).join(",")}]`;
+  for (const validate of [() => slice.hodlValidateMnemonic(jsonDotted), () => slice.hodlValidateTargetMnemonic(jsonDotted, 12)]) {
+    const result = validate();
+    assert.equal(result.ok, false);
+    assert.equal(result.error, punctuation(2));
+  }
+
+  // A token with no letters is not a word: the normalizer turns every
+  // non-letter into a separator, so a lone "." or "-" must not shift the
+  // position the message reports.
+  const validators = [
+    (text) => slice.hodlValidateMnemonic(text),
+    (text) => slice.hodlValidateTargetMnemonic(text, 12),
+  ];
+  for (const validate of validators) {
+    assert.deepEqual(validate(". " + dotted).error, validate(dotted).error, "a lone period is not a word");
+  }
+  const second = twelve.replace(/abandon (abandon)/, "abandon aban.don");
+  assert.notEqual(second, twelve, "fixture: the second word carries the punctuation");
+  assert.equal(slice.hodlValidateMnemonic(second).ok, false, "fixture: the dotted second word is refused");
+  for (const validate of validators) {
+    assert.deepEqual(
+      validate("abandon - " + second.slice("abandon ".length)).error,
+      validate(second).error,
+      "a lone hyphen is not a word",
+    );
+  }
+
+  const mixed = twelve.replace("abandon", "aban-don1");
+  assert.equal(slice.hodlValidateMnemonic(mixed).error, oldDigit);
+  assert.equal(slice.hodlValidateTargetMnemonic(mixed, 12).error, oldDigit);
+  assert.equal(slice.hodlValidateMnemonic(digit).error, oldDigit);
+  assert.equal(slice.hodlValidateTargetMnemonic(digit, 12).error, oldDigit);
+});
+
+test("seed helpers refuse punctuation inside a word", async () => {
+  const { loadAppFunctions } = await import("./app-slice-harness.mjs");
+  const note = (message, values = {}) => message.replace(/\{(\w+)\}/g, (_, key) => String(values[key] ?? `{${key}}`));
+  const slice = await loadAppFunctions(["hodlSeedWordsToNumbers", "hodlTargetLastWords", "hodlLastWordCandidates"], { stubs: { hodlNote: note } });
+  const hyphenated = "abandon-abandon" + " abandon".repeat(9) + " about";
+  assert.equal(slice.hodlSeedWordsToNumbers(hyphenated), "");
+  const partial = "abandon-abandon" + " abandon".repeat(8) + " about";
+  assert.equal(slice.hodlTargetLastWords(partial, 12), null);
+  assert.equal(slice.hodlLastWordCandidates(partial), null);
+});
