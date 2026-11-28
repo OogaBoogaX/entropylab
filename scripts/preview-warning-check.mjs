@@ -26,7 +26,9 @@ export const checkPreviewWarning = (html, preview) => {
     const wrong = [];
     for (const id of PREVIEW_STATION_IDS) {
       const at = html.indexOf(id);
-      if (at === -1) continue;
+      // A listed station that is not in the page is a build failure, not a
+      // skip: a renamed or re-quoted id must not silently drop its check.
+      if (at === -1) throw new Error(`Preview build is missing station ${id}: update PREVIEW_STATION_IDS in scripts/preview-warning-check.mjs if the station was renamed or removed`);
       const end = html.indexOf("</section>", at);
       if (end === -1) throw new Error(`Preview build station ${id} has no closing </section>`);
       const lines = html.slice(at, end).split(STATION_LINE).length - 1;

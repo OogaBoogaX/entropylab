@@ -11,6 +11,7 @@ import { fileURLToPath } from "node:url";
 import { applyPreviewBlocks } from "../scripts/preview-blocks.mjs";
 import { checkPreviewWarning } from "../scripts/preview-warning-check.mjs";
 import { initPreviewGate, PREVIEW_ACK_KEY } from "../src/js/preview-gate.js";
+import { clearSavedPreferences } from "../src/js/end-session.js";
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
 const read = (path) => readFileSync(join(root, path), "utf8");
@@ -84,6 +85,14 @@ test("checkPreviewWarning refuses a station with no line while another carries t
   assert.throws(() => checkPreviewWarning(previewPage({ slip39: 0, seedqr: 1, seedxor: 2 }), true), /slip39-check/);
 });
 
+// Kimi K3: a listed station whose id is absent from the page was skipped, so
+// renaming or re-quoting a station's id silently dropped its warning check.
+test("checkPreviewWarning refuses a preview build missing a listed station", () => {
+  const html = previewPage().replace(stationSection("seedqr-check", 1), "");
+  assert.ok(!html.includes('id="seedqr-check"'), "fixture: the station must be gone");
+  assert.throws(() => checkPreviewWarning(html, true), /Preview build is missing station id="seedqr-check"/);
+});
+
 test("checkPreviewWarning refuses release HTML that leaks any preview text or markup", () => {
   for (const text of PREVIEW_STRINGS) {
     assert.throws(() => checkPreviewWarning(`<p>${text}</p>`, false), /Release build leaked/, text);
@@ -95,7 +104,8 @@ test("checkPreviewWarning refuses release HTML that leaks any preview text or ma
 });
 
 test("the stylesheet hides the page behind the notice without a script", () => {
-  const css = read("src/css/styles.css");
+  // Strip comments first: a commented-out rule must not count as the rule.
+  const css = read("src/css/styles.css").replace(/\/\*[\s\S]*?\*\//g, "");
   assert.ok(css.includes("body:has(#preview-notice) #btc-calc"), "the fail-closed hide rule is missing");
 });
 
@@ -125,6 +135,26 @@ const fakeDoc = ({ notice = true, btcCalc = true } = {}) => {
     elements.set("preview-notice-accept", new FakeElement("preview-notice-accept"));
   }
   return { getElementById: (id) => elements.get(id) ?? null, elements };
+};
+
+// The beta disclaimer the preview notice hides. The default removal watcher
+// needs a real DOM, so the tests inject `whenRemoved` and drive its callback;
+// `parentNode` is null so the default watcher is pinned to fail closed.
+const addDisclaimer = (doc, { hidden = false, stepOneHidden = false } = {}) => {
+  const overlay = new FakeElement("beta-disclaimer");
+  overlay.parentNode = null;
+  if (hidden) overlay.setAttribute("hidden", "");
+  const accept = new FakeElement("beta-disclaimer-accept");
+  const proof = new FakeElement("beta-disclaimer-proof");
+  const stepOne = new FakeElement("beta-disclaimer-step-1");
+  if (stepOneHidden) stepOne.setAttribute("hidden", "");
+  for (const element of [overlay, accept, proof, stepOne]) doc.elements.set(element.id, element);
+  return { overlay, accept, proof, stepOne };
+};
+
+const removalSpy = () => {
+  const calls = [];
+  return { calls, whenRemoved: (node, callback) => calls.push({ node, callback }) };
 };
 
 const fakeStorage = (initial = {}) => {
@@ -200,9 +230,93 @@ test("Tab is trapped on the button while the notice is up", () => {
   assert.equal(button.focused, true, "focus must stay on the button");
 });
 
+// The preview notice hid the beta disclaimer (visibility: hidden), so its
+// accept.focus() did nothing and its Tab trap, a keydown listener on the
+// overlay, never saw a key. Removing the notice dropped focus to the
+// document; one Tab then walked into the app behind the disclaimer. The gate
+// must hand focus to the disclaimer and keep the page inert until it leaves.
+test("after the acknowledgement, focus moves into the waiting disclaimer and the page stays inert", () => {
+  const doc = fakeDoc();
+  const { overlay, accept } = addDisclaimer(doc);
+  const removal = removalSpy();
+  initPreviewGate({ doc, storage: () => fakeStorage(), whenRemoved: removal.whenRemoved });
+  const btcCalc = doc.getElementById("btc-calc");
+  doc.getElementById("preview-notice-accept").click();
+  assert.equal(doc.getElementById("preview-notice").removed, true);
+  assert.equal(accept.focused, true, "the disclaimer's first button must take focus");
+  assert.equal(btcCalc.hasAttribute("inert"), true, "the page behind the waiting disclaimer must stay inert");
+  assert.equal(removal.calls.length, 1, "the gate must watch the disclaimer for removal");
+  assert.equal(removal.calls[0].node, overlay);
+  removal.calls[0].callback();
+  assert.equal(btcCalc.hasAttribute("inert"), false, "inert must lift when the disclaimer leaves the document");
+});
+
+test("when the disclaimer is on its second step, focus goes to the proof field", () => {
+  const doc = fakeDoc();
+  const { accept, proof } = addDisclaimer(doc, { stepOneHidden: true });
+  const removal = removalSpy();
+  initPreviewGate({ doc, storage: () => fakeStorage(), whenRemoved: removal.whenRemoved });
+  doc.getElementById("preview-notice-accept").click();
+  assert.equal(proof.focused, true, "the proof field must take focus on the second step");
+  assert.equal(accept.focused, false);
+  assert.equal(doc.getElementById("btc-calc").hasAttribute("inert"), true);
+});
+
+test("an acknowledgement already stored still hands focus to a waiting disclaimer", () => {
+  const doc = fakeDoc();
+  const { accept } = addDisclaimer(doc);
+  const removal = removalSpy();
+  initPreviewGate({ doc, storage: () => fakeStorage({ [PREVIEW_ACK_KEY]: "1" }), whenRemoved: removal.whenRemoved });
+  const btcCalc = doc.getElementById("btc-calc");
+  assert.equal(doc.getElementById("preview-notice").removed, true);
+  assert.equal(accept.focused, true, "the acknowledged path must hand focus over too");
+  assert.equal(btcCalc.hasAttribute("inert"), true, "the page must be inert before the hand-off decides");
+  assert.equal(removal.calls.length, 1);
+  removal.calls[0].callback();
+  assert.equal(btcCalc.hasAttribute("inert"), false);
+});
+
+test("no disclaimer, or a hidden one, leaves the page usable at once", () => {
+  for (const options of [null, { hidden: true }]) {
+    const doc = fakeDoc();
+    if (options) addDisclaimer(doc, options);
+    const removal = removalSpy();
+    initPreviewGate({ doc, storage: () => fakeStorage(), whenRemoved: removal.whenRemoved });
+    doc.getElementById("preview-notice-accept").click();
+    assert.equal(doc.getElementById("btc-calc").hasAttribute("inert"), false, JSON.stringify(options));
+    assert.equal(removal.calls.length, 0, "nothing to watch");
+  }
+});
+
+test("without a watcher the page stays inert rather than let focus escape", () => {
+  const doc = fakeDoc();
+  addDisclaimer(doc);
+  initPreviewGate({ doc, storage: () => fakeStorage() });
+  doc.getElementById("preview-notice-accept").click();
+  assert.equal(doc.getElementById("btc-calc").hasAttribute("inert"), true, "fail closed: no way to see the disclaimer leave");
+});
+
+// A Storage stand-in with the full interface clearSavedPreferences walks.
+const mapStorage = (entries) => {
+  const map = new Map(Object.entries(entries));
+  return {
+    get length() { return map.size; },
+    key: (index) => [...map.keys()][index] ?? null,
+    getItem: (key) => (map.has(key) ? map.get(key) : null),
+    setItem: (key, value) => { map.set(String(key), String(value)); },
+    removeItem: (key) => { map.delete(key); },
+    get keys() { return [...map.keys()]; },
+  };
+};
+
 test("the acknowledgement key is cleared by End session", () => {
   assert.ok(PREVIEW_ACK_KEY.startsWith("entropylab-"));
   assert.notEqual(PREVIEW_ACK_KEY, "entropylab-locale");
+  const session = mapStorage({ [PREVIEW_ACK_KEY]: "1" });
+  const local = mapStorage({ "entropylab-locale": "fr" });
+  clearSavedPreferences({ sessionStorage: session, localStorage: local });
+  assert.equal(session.getItem(PREVIEW_ACK_KEY), null, "End session must clear the preview acknowledgement");
+  assert.equal(local.getItem("entropylab-locale"), "fr", "End session keeps the language");
 });
 
 test("the build checks name both preview markers for both builds", () => {
