@@ -33,10 +33,12 @@ const hodlSeedLengths = {
 const hodlSeedConfig = (words = 24) => hodlSeedLengths[words];
 const hodlIsValidMnemonic = validateMnemonic;
 const hodlNormalizeMnemonicText = (value) => String(value ?? "").trim().toLowerCase().replace(/\s+/g, " ");
+const hodlNote = new Function(`${loadSlice("hodlNote")}; return hodlNote;`)();
+const hodlSeedTextProblem = new Function("hodlNote", `${loadSlice("hodlSeedTextProblem")}; return hodlSeedTextProblem;`)(hodlNote);
 const hodlLooksExtendedKey = () => false;
 const hodlFilterSeedNumbers = new Function(`${loadSlice("hodlFilterSeedNumbers")}; return hodlFilterSeedNumbers;`)();
 const hodlParseSeedNumbers = new Function("hodlSeedConfig", "hodlBip39Wordlist", "hodlIsValidMnemonic", `${loadSlice("hodlParseSeedNumbers")}; return hodlParseSeedNumbers;`)(hodlSeedConfig, hodlBip39Wordlist, hodlIsValidMnemonic);
-const hodlSeedWordsToNumbers = new Function("hodlLooksExtendedKey", "hodlNormalizeMnemonicText", "hodlBip39WordIndex", `${loadSlice("hodlSeedWordsToNumbers")}; return hodlSeedWordsToNumbers;`)(hodlLooksExtendedKey, hodlNormalizeMnemonicText, hodlBip39WordIndex);
+const hodlSeedWordsToNumbers = new Function("hodlLooksExtendedKey", "hodlNormalizeMnemonicText", "hodlSeedTextProblem", "hodlBip39WordIndex", `${loadSlice("hodlSeedWordsToNumbers")}; return hodlSeedWordsToNumbers;`)(hodlLooksExtendedKey, hodlNormalizeMnemonicText, hodlSeedTextProblem, hodlBip39WordIndex);
 const hodlSeedNumbersToWords = new Function("hodlParseSeedNumbers", `${loadSlice("hodlSeedNumbersToWords")}; return hodlSeedNumbersToWords;`)(hodlParseSeedNumbers);
 const hodlTranslateSeedNumberIndex = new Function(`${loadSlice("hodlTranslateSeedNumberIndex")}; return hodlTranslateSeedNumberIndex;`)();
 const hodlSeedNumberCanInsertDigit = new Function(`${loadSlice("hodlSeedNumberCanInsertDigit")}; return hodlSeedNumberCanInsertDigit;`)();

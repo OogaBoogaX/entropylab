@@ -39,7 +39,9 @@ if (preview && outDir === root) {
 // __ENTROPYLAB_PREVIEW__ define below: esbuild folds it to false in a release
 // build and drops the dead branch. Markup gates on the <!-- preview --> /
 // <!-- /preview --> comment blocks that applyPreviewBlocks strips from the
-// shell. A preview build is never deployed.
+// shell. The preview site (preview.entropylab.online) deploys a --preview
+// build, so every merged feature is reachable there; releases and every other
+// artifact are release builds.
 
 // Build inputs are committed files. readFileSync and esbuild both follow a
 // symbolic link (or a Windows junction), so a committed link would pull a

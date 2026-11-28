@@ -187,8 +187,12 @@ test("a failed precache never activates or deletes the previous usable cache", a
 });
 
 test("Pages publishes the manifest, worker, and icons with the tested HTML", () => {
-  assert.match(workflow, /cp manifest\.webmanifest service-worker\.js _site\//);
+  assert.match(workflow, /cp manifest\.webmanifest _site\//);
   assert.match(workflow, /cp -r assets _site\/assets/);
+  // The preview site serves a --preview build, so its page and the worker
+  // generated for that page travel together out of the downloaded preview
+  // build; a release worker beside a preview page would not pair.
+  assert.match(workflow, /cp preview-build\/entropylab\.html _site\/\n\s+cp manifest\.webmanifest _site\/\n\s+cp preview-build\/service-worker\.js _site\//);
   // Downstream jobs verify the exact candidate the build job produced, so the
   // generated worker must travel inside that artifact too.
   assert.match(workflow, /name: entropylab-candidate\s+path: \|\s+entropylab\.html\s+service-worker\.js/);
