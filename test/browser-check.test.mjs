@@ -9,6 +9,7 @@ import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { MiniDocument } from "./mini-dom.mjs";
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
 const read = (path) => readFileSync(join(root, path), "utf8");
@@ -69,7 +70,7 @@ const memoryStorage = (initial = {}) => ({
 // A fake disclaimer overlay recording what the gate did: two step cards, the
 // first step's accept button and the second step's confirm button.
 const disclaimerDom = () => {
-  const calls = { shown: false, focused: false, confirmFocused: false, dismissed: false, removed: 0, onClick: null, onConfirm: null };
+  const calls = { shown: false, focused: false, confirmFocused: false, titleFocused: false, active: null, dismissed: false, removed: 0, onClick: null, onConfirm: null };
   const overlay = {
     hidden: true,
     classList: {
@@ -88,6 +89,7 @@ const disclaimerDom = () => {
   const accept = {
     focus: () => {
       calls.focused = true;
+      calls.active = accept;
     },
     addEventListener: (type, fn) => {
       if (type === "click") calls.onClick = fn;
@@ -98,6 +100,7 @@ const disclaimerDom = () => {
     setAttribute: () => {},
     focus: () => {
       calls.confirmFocused = true;
+      calls.active = confirm;
     },
     addEventListener: (type, fn) => {
       if (type === "click") calls.onConfirm = fn;
@@ -111,6 +114,7 @@ const disclaimerDom = () => {
     value: "",
     focus: () => {
       calls.proofFocused = true;
+      calls.active = proof;
     },
     addEventListener: (type, fn) => {
       if (type === "input") calls.onProofInput = fn;
@@ -124,6 +128,9 @@ const disclaimerDom = () => {
   // One sentence per digit, hidden, as the template ships them.
   const proofTexts = Object.fromEntries(DIGIT_WORDS.map((_, digit) => [`beta-disclaimer-proof-text-${digit}`, { hidden: true }]));
   const stepOne = { hidden: false }, stepTwo = { hidden: true };
+  const firstWarning = { focus: () => { calls.active = firstWarning; } };
+  const secondWarning = { focus: () => { calls.active = secondWarning; } };
+  const title = { focus: () => { calls.titleFocused = true; calls.active = title; } };
   return {
     calls,
     attributes,
@@ -132,6 +139,10 @@ const disclaimerDom = () => {
       "beta-disclaimer-accept": accept,
       "beta-disclaimer-step-1": stepOne,
       "beta-disclaimer-step-2": stepTwo,
+      "beta-disclaimer-title": {},
+      "beta-disclaimer-text": firstWarning,
+      "beta-disclaimer-confirm-title": title,
+      "beta-disclaimer-confirm-text": secondWarning,
       "beta-disclaimer-confirm": confirm,
       "beta-disclaimer-proof": proof,
       ...proofTexts,
@@ -150,6 +161,7 @@ const loadModule = (overrides = {}) => {
     hasBody: true,
     normalizeImpl: undefined, // when present in overrides, replaces String.prototype.normalize
     elements: {}, // DOM elements the disclaimer gate can find, by id
+    activeElement: () => null,
     storage: memoryStorage(),
     performanceImpl: fakeClock(0, 0),
     ...overrides,
@@ -160,6 +172,7 @@ const loadModule = (overrides = {}) => {
     window: { isSecureContext: options.secure },
     document: {
       documentElement,
+      get activeElement() { return options.activeElement(); },
       getElementById: (id) => options.elements[id] ?? null,
       ...(options.hasBody ? { body } : {}),
     },
@@ -214,6 +227,15 @@ test("an insecure context kills the page and lists the failure", () => {
   const { body, documentElement } = loadModule({ secure: false });
   assert.equal(documentElement.dataset.browserFailed, "1");
   assertPageKilled(body, ["Secure browser context"]);
+  assert.ok(body.innerHTML.includes('data-browser-help="secure-context"'), "the blocked host needs specific context/file-viewer guidance");
+});
+
+test("context guidance never permits an insecure host even when every other check passes", () => {
+  for (const secure of [false, undefined, null, 1, "true"]) {
+    const { body, documentElement } = loadModule({ secure });
+    assertPageKilled(body, ["Secure browser context"]);
+    assert.equal(documentElement.dataset.browserFailed, "1");
+  }
 });
 
 test("a missing WebCrypto API kills the page", () => {
@@ -387,7 +409,7 @@ test("the beta disclaimer shows on first boot and acceptance is stored for the r
   const { calls, elements, attributes } = disclaimerDom();
   const storage = memoryStorage();
   // 12.7 s from reveal to "I Understand": tenths digit 7.
-  loadModule({ elements, storage, performanceImpl: fakeClock(1000, 13700) });
+  loadModule({ elements, storage, activeElement: () => calls.active, performanceImpl: fakeClock(1000, 13700) });
   assert.equal(elements["beta-disclaimer"].hidden, false, "the overlay was not revealed");
   assert.ok(calls.shown, "the fade-in class was not applied");
   assert.ok(calls.focused, "the accept button was not focused");
@@ -400,7 +422,17 @@ test("the beta disclaimer shows on first boot and acceptance is stored for the r
   assert.equal(calls.removed, 0, "the first acknowledgement removed the gate");
   assert.equal(elements["beta-disclaimer-step-1"].hidden, true, "the first step stayed visible");
   assert.equal(elements["beta-disclaimer-step-2"].hidden, false, "the second step did not show");
-  assert.ok(calls.proofFocused, "the second step's proof field was not focused");
+  assert.ok(calls.titleFocused, "the second warning must receive focus for reading");
+  assert.ok(!calls.proofFocused, "opening the warning must not summon an editing keyboard");
+  const tab = (shiftKey = false) => calls.onKeydown({ key: "Tab", shiftKey, preventDefault() {} });
+  tab();
+  assert.equal(calls.active, elements["beta-disclaimer-confirm-text"], "Tab from the heading must reach the scrollable warning before the proof field");
+  tab();
+  assert.equal(calls.active, elements["beta-disclaimer-proof"], "Tab from the warning must reach the proof field");
+  tab();
+  assert.equal(calls.active, elements["beta-disclaimer-confirm-text"], "the disabled button must be skipped");
+  tab(true);
+  assert.equal(calls.active, elements["beta-disclaimer-proof"], "Shift+Tab must wrap without leaving the gate");
   assert.equal(attributes["aria-labelledby"], "beta-disclaimer-confirm-title", "the dialog is not named by the second step");
   assert.equal(attributes["aria-describedby"], "beta-disclaimer-confirm-text", "the dialog is not described by the second step");
   assert.equal(typeof calls.onConfirm, "function", "no confirm handler was registered");
@@ -420,10 +452,37 @@ test("the beta disclaimer shows on first boot and acceptance is stored for the r
   }
   calls.type(" 7 ");
   assert.equal(confirm.disabled, false, "the button stayed disabled after typing the timed digit");
+  tab();
+  assert.equal(calls.active, confirm, "Tab must reach the enabled confirmation");
+  tab(true);
+  assert.equal(calls.active, elements["beta-disclaimer-proof"], "Shift+Tab from confirmation must return to the proof field");
   calls.onConfirm();
   assert.equal(storage.dump()["entropylab-disclaimer-accepted"], "{{VERSION}}");
   assert.ok(calls.dismissed, "the fade-out class was not applied");
   assert.equal(calls.removed, 1, "the overlay was not removed after the fade");
+});
+
+test("the reading challenge stays outside the scrollable warning and labels the required input", () => {
+  const doc = new MiniDocument();
+  doc.body.innerHTML = read("src/index.html");
+  const challenge = doc.getElementById("beta-disclaimer-proof-label");
+  assert.equal(challenge.parentElement, doc.getElementById("beta-disclaimer-step-2"));
+  assert.equal(doc.getElementById("beta-disclaimer-proof").getAttribute("aria-labelledby"), challenge.id);
+  assert.equal(doc.getElementById("beta-disclaimer-confirm-title").getAttribute("tabindex"), "-1");
+});
+
+test("a missing heading never bypasses either acknowledgement or the reading proof", () => {
+  const { calls, elements } = disclaimerDom();
+  delete elements["beta-disclaimer-confirm-title"];
+  const storage = memoryStorage();
+  loadModule({ elements, storage, performanceImpl: fakeClock(0, 700) });
+  calls.onClick();
+  calls.onConfirm();
+  assert.equal(storage.dump()["entropylab-disclaimer-accepted"], undefined);
+  assert.equal(calls.dismissed, false);
+  calls.type("7");
+  calls.onConfirm();
+  assert.equal(storage.dump()["entropylab-disclaimer-accepted"], "{{VERSION}}");
 });
 
 test("a stored acceptance for the running version skips the beta disclaimer", () => {

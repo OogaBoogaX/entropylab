@@ -130,10 +130,15 @@
   const wasmFailed = failed.includes("WebAssembly (secp256k1 engine)");
   // Lockdown Mode (iPhone, iPad, Mac) disables WebAssembly. There is no JS
   // secp256k1 fallback: wallet math is libsecp256k1 compiled to WASM.
-  const advice = wasmFailed
+  const secureFailed = failed.includes("Secure browser context");
+  const contextAdvice = secureFailed
+    ? `<p class="sanity-failure-advice" data-browser-help="secure-context">This browser or file viewer does not provide a secure context. Some phone file-opening routes cannot run this calculator. Downloading the file alone does not make that route supported, and this check cannot be bypassed.</p>
+    <p class="sanity-failure-advice">For practice only, open <a href="https://entropylab.online" target="_blank" rel="noopener noreferrer">the HTTPS site in your browser</a> instead of a file preview. Do not enter wallet secrets while online. A working HTTPS page does not establish a working offline iPhone setup.</p>`
+    : "";
+  const advice = contextAdvice + (wasmFailed
     ? `<p class="sanity-failure-advice">iPhone, iPad, and Mac Lockdown Mode block WebAssembly. This calculator needs it for secp256k1.</p>
     <p class="sanity-failure-advice">In Safari: tap the page-menu button in the address bar, tap More, turn off Lockdown Mode for this website, then reload. Or open the saved HTML in Firefox on a trusted air-gapped computer. Do not enter seed material until every check passes.</p>`
-    : `<p class="sanity-failure-advice">Open this file in a current, mainstream browser such as Firefox on a trusted, air-gapped computer.</p>`;
+    : `<p class="sanity-failure-advice">Open this file in a current, mainstream browser such as Firefox on a trusted, air-gapped computer.</p>`);
   document.body.innerHTML = `
 <main class="sanity-failure">
   <div class="sanity-failure-card" role="alert">
@@ -179,6 +184,9 @@
   const stepTwo = document.getElementById("beta-disclaimer-step-2");
   const confirm = document.getElementById("beta-disclaimer-confirm");
   const proof = document.getElementById("beta-disclaimer-proof");
+  const confirmTitle = document.getElementById("beta-disclaimer-confirm-title");
+  const firstWarning = document.getElementById("beta-disclaimer-text");
+  const secondWarning = document.getElementById("beta-disclaimer-confirm-text");
   const proofTexts = Array.from({ length: 10 }, (_, n) => document.getElementById(`beta-disclaimer-proof-text-${n}`));
   if (!overlay || !accept || !stepOne || !stepTwo || !confirm || !proof || proofTexts.includes(null)) return;
   const KEY = "entropylab-disclaimer-accepted";
@@ -202,14 +210,19 @@
   // The gate cannot import the shared helper (it is inlined through its own
   // build token), so the same cycle is repeated here. It stays unescapable:
   // no Escape, no backdrop click, only the acknowledgement.
-  // On the second step Tab moves between the proof field and the button,
-  // which has nothing else to reach.
+  // The warning is part of the Tab order so a keyboard user can scroll
+  // it before reaching the proof field. Skip disabled confirmation.
   overlay.addEventListener?.("keydown", (event) => {
     if (event.key !== "Tab") return;
     event.preventDefault();
-    if (stepTwo.hidden) return;
-    if (document.activeElement === proof && !confirm.disabled) confirm.focus();
-    else proof.focus();
+    const controls = (stepTwo.hidden
+      ? [firstWarning, accept]
+      : [secondWarning, proof, confirm.disabled ? null : confirm]).filter(Boolean);
+    const active = controls.indexOf(document.activeElement);
+    const next = event.shiftKey
+      ? (active <= 0 ? controls.length - 1 : active - 1)
+      : (active + 1) % controls.length;
+    controls[next].focus();
   });
   // Set by "I Understand"; until then nothing typed can match it.
   let digit = null;
@@ -235,7 +248,9 @@
     stepTwo.hidden = false;
     overlay.setAttribute("aria-labelledby", "beta-disclaimer-confirm-title");
     overlay.setAttribute("aria-describedby", "beta-disclaimer-confirm-text");
-    proof.focus();
+    // Let the warning be read before a phone's editing keyboard takes space.
+    // The reader reaches the input by tapping it or explicitly pressing Tab.
+    confirmTitle?.focus();
   });
   confirm.addEventListener("click", () => {
     if (!proven()) return;
