@@ -2610,7 +2610,6 @@
   "The Seed XOR parts could not be restored.": "Die Seed XOR-Teile konnten nicht wiederhergestellt werden.",
   "The seed phrase could not be split.": "Die Seed-Phrase konnte nicht aufgeteilt werden.",
   "Seed XOR": "Seed XOR",
-  "XOR": "XOR",
   "Restore or split a seed with Seed XOR": "Seed mit Seed XOR wiederherstellen oder aufteilen",
   "Combine parts made on a Coldcard, or deterministically split a phrase you already hold. Each part is an ordinary BIP39 seed phrase; you need every part to restore the original. A BIP39 passphrase is separate and is never included in the XOR.": "Kombinieren Sie Teile, die auf einem Coldcard erstellt wurden, oder teilen Sie deterministisch eine Phrase, die Sie bereits besitzen. Jeder Teil ist eine gewöhnliche BIP39-Seed-Phrase; Sie benötigen jeden Teil, um das Original wiederherzustellen. Eine BIP39-Passphrase ist separat und niemals im XOR enthalten.",
   "Action": "Aktion",
@@ -2657,5 +2656,8 @@
   "Derive share": "Anteil ableiten",
   "Reveal private result": "Privates Ergebnis anzeigen",
   "Codex32 result": "Codex32-Ergebnis",
-  "Word {n} has punctuation inside it. Remove the punctuation, or replace it with a space if it joins two words.": "Das Wort {n} enthält Satzzeichen. Entfernen Sie die Satzzeichen oder ersetzen Sie sie durch ein Leerzeichen, wenn sie zwei Wörter verbinden."
+  "Word {n} has punctuation inside it. Remove the punctuation, or replace it with a space if it joins two words.": "Das Wort {n} enthält Satzzeichen. Entfernen Sie die Satzzeichen oder ersetzen Sie sie durch ein Leerzeichen, wenn sie zwei Wörter verbinden.",
+  "Seed tools": "Seed tools",
+  "Derive a BIP-85 child seed, or restore or split a seed with Seed XOR. Makes no new entropy. Nothing leaves this page.": "Leiten Sie einen BIP-85-Kind-Seed ab oder stellen Sie einen Seed mit Seed XOR wieder her oder teilen Sie ihn auf. Erzeugt keine neue Entropie. Nichts verlässt diese Seite.",
+  "Seed tools stations": "Seed tools stations"
 }
