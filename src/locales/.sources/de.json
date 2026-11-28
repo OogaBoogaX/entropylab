@@ -2610,7 +2610,6 @@
   "The Seed XOR parts could not be restored.": "defd6c45abe1e916ea66c25e73fc888325ff313e8853967ecd13d17b045cb52a",
   "The seed phrase could not be split.": "89a83dd4f6524b4bc319eb5aab456e48857df6b538d0e4c7e656077455d7aef5",
   "Seed XOR": "4f49414871297e0e7794484129522adebb0698ca53ff6c59665ed65329c9d668",
-  "XOR": "a275a3e7dd3d2f90dae0ef8fd049bea71aec464d87f66791100beaf633ac6d7d",
   "Restore or split a seed with Seed XOR": "e840c08428b36ce6fd68769407ce326f275b930744408b702355fed7ad2ad9b0",
   "Combine parts made on a Coldcard, or deterministically split a phrase you already hold. Each part is an ordinary BIP39 seed phrase; you need every part to restore the original. A BIP39 passphrase is separate and is never included in the XOR.": "830e6c1d5c776a2c8c710430a7592e472c1ebf5f35fcf3958504dba58d8acbf5",
   "Action": "64cff1319d2fd2cbb7a1e84ccecf22c1cc07b24435cdb522f8c0aa525d6002a6",
@@ -2656,5 +2655,9 @@
   "Recover secret": "1ebc934992a20718f2014885a804c5d51840ca9603900cf4c9c75b03d220ea5d",
   "Derive share": "42c63ceb2ef45b2b99881705a4a3ed10084280c7064c1b83222bc980042abead",
   "Reveal private result": "9febfa5ed9ad2b17a21cb5e846c3291cf254a74371b28f7616c8afb4e89abc85",
-  "Codex32 result": "ba3a8e5ed81f316e69722b60249dc9290c27ce27ae464972636de8bb95b11730"
+  "Codex32 result": "ba3a8e5ed81f316e69722b60249dc9290c27ce27ae464972636de8bb95b11730",
+  "Word {n} has punctuation inside it. Remove the punctuation, or replace it with a space if it joins two words.": "0c87f0bad80a9feb6f83dcbadda644ff6d9b3991adfb6df6d31db5887895b461",
+  "Seed tools": "90f4166dc987da8b38179a22644cd2653c53250b6c862e2951437286655c976f",
+  "Derive a BIP-85 child seed, or restore or split a seed with Seed XOR. Makes no new entropy. Nothing leaves this page.": "317d043bbfdbdce8bd0f9b9b8952c04fcbaf7eb4ca4bc49db872c09c1a199280",
+  "Seed tools stations": "6ee0cfcbcb43da8a962d94e1b9f42e41032d1830d13708be260a84ce2bf22a57"
 }

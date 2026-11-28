@@ -1064,7 +1064,8 @@
     await chooseMode("Seed phrase");
     const seed = await until(() => document.getElementById("seed"), "seed input");
     input(seed, payload + "abandon");
-    assert(!/[<>="']/.test(seed.value), "Dangerous characters remained in seed input");
+    assert(seed.value.includes("<img"), "The seed field keeps what was typed");
+    assert(!document.querySelector('img[src="x"]') && window.__browserTestInjected !== true, "Seed input executed markup");
     input(seed, "ABANDON Ability");
     equal(seed.value, "abandon ability");
     input(seed, "amou");

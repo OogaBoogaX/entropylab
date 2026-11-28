@@ -773,7 +773,7 @@ test("seed phrase mode has a lowercase Jade-style on-screen keyboard", () => {
   assert.match(app, /hodlSetSeedKeyboardLayout\(keyboard,modeButton,"lower"\)/);
   assert.match(app, /hodlApplySeedKeyboardKey\(activeInput,button\.dataset\.seedKey\|\|""\)/);
   assert.match(appWhitespace, /hodlBindKeypadPointer\(keyboard\.querySelectorAll\("button"\),\(\)=>activeInput\)/);
-  assert.match(app, /function hodlFilterSeed\(e\)\{[^}]*hodlLooksExtendedKey\(value\)\?value:[^}]*toLowerCase\(\):value/);
+  assert.match(app, /function hodlFilterSeed\(e\)\{[^}]*hodlLooksExtendedKey\((\w+)\)\?\1:[^}]*toLowerCase\(\):\w+/);
   // The chrome is the card's shared switch, asserted once; a component states
   // only how it sits in its own container.
   assert.match(appSource, /class="switch-toggle passphrase-bip39-toggle"/);
