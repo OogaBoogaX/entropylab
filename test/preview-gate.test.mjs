@@ -9,6 +9,7 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { applyPreviewBlocks } from "../scripts/preview-blocks.mjs";
+import { checkPreviewWarning } from "../scripts/preview-warning-check.mjs";
 import { initPreviewGate, PREVIEW_ACK_KEY } from "../src/js/preview-gate.js";
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
@@ -28,6 +29,19 @@ const stationBlock = (html, id) => {
   const end = html.indexOf("</section>", at);
   return end === -1 ? "" : html.slice(start, end + "</section>".length);
 };
+
+// Synthetic pages for checkPreviewWarning: no build run, so a failure names
+// the check, not a missing artifact.
+const stationSection = (id, lines) =>
+  `<section id="${id}">\n${`<p>${STATION_LINE}</p>\n`.repeat(lines)}</section>`;
+
+const previewPage = ({ slip39 = 1, seedqr = 1, seedxor = 1 } = {}) => [
+  `<div id="preview-notice"><p id="preview-notice-title">${NOTICE_TITLE}</p><p id="preview-notice-text">${NOTICE_BODY}</p><button id="preview-notice-accept" type="button">${NOTICE_BUTTON}</button></div>`,
+  `<p id="preview-banner" role="note">${FIXED_NOTE}</p>`,
+  stationSection("slip39-check", slip39),
+  stationSection("seedqr-check", seedqr),
+  stationSection("seedxor-card", seedxor),
+].join("\n");
 
 test("the preview build carries the notice, the fixed note and one line per station", () => {
   const index = applyPreviewBlocks(read("src/index.html"), true);
@@ -54,6 +68,30 @@ test("the release build carries none of the preview warning", () => {
     assert.ok(!release.includes('id="preview-notice"'), `${path} leaked the notice`);
     assert.ok(!release.includes('id="preview-banner"'), `${path} leaked the fixed note`);
   }
+});
+
+test("checkPreviewWarning accepts a preview build with one station line inside each station", () => {
+  assert.doesNotThrow(() => checkPreviewWarning(previewPage(), true));
+});
+
+// CodeRabbit on 3f1736a3: a page-wide count of 3 lines for 3 stations passed
+// while one station carried two lines and another carried none.
+test("checkPreviewWarning refuses a station without its line (CodeRabbit's 2/1/0 case)", () => {
+  assert.throws(() => checkPreviewWarning(previewPage({ slip39: 2, seedqr: 1, seedxor: 0 }), true), /seedxor-card/);
+});
+
+test("checkPreviewWarning refuses a station with no line while another carries two", () => {
+  assert.throws(() => checkPreviewWarning(previewPage({ slip39: 0, seedqr: 1, seedxor: 2 }), true), /slip39-check/);
+});
+
+test("checkPreviewWarning refuses release HTML that leaks any preview text or markup", () => {
+  for (const text of PREVIEW_STRINGS) {
+    assert.throws(() => checkPreviewWarning(`<p>${text}</p>`, false), /Release build leaked/, text);
+  }
+  for (const id of ['id="preview-notice"', 'id="preview-banner"', 'id="slip39-check"', 'id="seedqr-check"', 'id="seedxor-card"']) {
+    assert.throws(() => checkPreviewWarning(`<div ${id}></div>`, false), /Release build leaked/, id);
+  }
+  assert.doesNotThrow(() => checkPreviewWarning("<p>a release page</p>", false));
 });
 
 test("the stylesheet hides the page behind the notice without a script", () => {
@@ -168,11 +206,12 @@ test("the acknowledgement key is cleared by End session", () => {
 });
 
 test("the build checks name both preview markers for both builds", () => {
-  const build = read("scripts/build.mjs");
-  assert.match(build, /preview-notice/);
-  assert.match(build, /preview-banner/);
-  assert.match(build, /Preview build is missing/);
-  assert.match(build, /Release build leaked/);
+  const check = read("scripts/preview-warning-check.mjs");
+  assert.match(check, /preview-notice/);
+  assert.match(check, /preview-banner/);
+  assert.match(check, /Preview build is missing/);
+  assert.match(check, /Release build leaked/);
+  assert.match(read("scripts/build.mjs"), /checkPreviewWarning\(html, preview\)/);
 });
 
 test("the notice is not a descendant of the beta disclaimer overlay", () => {
