@@ -20273,6 +20273,7 @@ function hodlShowWorkspace(id) {
   // invalidate the run, and lifecycle/session clearing own cancellation.
   // Leaving the Privacy workspace hides a revealed BIP-47 spending key.
   if (hodlWorkspace === "sp" && typeof hodlBip47Conceal === "function") hodlBip47Conceal();
+  if (hodlWorkspace === "bip85" && typeof hodlSeedXorConceal === "function") hodlSeedXorConceal();
   // Leaving the Transactions workspace closes an open scan panel.
   if (hodlWorkspace === "psbt" && typeof hodlResetPsbtScans === "function") hodlResetPsbtScans();
   if (typeof hodlResetTextScans === "function") hodlResetTextScans();
@@ -20300,18 +20301,15 @@ function hodlShowWorkspace(id) {
   // Preview builds only: a release build strips the Verify card.
   const verifyCard = document.getElementById("verify-card");
   if (verifyCard) verifyCard.hidden = id !== "verify";
-  const seedXorCard = document.getElementById("seedxor-card");
-  if (seedXorCard) seedXorCard.hidden = id !== "seedxor";
   // The context block sits outside its tool's card, so it is shown and hidden
   // with the card rather than by it.
   ["bip85", "sp", "msig", "calc", "vanity", "ln", "core"].forEach((tool) => {
     document.getElementById(`${tool}-tool-intro`).hidden = id !== tool;
   });
-  const seedXorIntro = document.getElementById("seedxor-tool-intro");
-  if (seedXorIntro) seedXorIntro.hidden = id !== "seedxor";
   hodlSyncPsbtTool();
   hodlSyncJournalTool();
   hodlSyncPrivacyTool();
+  if (PREVIEW) hodlSyncSeedTool();
   hodlJournalLog("workspace", id);
   hodlWalletResult = null;
   hodlRevealPrivate = false;
@@ -20466,7 +20464,14 @@ async function hodlLoadTestKeys() {
 // push the nine tools past the desktop strip (owner, 2026-10-26); the full
 // name stays the accessible name and the hover title.
 var hodlWorkspaceTabs = [["calc", "Keys", "Keys"], ["msig", "Multi Signature", "MultiSig", "MultiSig"], ["psbt", "Transactions", "Txns"], ["ln", "Lightning", "LN"], ["core", "Bitcoin Core", "Core"], ["bip85", "BIP-85 Child", "BIP-85", "BIP-85"], ["sp", "Privacy", "Privacy"], ["vanity", "Vanity Address", "Vanity", "Vanity"], ["journal", "Journal", "Journal"], ["verify", "Verify", "Verify"]];
-if (__ENTROPYLAB_PREVIEW__) hodlWorkspaceTabs.splice(hodlWorkspaceTabs.findIndex(([id]) => id === "journal"), 0, ["seedxor", "Seed XOR", "XOR", "Seed XOR"]);
+if (PREVIEW) {
+  let bip85Tab = hodlWorkspaceTabs.find(([id]) => id === "bip85");
+  if (bip85Tab) {
+    bip85Tab[1] = "Seed tools";
+    bip85Tab[2] = "Seeds";
+    bip85Tab[3] = "Seed tools";
+  }
+}
 // The Privacy workspace's stations: the id a station tab carries and the card
 // it shows. Later PRs add ["bip47", …] and ["check", …] rows here.
 var hodlPrivacyTools = [["sp", "sp-card"]];
@@ -20586,6 +20591,74 @@ function hodlInitPrivacyToolTabs() {
   });
   hodlInitTabDrag(strip);
   hodlSyncPrivacyTool();
+}
+var hodlSeedTools = [["bip85", "bip85-card", "bip85-tool-intro", "bip85-manager"], ["seedxor", "seedxor-card", "seedxor-tool-intro"]];
+var hodlSeedTool = "bip85";
+
+function hodlSyncSeedTool() {
+  let tabs = document.getElementById("seedtools-tool-tabs");
+  if (!tabs) return;
+  let visible = hodlWorkspace === "bip85",
+      manager = document.getElementById("seedtools-manager"),
+      intro = document.getElementById("seedtools-tool-intro");
+  if (manager) manager.hidden = !visible;
+  if (intro) intro.hidden = !visible;
+  tabs.querySelectorAll("[data-seedtools-tool]").forEach((button) => {
+    let active = button.dataset.seedtoolsTool === hodlSeedTool;
+    button.classList.toggle("active", active);
+    button.setAttribute("aria-selected", String(active));
+    button.tabIndex = active ? 0 : -1;
+  });
+  for (let [tool, ...ids] of hodlSeedTools) {
+    let shown = visible && hodlSeedTool === tool;
+    for (let id of ids) {
+      let node = id ? document.getElementById(id) : null;
+      if (node) node.hidden = !shown;
+    }
+  }
+}
+
+// A revealed Seed XOR result never outlives the station it was shown on.
+// seed-xor.js re-renders the masked result on this change event, the same
+// way hodlConcealPrivateValues unchecks a reveal switch.
+function hodlSeedXorConceal() {
+  let reveal = document.getElementById("seedxor-reveal");
+  if (!reveal || !reveal.checked) return;
+  reveal.checked = false;
+  reveal.dispatchEvent(new Event("change", { bubbles: true }));
+}
+
+function hodlShowSeedTool(id, focus = false) {
+  if (!document.getElementById("seedtools-tool-tabs")) return;
+  let next = hodlSeedTools.some(([tool]) => tool === id) ? id : "bip85",
+      changed = next !== hodlSeedTool;
+  if (changed && typeof hodlResetTextScans === "function") hodlResetTextScans();
+  if (hodlSeedTool === "seedxor" && next !== "seedxor" && typeof hodlSeedXorConceal === "function") hodlSeedXorConceal();
+  hodlSeedTool = next;
+  hodlSyncSeedTool();
+  if (changed) hodlJournalLog("tool-tab", hodlSeedTool, "bip85");
+  if (focus) document.querySelector(`#seedtools-tool-tabs [data-seedtools-tool="${hodlSeedTool}"]`)?.focus();
+}
+
+function hodlInitSeedToolTabs() {
+  let strip = document.getElementById("seedtools-tool-tabs");
+  if (!strip) return;
+  let buttons = [...strip.querySelectorAll("[data-seedtools-tool]")];
+  buttons.forEach((button, index) => {
+    button.onclick = () => hodlShowSeedTool(button.dataset.seedtoolsTool);
+    button.onkeydown = (event) => {
+      let next = null;
+      if (event.key === "ArrowRight") next = (index + 1) % buttons.length;
+      else if (event.key === "ArrowLeft") next = (index - 1 + buttons.length) % buttons.length;
+      else if (event.key === "Home") next = 0;
+      else if (event.key === "End") next = buttons.length - 1;
+      if (next === null) return;
+      event.preventDefault();
+      hodlShowSeedTool(buttons[next].dataset.seedtoolsTool, true);
+    };
+  });
+  hodlInitTabDrag(strip);
+  hodlSyncSeedTool();
 }
 var hodlJournal = createJournal();
 var hodlJournalTool = "notes";
@@ -23865,6 +23938,7 @@ function hodlInitWorkspace() {
   hodlInitPsbtToolTabs();
   // The station switcher ships in release builds since 2026-10-28.
   hodlInitPrivacyToolTabs();
+  if (PREVIEW) hodlInitSeedToolTabs();
   if (typeof hodlInitBip47 === "function") hodlInitBip47();
   hodlInitJournalToolTabs();
   hodlInitJournalNotebook();
