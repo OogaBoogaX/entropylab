@@ -127,14 +127,17 @@ matches this list:
 | Signer | Primary key fingerprint |
 | --- | --- |
 | Portland.HODL (russeree) | `3428 CBB5 4C36 9D8A F14E  F600 C801 EE1D 5285 101E` |
-| MrHodlX | `DB19 EF73 4874 43AA EAC2  6687 17AB DC5F 9867 B54F` |
+| MrHodlX (YubiKey A) | `C36D 9A83 B04F 7932 3C6B  29B5 DC03 F375 9FF5 6A26` |
+| MrHodlX (YubiKey B, spare) | `1354 C347 92FC 6C93 D5D1  B4A7 3C42 D062 7648 C3B5` |
+| MrHodlX (interim, signed v1.1.0) | `DB19 EF73 4874 43AA EAC2  6687 17AB DC5F 9867 B54F` |
 | MrHodlX (revoked) | `6443 4EE4 8A96 C38E 78B7  875F 4E7E 416E E17D 237C` |
 | w-s-bitcoin | `542E CCA3 B5CB 74CE C957  29B3 92C2 1496 202E 3774` |
 | timechainb | `63EF 760E E641 A585 16D5  4930 F0B7 D606 C6FD 9D52` |
 
 MrHodlX's old key `6443 4EE4 …` is revoked: treat any signature from it as
-untrusted, including its block on v1.0.0. MrHodlX now signs with the interim
-key above.
+untrusted, including its block on v1.0.0. MrHodlX signed v1.1.0 with the
+interim key above, and signs later releases with a YubiKey key (A, or the
+spare B); one signature per signer is expected.
 
 Portland.HODL and w-s-bitcoin sign with subkeys (`C0AF3AD083D6B40A` and
 `EFBB6C556124B3DE`). GPG shows the subkey and its primary fingerprint, and the

@@ -959,7 +959,9 @@ MrHodlX's interim key):
 | w-s-bitcoin | `542E CCA3 B5CB 74CE C957 29B3 92C2 1496 202E 3774` | |
 | timechainb | `63EF 760E E641 A585 16D5 4930 F0B7 D606 C6FD 9D52` | |
 | MrHodlX | `6443 4EE4 8A96 C38E 78B7 875F 4E7E 416E E17D 237C` | **revoked** (announced 2026-10-30) |
-| MrHodlX (interim) | `DB19 EF73 4874 43AA EAC2 6687 17AB DC5F 9867 B54F` | expires 2027-01-31 |
+| MrHodlX (YubiKey A) | `C36D 9A83 B04F 7932 3C6B 29B5 DC03 F375 9FF5 6A26` | expires 2028-11-18 |
+| MrHodlX (YubiKey B, spare) | `1354 C347 92FC 6C93 D5D1 B4A7 3C42 D062 7648 C3B5` | expires 2028-11-18 |
+| MrHodlX (interim) | `DB19 EF73 4874 43AA EAC2 6687 17AB DC5F 9867 B54F` | retiring: signed v1.1.0; retired after the next release |
 
 **MrHodlX's key 64434EE4… is revoked.** It was kept on a computer later found
 to be compromised. Treat any signature from it as untrusted, including its
@@ -970,11 +972,19 @@ together with the key, so GnuPG shows the revocation dated 2026-09-29 with no
 reason given; it is a full revocation all the same, and GnuPG flags every
 signature made by the key.
 
-MrHodlX signs with an interim key:
-`DB19 EF73 4874 43AA EAC2 6687 17AB DC5F 9867 B54F` (expires 2027-01-31;
-[`keys/MrHodlX-DB19EF73.asc`](keys/MrHodlX-DB19EF73.asc)). Before trusting any
-new key, confirm its fingerprint with the maintainers through more than one
-channel.
+MrHodlX now signs with keys generated on two YubiKeys, which never leave the
+hardware: YubiKey A `C36D 9A83 B04F 7932 3C6B 29B5 DC03 F375 9FF5 6A26`
+([`keys/MrHodlX-C36D9A83.asc`](keys/MrHodlX-C36D9A83.asc)) and the spare,
+YubiKey B `1354 C347 92FC 6C93 D5D1 B4A7 3C42 D062 7648 C3B5`
+([`keys/MrHodlX-1354C347.asc`](keys/MrHodlX-1354C347.asc)), both expiring
+2028-11-18. The interim key
+`DB19 EF73 4874 43AA EAC2 6687 17AB DC5F 9867 B54F`
+([`keys/MrHodlX-DB19EF73.asc`](keys/MrHodlX-DB19EF73.asc)) signed v1.1.0 and
+stays listed until the next release is signed with a YubiKey key; it is then
+revoked (reason: superseded), and this file and the key file are updated. A
+person counts once toward the required number of signers however many of
+their keys sign. Before trusting any new key, confirm its fingerprint with the
+maintainers through more than one channel.
 
 ## Reporting a Vulnerability
 
