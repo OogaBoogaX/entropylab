@@ -346,6 +346,34 @@ if (outDir === root) {
   mkdirSync(outDir, { recursive: true });
 }
 
+// The preview build's warning must reach the artifact, and the release build
+// must carry none of it. Checked on the final HTML, after every transform.
+const previewStrings = [
+  "This is a preview build",
+  "This build is still being tested and is not approved for real use. Use test seeds only: never enter a real seed or key, and never send funds to anything made here.",
+  "I understand: test seeds only",
+  "Preview build: test seeds only. Never enter a real seed or key, or fund anything made here.",
+  "Preview only: not approved for real use. Use a test seed, and do not fund anything made here.",
+];
+const previewStationIds = ['id="slip39-check"', 'id="seedqr-check"', 'id="seedxor-card"'];
+if (preview) {
+  for (const id of ['id="preview-notice"', 'id="preview-banner"']) {
+    if (!html.includes(id)) throw new Error(`Preview build is missing ${id}`);
+  }
+  for (const text of previewStrings) {
+    if (!html.includes(text)) throw new Error(`Preview build is missing the text: ${text}`);
+  }
+  const stations = previewStationIds.filter((id) => html.includes(id)).length;
+  const lines = html.split(previewStrings[4]).length - 1;
+  if (lines < stations) throw new Error(`Preview build has ${lines} station line(s) for ${stations} station(s); each station needs one`);
+} else {
+  for (const text of previewStrings) {
+    if (html.includes(text)) throw new Error(`Release build leaked preview text: ${text}`);
+  }
+  for (const id of ['id="preview-notice"', 'id="preview-banner"', ...previewStationIds]) {
+    if (html.includes(id)) throw new Error(`Release build leaked preview markup: ${id}`);
+  }
+}
 writeFileSync(join(outDir, appFile), html);
 writeFileSync(join(outDir, workerFile), worker);
 
