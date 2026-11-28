@@ -2656,5 +2656,6 @@
   "Recover secret": "1ebc934992a20718f2014885a804c5d51840ca9603900cf4c9c75b03d220ea5d",
   "Derive share": "42c63ceb2ef45b2b99881705a4a3ed10084280c7064c1b83222bc980042abead",
   "Reveal private result": "9febfa5ed9ad2b17a21cb5e846c3291cf254a74371b28f7616c8afb4e89abc85",
-  "Codex32 result": "ba3a8e5ed81f316e69722b60249dc9290c27ce27ae464972636de8bb95b11730"
+  "Codex32 result": "ba3a8e5ed81f316e69722b60249dc9290c27ce27ae464972636de8bb95b11730",
+  "Word {n} has punctuation inside it. Remove the punctuation, or replace it with a space if it joins two words.": "0c87f0bad80a9feb6f83dcbadda644ff6d9b3991adfb6df6d31db5887895b461"
 }
